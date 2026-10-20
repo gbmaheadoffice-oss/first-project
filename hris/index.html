@@ -2398,7 +2398,8 @@ const APP_CHIP={New:'info',Shortlisted:'warn','For interview':'warn',Hired:'ok',
 const appStatus=a=>a.status||'New';
 const appChip=a=>`<span class="chip ${APP_CHIP[appStatus(a)]||''}">${esc(appStatus(a))}</span>`;
 const appName=a=>{const f=a.form||{};return[f.firstName,f.middleName?f.middleName[0]+'.':'',f.lastName,f.suffix].filter(Boolean).join(' ')||'Unnamed applicant'};
-const appDate=a=>(a.form&&a.form.dateApplied)||((a.jotform&&a.jotform.createdAt)||'').slice(0,10);
+/* The date Jotform received the form; applicants sometimes type a wrong "Date Applied". */
+const appDate=a=>((a.jotform&&a.jotform.createdAt)||'').slice(0,10)||(a.form&&a.form.dateApplied)||'';
 const appBl=a=>{const f=a.form||{};return blocklistMatch(f.firstName,f.lastName,f.birthDate)};
 const titleCase=s=>String(s||'').trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
 const APP_MAX=200;

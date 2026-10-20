@@ -28,7 +28,7 @@ create index if not exists hris_docs_applicant_created on public.hris_docs ((dat
 create or replace view public.applicants with (security_invoker = true) as
 select d.id,
   d.data->>'status' as status,
-  d.data->'form'->>'dateApplied' as date_applied,
+  left(d.data->'jotform'->>'createdAt', 10) as date_applied,
   d.data->'form'->>'position' as position,
   d.data->'form'->>'lastName' as last_name, d.data->'form'->>'firstName' as first_name, d.data->'form'->>'middleName' as middle_name,
   d.data->'form'->>'mobile' as mobile, d.data->'form'->>'email' as email,
@@ -43,3 +43,11 @@ revoke all on public.applicants from anon;
 grant select on public.applicants to authenticated;
 
 select 'ok' as result;
+
+-- Newest Jotform submission time already stored (used by jotform-sync to fetch only new ones).
+create or replace function public.hris_applicants_last_created()
+returns text language sql stable security definer set search_path = public as $$
+  select max(data->'jotform'->>'createdAt') from public.hris_docs where collection = 'applicants';
+$$;
+revoke all on function public.hris_applicants_last_created() from public, anon, authenticated;
+grant execute on function public.hris_applicants_last_created() to service_role;

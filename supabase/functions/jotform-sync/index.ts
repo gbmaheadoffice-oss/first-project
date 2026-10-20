@@ -113,9 +113,7 @@ Deno.serve(async (req) => {
   // Incremental: look back 2 days from the newest stored submission (catches late edits). Full: everything.
   let since = "";
   if (!full) {
-    const { data } = await sb.from("hris_docs").select("data->jotform->>createdAt").eq("collection", "applicants")
-      .order("data->jotform->>createdAt", { ascending: false }).limit(1);
-    const last = data?.[0] ? Object.values(data[0])[0] as string : "";
+    const { data: last } = await sb.rpc("hris_applicants_last_created");
     if (last) since = new Date(new Date(last.replace(" ", "T") + "Z").getTime() - 2 * 864e5).toISOString().slice(0, 19).replace("T", " ");
   }
 
