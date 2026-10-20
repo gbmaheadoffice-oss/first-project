@@ -584,12 +584,12 @@ This may constitute a violation of [company rule / Code of Conduct section].
 You may request an administrative conference if you wish to be heard in person. If you do not submit a written explanation within the period given, management will decide the matter based on the records available.`;
 
 /* ---------------- state + storage ---------------- */
-const COLS=['employees','leaves','permits','memos','attendance'];
-const S={employees:[],leaves:[],permits:[],memos:[],attendance:[]};
+const COLS=['employees','leaves','permits','memos','attendance','applicants'];
+const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 const LS='manpower-hris-v1';
-const UI={emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},xmemo:{tab:'Open',group:'',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},xmemo:{tab:'Open',group:'',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -666,6 +666,7 @@ function evalQueue(days){
 /* ---------------- routing ---------------- */
 const ROUTES={
   dashboard:{t:'Head Office Dashboard',nav:'Dashboard',icon:'home'},
+  applicants:{t:'Applicants',nav:'Applicants',icon:'clip'},
   employees:{t:'201 Files',nav:'201 Files',icon:'users'},
   leaves:{t:'Leave Approvals',nav:'Leave Approvals',icon:'cal'},
   attendance:{t:'Attendance',nav:'Attendance',icon:'clock'},
@@ -684,6 +685,7 @@ window.addEventListener('hashchange',()=>{const r=(location.hash||'').slice(1);i
 /* ---------------- rendering ---------------- */
 function counts(){
   return{
+    applicants:S.applicants.filter(a=>(a.status||'New')==='New').length,
     leaves:S.leaves.filter(l=>l.status==='Pending').length,
     permits:S.permits.filter(p=>p.status==='Pending').length,
     evals:evalQueue(14).filter(x=>x.k!=='reg').length,
@@ -696,7 +698,7 @@ function renderNav(){
   const link=(r,n)=>`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
   $('#nav').innerHTML=link('dashboard')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('employees')}${link('leaves',c.leaves)}${link('attendance')}${link('attpolicy')}${link('permits',c.permits)}${link('evaluations',c.evals)}${link('memos',c.memos)}${link('xmemos',c.xdrafts)}</div>`;
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${link('leaves',c.leaves)}${link('attendance')}${link('attpolicy')}${link('permits',c.permits)}${link('evaluations',c.evals)}${link('memos',c.memos)}${link('xmemos',c.xdrafts)}</div>`;
 }
 function render(focus){
   EMP={};S.employees.forEach(e=>EMP[e.id]=e);
@@ -1493,8 +1495,8 @@ function wireAddr(f,k,onChange){
     el:{P,C,B,St}};
   return api;
 }
-function empForm(id){
-  const e=id?clone(EMP[id]):{empNo:nextEmpNo('',today()),status:'Active',employmentType:'Probationary',hireDate:today(),nationality:'Filipino',docs:{}};
+function empForm(id,pre){
+  const e=id?clone(EMP[id]):{empNo:nextEmpNo('',today()),status:'Active',employmentType:'Probationary',hireDate:today(),nationality:'Filipino',docs:{},...(pre||{})};
   const newSeq=id?(ID_RE.exec(e.empNo||'')?+ID_RE.exec(e.empNo)[1]:nextSeq(id)):nextSeq();
   const depts=[...new Set(DEPTS.concat(S.employees.map(x=>x.department).filter(Boolean)))];
   const F=(n,l,o={})=>field({id:'ef-'+n,name:n,label:l,value:e[n],...o});
@@ -1617,7 +1619,7 @@ function empForm(id){
         try{const r=await ASSETS.upload(x,{type:fileType(x)});ups[k].push({id:r.id,name:x.name.slice(0,140),type:r.contentType,size:r.sizeBytes,at:new Date().toISOString(),by:MEID})}catch(err){errs.push(`${x.name}: ${upErr(err)}`)}}}
         sb.textContent='Saving…'}
       if(acct&&newProof&&!(ups.__bank||[]).length&&!(prevBank.proof||[]).length){sb.textContent=id?'Save changes':'Add employee';setErr(f.querySelector('#ef-bankproof'),'The account photo did not upload: '+errs.join(' · '));return false}
-      const o=id?clone(EMP[id]):{id:uid(),evals:{}};
+      const o=id?clone(EMP[id]):{id:uid(),evals:{},...(pre&&pre.applicantId?{applicantId:pre.applicantId}:{})};
       ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
       {const A=f._addr,pa=A.PA.get(),pm=A.same.checked?pa:A.PM.get();o.addr=pa;o.permAddr=pm;o.address=addrLine(pa);o.permanentAddress=addrLine(pm)}
       if(o.employmentType==='Regular'&&!o.regularizedOn&&EMP[id]&&EMP[id].employmentType==='Probationary')o.regularizedOn=today();
@@ -1637,6 +1639,7 @@ function empForm(id){
       const up=Object.values(ups).reduce((s,a)=>s+a.length,0);
       toast(`${id?'201 file updated':fullName(o)+' added'}${up?` · ${up} file${up===1?'':'s'} uploaded`:''}.`);
       if(errs.length)toast('Not uploaded: '+errs.join(' · '),{kind:'bad'});
+      if(!id&&pre&&pre.applicantId)await markHired(pre.applicantId,o.id);
       if(!id)whenReady('employees',o.id,()=>openEmp(o.id,'docs'));
     }});
 }
@@ -2387,6 +2390,114 @@ function clearSample(){
 }
 
 /* ---------------- actions ---------------- */
+/* ---------------- Applicants (from the Jotform "GBMA Online Job Application Form") ----------------
+   Each applicant is {id:'jf-<submission id>', form:{…answers}, jotform:{submissionId,createdAt}, status, notes, statusHistory, hiredEmployeeId}.
+   The answers are kept in sync from Jotform by the jotform-sync function; HR only edits status and notes here. */
+const APP_STATUS=['New','Shortlisted','For interview','Hired','Not hired'];
+const APP_CHIP={New:'info',Shortlisted:'warn','For interview':'warn',Hired:'ok','Not hired':'bad'};
+const appStatus=a=>a.status||'New';
+const appChip=a=>`<span class="chip ${APP_CHIP[appStatus(a)]||''}">${esc(appStatus(a))}</span>`;
+const appName=a=>{const f=a.form||{};return[f.firstName,f.middleName?f.middleName[0]+'.':'',f.lastName,f.suffix].filter(Boolean).join(' ')||'Unnamed applicant'};
+const appDate=a=>(a.form&&a.form.dateApplied)||((a.jotform&&a.jotform.createdAt)||'').slice(0,10);
+const appBl=a=>{const f=a.form||{};return blocklistMatch(f.firstName,f.lastName,f.birthDate)};
+const titleCase=s=>String(s||'').trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+const APP_MAX=200;
+
+VIEWS.applicants=function(){
+  const f=UI.app;const q=f.q.trim().toLowerCase();
+  const cnt=s=>s==='All'?S.applicants.length:S.applicants.filter(a=>appStatus(a)===s).length;
+  let list=S.applicants.filter(a=>(f.tab==='All'||appStatus(a)===f.tab)&&(!f.pos||titleCase(a.form&&a.form.position)===f.pos));
+  if(q)list=list.filter(a=>{const x=a.form||{};return[appName(a),x.position,x.mobile,x.email,x.presentAddress,a.notes].join(' ').toLowerCase().includes(q)});
+  list.sort((a,b)=>appDate(b)<appDate(a)?-1:appDate(b)>appDate(a)?1:0);
+  const poss=[...new Set(S.applicants.map(a=>titleCase(a.form&&a.form.position)).filter(Boolean))].sort();
+  const canSync=!!window.HRIS_SB;
+  let h=ph('Applicants',`${S.applicants.length} job application${S.applicants.length===1?'':'s'} from the GBMA Online Job Application Form on Jotform. New applications appear here automatically within 5 minutes.`,
+    canSync?`<button class="btn ghost" data-act="app-sync" data-write>${ic('download')}Check Jotform now</button>`:'');
+  h+=`<section class="card">${tabsHtml('app',APP_STATUS.concat('All').map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 12px">
+    ${searchBox('f-app-q','app.q',f.q,'Search name, position, mobile, email, address')}
+    <label class="sr" for="f-app-pos">Position applied for</label><select id="f-app-pos" data-filter="app.pos" style="flex:1 1 220px;max-width:320px"><option value="">All positions</option>${poss.map(p=>`<option ${p===f.pos?'selected':''}>${esc(p)}</option>`).join('')}</select></div>`;
+  if(!list.length)h+=S.applicants.length?emptyBlock('No matching applicants','Try another tab, search or position.'):emptyBlock('No applicants yet','Job applications from Jotform will appear here.');
+  else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Date Applied</th><th>Name</th><th>Position</th><th>Contact</th><th>Address</th><th>Status</th></tr></thead><tbody>
+    ${list.slice(0,APP_MAX).map(a=>{const x=a.form||{};const bl=appBl(a);return`<tr class="click" data-act="view-app" data-id="${esc(a.id)}" tabindex="0"><td class="num" style="white-space:nowrap">${fmt(appDate(a))}</td>
+      <td><div class="nm">${esc(appName(a))}</div><div class="sub">${[x.age&&x.age+' yrs',x.gender,x.civilStatus].filter(Boolean).map(esc).join(' · ')}</div>${bl?`<span class="chip blk" style="margin-top:4px">${ic('alert')}Blocklisted match</span>`:''}</td>
+      <td style="max-width:220px"><div>${esc(x.position||'—')}</div>${x.desiredSalary?`<div class="sub">Expects ₱${esc(x.desiredSalary)}</div>`:''}</td>
+      <td><div class="num">${esc(x.mobile||'—')}</div><div class="sub" style="overflow-wrap:anywhere">${esc(x.email||'')}</div></td>
+      <td style="max-width:260px"><div class="sub" style="overflow-wrap:anywhere">${esc(x.presentAddress||'—')}</div></td>
+      <td>${appChip(a)}${a.hiredEmployeeId&&EMP[a.hiredEmployeeId]?`<div class="sub">${esc(EMP[a.hiredEmployeeId].empNo)}</div>`:''}</td></tr>`}).join('')}
+  </tbody></table></div>${list.length>APP_MAX?`<p class="help" style="margin:12px 0 0;color:var(--muted)">Showing the ${APP_MAX} most recent of ${list.length}. Search or pick a position to narrow the list.</p>`:''}`;
+  return h+'</section>';
+};
+
+function viewApplicant(id){
+  const a=S.applicants.find(x=>x.id===id);if(!a)return;const x=a.form||{};const bl=appBl(a);
+  const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;
+  const wide=(l,v)=>`<div style="grid-column:1/-1"><dt>${l}</dt><dd style="white-space:pre-wrap">${v?esc(v):'—'}</dd></div>`;
+  const yn=(v,why)=>[v,why].filter(Boolean).join(' · ');
+  const tbl=(cols,rows)=>rows&&rows.length?`<div class="tw"><table class="tbl" style="min-width:${cols.length*130}px"><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c[1]]||'—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<p class="help" style="margin:0;color:var(--muted)">None listed.</p>';
+  const ed=x.education||{};const sch=(l,s)=>s&&s.school?`<tr><td class="nm">${l}</td><td>${esc(s.school)}${s.course?`<div class="sub">${esc([s.course,s.major].filter(Boolean).join(' · '))}</div>`:''}</td><td class="num">${esc(s.years||'—')}</td><td>${esc(s.location||'—')}</td><td>${esc(s.honors||'—')}</td></tr>`:'';
+  const schools=[sch('Primary',ed.primary),sch('Secondary',ed.secondary),sch('Tertiary',ed.tertiary),sch('Vocational',ed.vocational)].join('');
+  const par=p=>p?[p.name,p.age&&p.age+' yrs',p.occupation].filter(Boolean).join(' · '):'';
+  const em=x.emergency||{};
+  const hired=a.hiredEmployeeId&&EMP[a.hiredEmployeeId];
+  const sid=a.jotform&&a.jotform.submissionId;
+  openModal({title:`${esc(appName(a))} · Applicant`,wide:1,
+    body:`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${appChip(a)}<span class="chip">${ic('cal')}Applied ${fmt(appDate(a))}</span>${sid?`<a class="link" href="https://www.jotform.com/inbox/261088132496057/${esc(sid)}" target="_blank" rel="noopener">${ic('ext')}Open in Jotform</a>`:''}</div>
+    ${bl?`<div class="banner st-bl">${ic('alert')}<span class="grow"><b>Possible blocklisted person.</b> Same name${bl.birthDate?' and birth date':''} as ${esc(fullName(bl))} (${esc(bl.empNo)}), blocklisted for ${esc(bl.blocklistReason||'an unrecorded reason')}. <b>Check before hiring.</b></span></div>`:''}
+    ${hired?`<div class="silline">${ic('check')}<span>Hired as <b>${esc(hired.empNo)}</b>. <button type="button" class="link" data-act="open-emp" data-id="${hired.id}" style="padding:0 4px">Open 201 file</button></span></div>`:''}
+    <fieldset data-write><legend>HR decision</legend><div class="fg">
+      ${field({id:'ap-status',name:'status',label:'Status',type:'select',opts:APP_STATUS,value:appStatus(a),blank:false})}
+      ${field({id:'ap-notes',name:'notes',label:'HR notes',type:'textarea',value:a.notes||'',attrs:'style="min-height:70px"',help:'Interview schedule, results, reason for not hiring…'})}
+    </div></fieldset>
+    <section class="sect"><h4>Position &amp; availability</h4><dl class="kv">${kv('Position applied for',x.position)}${kv('Desired salary',x.desiredSalary&&'₱'+x.desiredSalary)}${kv('Available from',x.availableFrom&&fmt(x.availableFrom))}${kv('Currently employed',x.currentlyEmployed)}
+      ${kv('Willing to render overtime',yn(x.overtime,x.overtimeReason))}${kv('Willing to work Sundays / holidays',yn(x.sundays,x.sundaysReason))}
+      ${kv('Worked here before',yn(x.formerEmployee,x.formerWhen))}${kv('Friends / relatives in company',x.hasRelatives)}${x.relatives?wide('Their names, positions, relationship',x.relatives):''}</dl></section>
+    <section class="sect"><h4>Personal information</h4><dl class="kv">${kv('Full name',[x.firstName,x.middleName,x.lastName,x.suffix].filter(Boolean).join(' '))}${kv('Age',x.age)}${kv('Date of birth',x.birthDate&&fmt(x.birthDate))}${kv('Place of birth',x.birthPlace)}
+      ${kv('Sex',x.gender)}${kv('Civil status',x.civilStatus)}${kv('Citizenship',x.citizenship)}${kv('Religion',x.religion)}${kv('Height',x.height)}${kv('Weight',x.weight)}
+      ${kv('Mobile',x.mobile)}${kv('Email',x.email)}${wide('Present address',x.presentAddress)}${kv('Facebook',x.facebook)}</dl></section>
+    <section class="sect"><h4>Government numbers</h4><dl class="kv">${kv('SSS',x.sss)}${kv('PhilHealth',x.philhealth)}${kv('Pag-IBIG',x.pagibig)}${kv('TIN',x.tin)}</dl></section>
+    <section class="sect"><h4>Family background</h4><dl class="kv">${kv('Spouse',x.spouseName)}${kv('Spouse occupation',x.spouseOccupation)}${kv('Number of children',x.childrenCount)}${kv('Father',par(x.father))}${kv('Mother',par(x.mother))}</dl>
+      ${(x.children||[]).length?`<p class="flabel" style="margin:12px 0 6px">Children</p>${tbl([['Name','name'],['Age','age'],['Date of birth','birthDate']],x.children)}`:''}
+      ${(x.siblings||[]).length?`<p class="flabel" style="margin:12px 0 6px">Siblings</p>${tbl([['Name','name'],['Age','age'],['Occupation','occupation'],['Address','address']],x.siblings)}`:''}</section>
+    <section class="sect"><h4>Emergency contact</h4><dl class="kv">${kv('Name',em.name)}${kv('Relationship',em.relationship)}${kv('Contact no.',em.phone)}${kv('Address',em.address)}</dl></section>
+    <section class="sect"><h4>Education</h4>${schools?`<div class="tw"><table class="tbl" style="min-width:700px"><thead><tr><th>Level</th><th>School</th><th>Years</th><th>Location</th><th>Honors</th></tr></thead><tbody>${schools}</tbody></table></div>`:'<p class="help" style="margin:0;color:var(--muted)">None listed.</p>'}</section>
+    <section class="sect"><h4>Employment history</h4>${tbl([['Employer','employer'],['Job title','title'],['Location','location'],['Industry','nature'],['Salary','salary'],['From','from'],['To','to']],x.employment)}</section>
+    <section class="sect"><h4>Skills &amp; qualifications</h4><dl class="kv">${wide('Other qualifications',x.otherQualifications)}${wide('Computers, software, equipment',x.equipment)}${wide('Licenses / certifications',x.licenses)}${wide('Additional skills',x.skills)}</dl></section>
+    <section class="sect"><h4>Character references</h4>${tbl([['Name','name'],['Occupation','occupation'],['Contact no.','phone'],['Address','address']],x.references)}</section>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button>${hired?'':`<button type="button" class="btn ghost" data-write id="ap-hire">${ic('plus')}Hire · create 201 file</button>`}<button type="submit" class="btn" data-write>Save</button>`,
+    onSubmit:async fd=>{
+      const o=clone(a);const st=String(fd.get('status'));
+      if(st!==appStatus(a))o.statusHistory=(o.statusHistory||[]).concat({from:appStatus(a),to:st,at:new Date().toISOString(),by:MEID});
+      o.status=st;o.notes=String(fd.get('notes')||'').trim();await save('applicants',o);toast(`${appName(a)} · ${st}.`);
+    },
+    onOpen:f=>{const b=f.querySelector('#ap-hire');if(b)b.onclick=()=>{if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;MD.close();hireApplicant(id)}}});
+}
+
+/* Pre-fills a new 201 file from the application. HR completes deployment details, then saves. */
+function hireApplicant(id){
+  const a=S.applicants.find(x=>x.id===id);if(!a)return;const x=a.form||{};const em=x.emergency||{};
+  const cs=titleCase(x.civilStatus),sx=titleCase(x.gender),ed=x.education||{};
+  const top=[ed.tertiary,ed.vocational,ed.secondary,ed.primary].find(s=>s&&s.school)||{};
+  empForm(null,{applicantId:a.id,firstName:x.firstName,middleName:x.middleName,lastName:x.lastName,suffix:x.suffix,
+    gender:['Male','Female'].includes(sx)?sx:'',civilStatus:['Single','Married','Widowed','Separated'].includes(cs)?cs:'',
+    birthDate:x.birthDate,birthPlace:x.birthPlace,nationality:x.citizenship||'Filipino',religion:x.religion,mobile:x.mobile,email:x.email,
+    address:x.presentAddress,position:titleCase(x.position),dependents:x.childrenCount,
+    school:top.school||'',course:[top.course,top.major].filter(Boolean).join(' · '),
+    sss:x.sss,philhealth:x.philhealth,pagibig:x.pagibig,tin:x.tin,
+    emergencyName:em.name,emergencyPhone:em.phone,emergencyRelation:em.relationship});
+}
+async function markHired(appId,empId){
+  const a=S.applicants.find(x=>x.id===appId);if(!a)return;const o=clone(a);
+  if(appStatus(a)!=='Hired')o.statusHistory=(o.statusHistory||[]).concat({from:appStatus(a),to:'Hired',at:new Date().toISOString(),by:MEID});
+  o.status='Hired';o.hiredEmployeeId=empId;try{await save('applicants',o)}catch(e){}
+}
+async function syncJotform(el){
+  if(!window.HRIS_SB)return;el.disabled=true;const t=el.innerHTML;el.textContent='Checking Jotform…';
+  try{const{data,error}=await window.HRIS_SB.functions.invoke('jotform-sync',{body:{}});if(error)throw error;
+    toast(data&&data.written?`${data.written} application${data.written===1?'':'s'} added or updated.`:'No new applications.')}
+  catch(e){toast('Could not reach Jotform. Try again in a minute.',{kind:'bad'})}
+  finally{el.disabled=false;el.innerHTML=t}
+}
+
 const ACT={
   nav:(el,id,k,ev)=>{ev.preventDefault();if(DR.open)DR.close();go(id)},
   side:()=>{if(mobile())APP.classList.toggle('side-open');else APP.classList.toggle('side-off')},
@@ -2424,7 +2535,9 @@ const ACT={
   'change-status':(el,id)=>statusForm(id),
   'reg-notice':(el,id)=>{const e=EMP[id];const n=e&&regNotice(e);if(n)viewMemo(n.id);else noticeForm(id)},
   'view-att':(el,id,k)=>viewAtt(id,k),
-  'del-file':(el,id,k)=>delFile(id,k)
+  'del-file':(el,id,k)=>delFile(id,k),
+  'view-app':(el,id)=>viewApplicant(id),
+  'app-sync':el=>syncJotform(el)
 };
 document.addEventListener('click',ev=>{
   const a=ev.target.closest('[data-act]');if(!a)return;

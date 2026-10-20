@@ -1,0 +1,3 @@
+# Not part of the website: Supabase function and SQL source, local env files
+supabase
+.env*
