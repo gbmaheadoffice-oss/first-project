@@ -317,6 +317,7 @@ svg.i.sm{width:14px;height:14px}
 .att-fmt{background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:14px;display:flex;flex-direction:column;gap:6px}
 .att-fmt pre{margin:0;font:13px/1.5 ui-monospace,Consolas,monospace;overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .att-fmt span{color:var(--muted)}
+.imp-steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px}.imp-steps div{margin-top:6px}
 .silbox{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;background:var(--surface-2);border-radius:12px;padding:14px 16px}
 .silnum{display:flex;flex-direction:column;align-items:flex-start;min-width:120px;padding:8px 14px;background:var(--surface);border:2px solid var(--gold);border-radius:10px}
 .silnum b{font-size:28px;font-weight:800;line-height:1.1}
@@ -791,7 +792,7 @@ VIEWS.employees=function(){
   const depts=[...new Set(DEPTS.concat(S.employees.map(e=>e.department).filter(Boolean)))];
   const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
   const clCount=c=>S.employees.filter(e=>e.client===c&&isActive(e)).length;
-  let h=ph('201 Files',`${S.employees.length} employee record${S.employees.length===1?'':'s'} across ${CLIENTS.length} client companies · personal data, deployment, government IDs and scanned requirements.`,`<button class="btn ghost" data-act="export-201">${ic('download')}Export to Excel</button><button class="btn" data-act="add-emp" data-write>${ic('plus')}Add Employee</button>`);
+  let h=ph('201 Files',`${S.employees.length} employee record${S.employees.length===1?'':'s'} across ${CLIENTS.length} client companies · personal data, deployment, government IDs and scanned requirements.`,`<button class="btn ghost" data-act="import-201" data-write>${ic('upload')}Import from Excel</button><button class="btn ghost" data-act="export-201">${ic('download')}Export to Excel</button><button class="btn" data-act="add-emp" data-write>${ic('plus')}Add Employee</button>`);
   const stc=s=>s==='All'?S.employees.length:S.employees.filter(e=>empStatus(e)===s).length;
   h+=`<section class="card">${tabsHtml('emp',['Active','Separated','Blocklisted','All'].map(s=>[s,stc(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 12px">
     ${searchBox('f-emp-q','emp.q',f.q,'Search name, employee no., position, client')}
@@ -1443,6 +1444,250 @@ function export201(){
       try{await dl.save({filename:name,data:new Blob([buf])});toast(`Exported ${list.length} employee${list.length===1?'':'s'} to ${name}.`)}
       catch(err){sb.textContent='Export to Excel';const c=err&&err.code;
         if(c==='declined')toast('Export cancelled.');else if(c==='rate_limited')toast('A save prompt is already open. Finish it, then try again.',{kind:'bad'});else toast('The file could not be saved in this view.',{kind:'bad'});return false}
+    }});
+}
+
+/* ---------------- 201 file import from Excel ----------------
+   The template has one row per employee. Headers follow the 201 masterlist export, so a row is matched by
+   ID NUMBER (or by first name + last name + date of birth) and updated; other rows become new 201 files.
+   Blank cells never erase what is already saved. */
+const IMP_SEX={M:'Male',MALE:'Male',F:'Female',FEMALE:'Female'};
+const IMP_COLS=[
+  ['ID NUMBER','empNo','id','Leave blank for new employees. The HRIS makes it from the site and date hired, e.g. SANNO-10-26-0002. Fill it in to keep an existing ID, or to update an employee already in the HRIS.','SANNO-10-26-0002'],
+  ['LAST NAME','lastName','text','','Dela Cruz',1],
+  ['FIRST NAME','firstName','text','','Juan',1],
+  ['MIDDLE NAME','middleName','text','','Santos'],
+  ['SUFFIX','suffix','text','Jr., Sr., III','Jr.'],
+  ['SEX','gender','pick','',"Male",0,['Male','Female']],
+  ['DATE OF BIRTH','birthDate','date','','1998-03-15'],
+  ['PLACE OF BIRTH','birthPlace','text','','Antipolo City'],
+  ['CIVIL STATUS','civilStatus','pick','','Single',0,['Single','Married','Widowed','Separated']],
+  ['NATIONALITY','nationality','text','Blank = Filipino','Filipino'],
+  ['RELIGION','religion','text','','Roman Catholic'],
+  ['EMPLOYEE CONTACT NUMBER','mobile','id','','0917 123 4567'],
+  ['EMAIL','email','text','','juan@example.com'],
+  ['NO. OF DEPENDENTS','dependents','int','','0'],
+  ['PRESENT ADDRESS','address','addr','House no. and street, Barangay, City / Municipality, Province. Separate with commas.','123 Rizal St., Brgy. San Roque, Antipolo City, Rizal'],
+  ['PERMANENT ADDRESS','permanentAddress','addr','Same format. Blank = same as present address.',''],
+  ['EDUCATIONAL ATTAINMENT','education','pick','','High school graduate',0,['Elementary graduate','High school graduate','Senior high school graduate','Vocational / TESDA','College level','College graduate','Post-graduate']],
+  ['SCHOOL GRADUATED','school','text','','San Roque National High School'],
+  ['COURSE','course','text','Course or strand','TVL - ICT'],
+  ['SITE','client','client','The client company. Use the full name or the site code.','Sanno Philippines Manufacturing Corporation',1],
+  ['BIOMETRIC ID NO.','biometricId','id','','1023'],
+  ['POSITION','position','text','','Production Operator',1],
+  ['DEPARTMENT/SECTION','department','text','','Production',1],
+  ['PLANT / BRANCH / AREA','site','text','','Plant 2'],
+  ['EMPLOYMENT STATUS','employmentType','pick','Blank = Probationary','Probationary',0,EMP_TYPES],
+  ['DATE HIRED','hireDate','date','','2026-10-01',1],
+  ['DATE OF REGULARIZATION','regularizedOn','date','Leave blank while on probation.',''],
+  ['SHIFT START','shiftStart','time','Only if the employee has their own schedule, e.g. 8:00 AM',''],
+  ['SHIFT END','shiftEnd','time','',''],
+  ['PROBATIONARY CONTRACT CONTROL NO.','probContractNo','id','',''],
+  ['REGULARIZATION CONTRACT CONTROL NO.','regContractNo','id','',''],
+  ['COMPANY ORIENTATION DATE','companyOrientation','date','',''],
+  ['CLIENT ORIENTATION DATE','clientOrientation','date','',''],
+  ['CLIENT MR CTRL NO.','clientMrNo','id','',''],
+  ['ENDORSEMENT NO.','endorsementNo','id','',''],
+  ['DAILY SALARY','dailySalary','num','Numbers only, no ₱ sign','645'],
+  ['MONTHLY SALARY','monthlySalary','num','Blank = daily salary × 26 when a daily salary is given',''],
+  ['OTHER ALLOWANCE','allowance','num','',''],
+  ['ALLOWANCE DETAILS','allowanceNote','text','','Rice, transportation'],
+  ['DATE OF MEDICAL','medicalDate','date','',''],
+  ['ACCREDITED CLINIC/HOSPITAL','medicalClinic','text','',''],
+  ['MEDICAL RESULT','medicalResult','pick','','Fit to work',0,['Fit to work','Fit to work with findings','Pending','Unfit to work']],
+  ['STATUS','status','pick','Blank = Active','Active',0,EMP_STATUS],
+  ['REASON OF SEPARATION','separationReason','pick','Required when STATUS is Separated','',0,SEP_REASONS],
+  ['LAST WORKING DAY','lastWorkingDay','date','',''],
+  ['DATE SEPARATED','separationDate','date','Required when STATUS is Separated',''],
+  ['SEPARATION DETAILS','separationDetails','text','Required when the reason is Other',''],
+  ['ELIGIBLE FOR REHIRE','rehireEligible','pick','','',0,['Yes','No']],
+  ['BLOCKLIST REASON','blocklistReason','pick','Required when STATUS is Blocklisted','',0,BL_REASONS],
+  ['BLOCKLIST DATE','blocklistDate','date','Blank = today',''],
+  ['BLOCKLIST DETAILS','blocklistDetails','text','Required when STATUS is Blocklisted',''],
+  ['SSS','sss','id','','34-1234567-8'],
+  ['TIN','tin','id','','123-456-789-000'],
+  ['PHIC','philhealth','id','PhilHealth no.','12-345678901-2'],
+  ['HDMF','pagibig','id','Pag-IBIG MID no.','1234-5678-9012'],
+  ['HDMF TRACKING NUMBER','hdmfTracking','id','',''],
+  ['CONTACT PERSON','emergencyName','text','Emergency contact','Maria Dela Cruz'],
+  ['CONTACT NUMBER','emergencyPhone','id','','0918 765 4321'],
+  ['RELATIONSHIP','emergencyRelation','text','','Mother'],
+  ['ACCOUNT NAME','bankAccountName','text',`${BANK} account name`,'Juan S. Dela Cruz'],
+  ['AUB ACCOUNT NO.','bankAccountNo','id','Digits only, 10 to 16 digits. Attach the photo of the card later in the 201 file.',''],
+  ['SOLO PARENT','soloParent','yes','Yes or blank',''],
+  ['SOLO PARENT ID NO.','soloParentId','id','',''],
+  ['SOLO PARENT ID VALID UNTIL','soloParentValidUntil','date','',''],
+  ['NO. OF DEPENDENT CHILDREN','soloChildren','int','For solo parents',''],
+  ...DOCS.map(([k,l])=>[l.toUpperCase(),'doc_'+k,'yes','201 requirement: Yes if already submitted','']),
+];
+const impKey=s=>String(s==null?'':s).toUpperCase().replace(/\(.*?\)/g,'').replace(/[^A-Z0-9]/g,'');
+/* Other header spellings HR may use (and the old export headers) */
+const IMP_ALIAS={EMPLOYEENO:'empNo',EMPNO:'empNo',IDNO:'empNo',CLIENT:'client',CLIENTCOMPANY:'client',SITECLIENT:'client',GENDER:'gender',BIRTHDATE:'birthDate',BIRTHDAY:'birthDate',
+  MOBILE:'mobile',CONTACTNO:'mobile',MOBILENUMBER:'mobile',PHILHEALTH:'philhealth',PAGIBIG:'pagibig',PAGIBIGMIDNO:'pagibig',SSSNO:'sss',DEPARTMENT:'department',SECTION:'department',
+  COURSESTRAND:'course',EMPLOYMENTTYPE:'employmentType',EMERGENCYCONTACT:'emergencyName',AUBACCOUNTNAME:'bankAccountName',ACCOUNTNO:'bankAccountNo',AUBACCOUNTNUMBER:'bankAccountNo',
+  PLANTBRANCHAREA:'site',ALLOWANCE:'allowance',SEX:'gender',REASONFORSEPARATION:'separationReason'};
+/* Excel serial date or typed text → YYYY-MM-DD. Slashes are read as month/day/year unless the first number is over 12. */
+function impDate(v,X){
+  if(v===''||v==null)return'';
+  if(typeof v==='number'){const d=X.SSF.parse_date_code(v);return d&&d.y>1900?`${d.y}-${pad(d.m)}-${pad(d.d)}`:null}
+  const s=String(v).trim();let m;
+  if((m=/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s)))return impYmd(+m[1],+m[2],+m[3]);
+  if((m=/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/.exec(s))){let[a,b,y]=[+m[1],+m[2],+m[3]];if(y<100)y+=y>50?1900:2000;return a>12?impYmd(y,b,a):impYmd(y,a,b)}
+  const t=Date.parse(s);if(!isNaN(t)&&/[a-z]/i.test(s)){const d=new Date(t);return impYmd(d.getFullYear(),d.getMonth()+1,d.getDate())}
+  return null;
+}
+function impYmd(y,m,d){const x=new Date(y,m-1,d);return y>1900&&x.getMonth()===m-1&&x.getDate()===d?`${y}-${pad(m)}-${pad(d)}`:null}
+function impTime(v){
+  if(v===''||v==null)return'';
+  if(typeof v==='number'){if(Number.isInteger(v)&&v>=1&&v<24)return`${pad(v)}:00`;const mins=Math.round((v%1)*1440);return`${pad(Math.floor(mins/60)%24)}:${pad(mins%60)}`}
+  const m=/^(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?$/i.exec(String(v).trim());if(!m)return null;
+  let h=+m[1];const mm=+(m[2]||0);if(m[3]){h=h%12+(/p/i.test(m[3])?12:0)}return h<24&&mm<60?`${pad(h)}:${pad(mm)}`:null;
+}
+function impPick(v,list){
+  const k=impKey(v);if(!k)return'';
+  return list.find(x=>impKey(x)===k)||list.find(x=>impKey(x).startsWith(k)&&k.length>=3)||null;
+}
+function impClient(v){
+  const k=impKey(v);if(!k)return'';
+  return CLIENTS.find(c=>impKey(c)===k||impKey(siteCode(c))===k)||CLIENTS.find(c=>impKey(c).startsWith(k)&&k.length>=4)||null;
+}
+/* Reads the workbook into rows of {row, vals:{key:value}, errs:[]} */
+function impParse(X,wb){
+  const name=wb.SheetNames.find(n=>/employee|201/i.test(n)&&!/instruction/i.test(n))||wb.SheetNames[0];
+  const aoa=X.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''});
+  const byHead={};IMP_COLS.forEach(c=>byHead[impKey(c[0])]=c);
+  const hi=aoa.slice(0,10).findIndex(r=>r.some(c=>impKey(c)==='FIRSTNAME'));
+  if(hi<0)return{err:`The sheet “${name}” has no FIRST NAME column. Use the HRIS template.`};
+  const map=aoa[hi].map(h=>{const k=impKey(String(h).replace(/\*/g,''));const c=byHead[k]||IMP_COLS.find(x=>x[1]===IMP_ALIAS[k]);return c||null});
+  const rows=[];
+  aoa.slice(hi+1).forEach((r,i)=>{
+    if(!r.some(c=>String(c).trim()))return;
+    const vals={},errs=[];
+    map.forEach((c,j)=>{if(!c)return;const[head,key,kind,,,,opts]=c;let v=r[j];if(v===''||v==null)return;
+      let out;
+      if(kind==='date'){out=impDate(v,X);if(out===null){errs.push(`${head}: “${v}” is not a date`);return}}
+      else if(kind==='time'){out=impTime(v);if(out===null){errs.push(`${head}: “${v}” is not a time`);return}}
+      else if(kind==='num'){out=typeof v==='number'?v:parseFloat(String(v).replace(/[₱,\s]/g,''));if(isNaN(out)||out<0){errs.push(`${head}: “${v}” is not an amount`);return}out=String(Math.round(out*100)/100)}
+      else if(kind==='int'){out=parseInt(String(v).trim(),10);if(isNaN(out)||out<0){errs.push(`${head}: “${v}” is not a number`);return}out=String(out)}
+      else if(kind==='pick'){out=key==='gender'?IMP_SEX[impKey(v)]||impPick(v,opts):impPick(v,opts);if(!out){errs.push(`${head}: “${v}” is not one of ${opts.join(', ')}`);return}}
+      else if(kind==='client'){out=impClient(v);if(!out){errs.push(`SITE: “${v}” is not a client company in the HRIS`);return}}
+      else if(kind==='yes'){out=/^(y|yes|oo|true|1|✓|x|submitted|w\/)$/i.test(String(v).trim())}
+      else{out=String(v).trim();if(kind==='id'&&typeof v==='number'){out=String(v);if(key==='mobile'||key==='emergencyPhone'){if(/^9\d{9}$/.test(out))out='0'+out}}}
+      vals[key]=out});
+    if(vals.bankAccountNo!=null){vals.bankAccountNo=String(vals.bankAccountNo).replace(/[\s-]/g,'');if(!/^\d{10,16}$/.test(vals.bankAccountNo)){errs.push('AUB ACCOUNT NO.: use 10 to 16 digits only');delete vals.bankAccountNo}}
+    rows.push({row:hi+i+2,vals,errs});
+  });
+  return{rows,sheet:name};
+}
+/* Matches each row to an employee, checks required fields, and builds the record to save. */
+function impPlan(parsed){
+  const n=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const byNo={};S.employees.forEach(e=>{if(e.empNo)byNo[n(e.empNo)]=e});
+  const byName={};S.employees.forEach(e=>{byName[[n(e.firstName),n(e.lastName),e.birthDate||''].join('|')]=e});
+  let seq=nextSeq();const seen={};
+  return parsed.rows.map(r=>{
+    const v=r.vals,errs=r.errs.slice(),warn=[];
+    const ex=(v.empNo&&byNo[n(v.empNo)])||(v.firstName&&v.lastName&&v.birthDate&&byName[[n(v.firstName),n(v.lastName),v.birthDate].join('|')])||null;
+    const o=ex?clone(ex):{id:uid(),evals:{},docs:{},nationality:'Filipino',employmentType:'Probationary',status:'Active'};
+    IMP_COLS.forEach(([,k,kind])=>{if(v[k]===undefined||kind==='addr'||kind==='yes'||k.startsWith('bank'))return;o[k]=v[k]});
+    if(!ex)['firstName','lastName','client','position','department','hireDate'].forEach(k=>{if(!o[k]){const c=IMP_COLS.find(x=>x[1]===k);errs.push(`${c[0]} is required`)}});
+    if(v.dailySalary&&!v.monthlySalary&&!(ex&&ex.monthlySalary))o.monthlySalary=(Math.round(+v.dailySalary*26*100)/100).toFixed(2);
+    if(v.address!==undefined){o.address=v.address;o.addr=null;if(v.permanentAddress===undefined&&(!ex||!ex.permanentAddress)){o.permanentAddress=v.address;o.permAddr=null}}
+    if(v.permanentAddress!==undefined){o.permanentAddress=v.permanentAddress;o.permAddr=null}
+    if(v.soloParent!==undefined)o.soloParent=v.soloParent;
+    o.docs=o.docs||{};DOCS.forEach(([k])=>{if(v['doc_'+k])o.docs[k]=true});
+    if(v.bankAccountNo!==undefined||v.bankAccountName!==undefined){const b=o.bank||{proof:[]};const acct=v.bankAccountNo!==undefined?v.bankAccountNo:b.accountNo;
+      const same=acct===b.accountNo;o.bank={...b,bank:BANK,accountName:v.bankAccountName!==undefined?v.bankAccountName:(b.accountName||''),accountNo:acct||'',proof:b.proof||[],...(same?{}:{verified:false,mismatch:false,verifiedAt:'',verifiedBy:null,checkNote:''})};
+      if(!o.bank.accountNo&&!o.bank.proof.length)delete o.bank}
+    const st=empStatus(o);
+    if(st==='Separated'){if(!o.separationReason)errs.push('REASON OF SEPARATION is required when STATUS is Separated');if(!o.separationDate)errs.push('DATE SEPARATED is required when STATUS is Separated');if(o.separationReason==='Other'&&!o.separationDetails)errs.push('SEPARATION DETAILS is required when the reason is Other')}
+    if(st==='Blocklisted'){if(!o.blocklistReason)errs.push('BLOCKLIST REASON is required when STATUS is Blocklisted');if(!o.blocklistDetails)errs.push('BLOCKLIST DETAILS is required when STATUS is Blocklisted');o.blocklistDate=o.blocklistDate||today();o.rehireEligible='No'}
+    const before=ex?empStatus(ex):'Active';const reason=st==='Separated'?o.separationReason:st==='Blocklisted'?o.blocklistReason:'';
+    if(st!=='Active'&&(before!==st||reason!==(ex?(before==='Separated'?sepReason(ex):ex.blocklistReason||''):'')))o.statusHistory=(o.statusHistory||[]).concat([{status:st,reason,details:st==='Separated'?o.separationDetails:o.blocklistDetails,date:st==='Separated'?o.separationDate:o.blocklistDate,at:new Date().toISOString(),by:MEID,via:'Excel import'}]);
+    if(!ex&&!errs.length){if(!o.empNo)o.empNo=makeEmpId(o.client,o.hireDate,seq++);else{const m=ID_RE.exec(o.empNo);if(m)seq=Math.max(seq,+m[1]+1)}}
+    if(o.empNo){const k=n(o.empNo);if(seen[k])errs.push(`ID NUMBER ${o.empNo} is also on row ${seen[k]}`);else seen[k]=r.row;
+      const other=byNo[k];if(!errs.length&&other&&ex&&other.id!==ex.id)errs.push(`ID NUMBER ${o.empNo} already belongs to ${fullName(other)}`)}
+    if(!ex){const bl=blocklistMatch(o.firstName,o.lastName,o.birthDate,null);if(bl)warn.push(`Same name as blocklisted ${fullName(bl)} (${bl.empNo})`)}
+    if(o.bank&&o.bank.accountNo&&!(o.bank.proof||[]).length)warn.push('AUB account has no photo yet');
+    return{row:r.row,o,ex,errs,warn};
+  });
+}
+async function impAddresses(plan){
+  let M=null;try{M=await loadAddr()}catch(err){return}
+  plan.forEach(p=>{const o=p.o;
+    if(o.addr===null){const g=o.address?guessAddr(M,o.address):null;if(g&&g.city){o.addr=g;o.address=addrLine(g)}else delete o.addr}
+    if(o.permAddr===null){const g=o.permanentAddress?guessAddr(M,o.permanentAddress):null;if(g&&g.city){o.permAddr=g;o.permanentAddress=addrLine(g)}else delete o.permAddr}});
+}
+async function templateBlob(){
+  const X=await loadXLSX();
+  const head=IMP_COLS.map(c=>c[0]+(c[5]?' *':''));
+  const ws=X.utils.aoa_to_sheet([head]);
+  /* ID, phone and account columns are formatted as Text so Excel keeps leading zeros and long numbers */
+  IMP_COLS.forEach((c,j)=>{if(c[2]!=='id')return;for(let r=1;r<=1000;r++)ws[X.utils.encode_cell({r,c:j})]={t:'s',v:'',z:'@'}});
+  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:1000,c:IMP_COLS.length-1}});
+  ws['!cols']=IMP_COLS.map(c=>({wch:Math.max(14,Math.min(40,c[0].length+4,String(c[4]).length+2))}));
+  const opt=c=>c[6]?c[6].join(' / '):c[2]==='client'?CLIENTS.map(x=>`${x} (${siteCode(x)})`).join(' / '):c[2]==='yes'?'Yes, or leave blank':'';
+  const kind={id:'Text',text:'Text',date:'Date: 2026-10-01 or 10/01/2026',time:'Time: 8:00 AM',num:'Amount',int:'Whole number',pick:'Choose one',client:'Choose one',yes:'Yes or blank',addr:'Text'};
+  const ins=[['How to use this template'],
+    ['1. Type one employee per row in the “Employees” sheet, starting on row 2. Do not change the headings in row 1.'],
+    ['2. Columns marked * are required for new employees: LAST NAME, FIRST NAME, SITE, POSITION, DEPARTMENT/SECTION and DATE HIRED.'],
+    ['3. Leave a cell blank if you do not have the detail yet. Blank cells never erase what is already saved in the HRIS.'],
+    ['4. Leave ID NUMBER blank for new employees. The HRIS creates it from the site and the date hired.'],
+    ['5. To update employees already in the HRIS, fill in their ID NUMBER. Rows with the same first name, last name and date of birth are also treated as the same person.'],
+    ['6. Save the file, then in the HRIS go to 201 Files › Import from Excel and choose the file. You will see a preview before anything is saved.'],
+    ['7. Scanned documents and the photo of the AUB card cannot go in Excel. Attach them later in each 201 file.'],
+    [],
+    ['Column','Required','What to enter','Example','Allowed values']]
+    .concat(IMP_COLS.map(c=>[c[0],c[5]?'Yes':'',[kind[c[2]],c[3]].filter(Boolean).join('. '),c[4],opt(c)]));
+  const wi=X.utils.aoa_to_sheet(ins);wi['!cols']=[{wch:38},{wch:9},{wch:70},{wch:34},{wch:80}];
+  const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Employees');X.utils.book_append_sheet(wb,wi,'Instructions');
+  wb.Props={Title:'201 File Import Template',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
+  return new Blob([X.write(wb,{bookType:'xlsx',type:'array'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+async function downloadTemplate(btn){
+  const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+  if(!dl)return toast('Downloads are not available in this view.',{kind:'bad'});
+  const t=btn&&btn.innerHTML;if(btn)btn.textContent='Preparing…';
+  try{await dl.save({filename:'GBMA 201 Import Template.xlsx',data:await templateBlob()});toast('Template downloaded. Fill it in, then import it here.')}
+  catch(err){const c=err&&err.code;if(c!=='declined')toast(c?'The file could not be saved in this view.':'The Excel library could not load. Check your connection and try again.',{kind:'bad'})}
+  finally{if(btn)btn.innerHTML=t}
+}
+function import201(){
+  let plan=null;
+  openModal({title:'Import 201 Files from Excel',wide:1,
+    body:`<ol class="imp-steps"><li><b>Download the template</b> and type one employee per row. The “Instructions” sheet explains every column.<div><button type="button" class="btn sm ghost" id="im-tpl">${ic('download')}Download template (.xlsx)</button></div></li>
+      <li><b>Choose the filled-in file.</b> You will see a preview. Nothing is saved until you click Import.</li></ol>
+    <div class="field"><label for="im-file">Excel file</label><input id="im-file" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"></div>
+    <div id="im-prev"></div>`,
+    submitLabel:'Import',
+    onOpen:f=>{
+      f.querySelector('#im-tpl').onclick=ev=>downloadTemplate(ev.currentTarget);
+      const box=f.querySelector('#im-prev');
+      f.querySelector('#im-file').addEventListener('change',async ev=>{
+        const file=ev.target.files[0];plan=null;box.innerHTML='';if(!file)return;
+        box.innerHTML='<p class="help">Reading the file…</p>';
+        let X;try{X=await loadXLSX()}catch(err){box.innerHTML='<div class="formerr">The Excel library could not load. Check your connection and try again.</div>';return}
+        let parsed;try{parsed=impParse(X,X.read(await file.arrayBuffer(),{type:'array'}))}catch(err){box.innerHTML='<div class="formerr">This file could not be read. Save it as an Excel workbook (.xlsx) and try again.</div>';return}
+        if(parsed.err){box.innerHTML=`<div class="formerr">${esc(parsed.err)}</div>`;return}
+        if(!parsed.rows.length){box.innerHTML='<div class="formerr">The file has no employee rows. Type the employees below the heading row.</div>';return}
+        plan=impPlan(parsed);await impAddresses(plan);
+        const ok=plan.filter(p=>!p.errs.length),bad=plan.filter(p=>p.errs.length),nw=ok.filter(p=>!p.ex).length;
+        box.innerHTML=`<div class="silline ${bad.length?'warn':''}">${ic(bad.length?'alert':'check')}<span><b>${nw}</b> new employee${nw===1?'':'s'} and <b>${ok.length-nw}</b> update${ok.length-nw===1?'':'s'} to existing 201 files are ready.${bad.length?` <b>${bad.length}</b> row${bad.length===1?' has':'s have'} problems and will be skipped. Fix ${bad.length===1?'it':'them'} in Excel and import the file again.`:''}</span></div>
+          <div class="tw" style="margin-top:10px;max-height:340px;overflow:auto"><table class="tbl" style="min-width:760px"><thead><tr><th>Row</th><th>Employee</th><th>ID Number</th><th>Site</th><th>Result</th></tr></thead><tbody>
+          ${bad.concat(ok).map(p=>`<tr><td>${p.row}</td><td>${esc(fullName(p.o)==='Former employee'?'—':fullName(p.o))}</td><td>${esc(p.o.empNo||'—')}</td><td>${esc(p.o.client||'—')}</td>
+            <td>${p.errs.length?`<span class="chip bad">${ic('alert')}Skipped</span> ${p.errs.map(esc).join(' · ')}`:`<span class="chip ${p.ex?'':'ok'}">${p.ex?'Update':'New'}</span>${p.warn.length?` <span style="color:var(--warn)">${p.warn.map(esc).join(' · ')}</span>`:''}`}</td></tr>`).join('')}
+          </tbody></table></div>`;
+        f.querySelector('button[type=submit]').textContent=ok.length?`Import ${ok.length} employee${ok.length===1?'':'s'}`:'Import';
+      });
+    },
+    onSubmit:async(fd,f)=>{
+      const fi=f.querySelector('#im-file');
+      if(!plan){setErr(fi,'Choose the filled-in Excel file first.');return false}
+      const ok=plan.filter(p=>!p.errs.length);if(!ok.length){setErr(fi,'No rows can be imported. Fix the problems shown, then choose the file again.');return false}
+      const sb=f.querySelector('button[type=submit]');let n=0,failed=0;
+      for(const p of ok){n++;sb.textContent=`Saving ${n} of ${ok.length}…`;try{await save('employees',p.o)}catch(err){failed++}}
+      const nw=ok.filter(p=>!p.ex).length;
+      toast(`Imported ${ok.length-failed} employee${ok.length-failed===1?'':'s'} (${nw} new, ${ok.length-nw} updated).${failed?` ${failed} could not be saved.`:''}`,failed?{kind:'bad'}:{});
     }});
 }
 
@@ -2527,6 +2772,7 @@ const ACT={
   'issue-xmemo':(el,id,k)=>xmemoForm(null,k,id),
   'att-edit':(el,id,k)=>attEdit(id,k),
   'export-201':()=>export201(),
+  'import-201':()=>import201(),
   'att-import':()=>attImport(),
   'pol-save':()=>polSave(),
   'pol-discard':()=>{UI.pol=null;renderView()},
