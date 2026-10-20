@@ -1209,7 +1209,7 @@ VIEWS.evaluations=function(){
   if(!list.length)h+=emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th>Date Hired</th>${MS.map(m=>`<th>${m.label}</th>`).join('')}<th>Regularization</th></tr></thead><tbody>
     ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div></td><td class="num">${fmt(e.hireDate)}</td>
-      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">Rating ${esc(x.rec.rating)}/5</span>`):`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}">Record</button>`}</div></td>`).join('')}
+      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}">Record</button>`}</div></td>`).join('')}
       <td><div class="ms"><span class="d">${fmt(m.reg.on||m.reg.due)}</span>${m.reg.done?`<span class="chip ok">${ic('award')}Regular</span>`:stateChip(m.reg.state,m.reg.due)}${!m.reg.done&&isProb(e)?(notRecommended(e)?(()=>{const n=eopNotice(e);return!n?`<button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">End of probation notice</button>`:n.status==='Draft'?`<button class="link" style="padding:0" data-act="view-memo" data-id="${n.id}">Notice draft · review</button>`:`<span class="sub">${esc(n.no)} sent</span>`})():`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}">Set as Regular</button>`):''}${e.regularizedOn&&e.employmentType==='Regular'&&diff(e.regularizedOn,today())<=365?(()=>{const n=regNotice(e);return!n?`<button class="btn sm ghost" data-write data-act="reg-notice" data-id="${e.id}">Send notice</button>`:n.status==='Draft'?`<button class="link" style="padding:0" data-act="view-memo" data-id="${n.id}">Notice draft · review</button>`:`<span class="sub">Notice sent ${fmtS((n.sentAt||'').slice(0,10))}</span>`})():''}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -1360,7 +1360,7 @@ function empFiltered(){
 const yn=v=>v?'Yes':'No';
 function empColumns(){
   const ev=(k,f)=>e=>{const r=e.evals&&e.evals[k];return r&&r.date?f(r):''};
-  const evTxt=k=>ev(k,r=>`${r.date} · ${r.final!=null?r.final.toFixed(2)+' '+scoreLabel(r.final):'Rating '+r.rating}`);
+  const evTxt=k=>ev(k,r=>`${r.date} · ${r.final!=null?r.final.toFixed(2)+' '+scoreLabel(r.final):r.rating?'Rating '+r.rating:'Done'}`);
   const num=v=>v===''||v==null||isNaN(+v)?'':+v;
   const req=(...keys)=>e=>{const app=keys.filter(k=>docApplies(e,k));if(!app.length)return'N/A';return app.some(k=>docHas(e,k))?(app.every(k=>docHas(e,k))?'Submitted':'Partial'):'Missing'};
   const sep=e=>empStatus(e)==='Separated';
@@ -1448,42 +1448,65 @@ function export201(){
 }
 
 /* ---------------- 201 file import from Excel ----------------
-   The template has one row per employee. Headers follow the 201 masterlist export, so a row is matched by
-   ID NUMBER (or by first name + last name + date of birth) and updated; other rows become new 201 files.
-   Blank cells never erase what is already saved. */
+   The template columns are GBMA's 201 masterlist, in the same order, so HR can paste the existing masterlist into it.
+   A row is matched by ID NUMBER (or by first name + last name + date of birth) and updated; other rows become new 201 files.
+   Blank cells never erase what is already saved. Calculated columns (year employed, end of probation, overall
+   recommendation, W/ or W/O) are read but ignored. */
 const IMP_SEX={M:'Male',MALE:'Male',F:'Female',FEMALE:'Female'};
+const IMP_CALC='Calculated by the HRIS. Leave it blank or paste your old values; it is not imported.';
 const IMP_COLS=[
-  ['ID NUMBER','empNo','id','Leave blank for new employees. The HRIS makes it from the site and date hired, e.g. SANNO-10-26-0002. Fill it in to keep an existing ID, or to update an employee already in the HRIS.','SANNO-10-26-0002'],
-  ['LAST NAME','lastName','text','','Dela Cruz',1],
+  /* template: GBMA 201 masterlist order */
+  ['ID NUMBER','empNo','id','Keep the employee’s existing ID. Leave blank for a new employee and the HRIS makes one from the site and date hired.','SANNO-10-26-0002'],
+  ['LAST NAME','lastName','text','Add Jr., Sr. or III after the last name if any.','Dela Cruz',1],
   ['FIRST NAME','firstName','text','','Juan',1],
   ['MIDDLE NAME','middleName','text','','Santos'],
-  ['SUFFIX','suffix','text','Jr., Sr., III','Jr.'],
-  ['SEX','gender','pick','',"Male",0,['Male','Female']],
+  ['STATUS','status','status','Active, Separated or Blocklisted. Resigned, Terminated, End of contract, AWOL, Retired and similar are read as Separated. Blank = Active.','Active'],
+  ['YEAR EMPLOYED','','skip',IMP_CALC,'2026'],
+  ['SITE','client','client','The client company. The full name or the site code.','Sanno Philippines Manufacturing Corporation',1],
+  ['DATE HIRED','hireDate','date','','2026-10-01',1],
+  ['END OF PROBATIONARY CONTRACT','','skip',IMP_CALC+' (six months from the date hired)',''],
+  ['DATE OF REGULARIZATION','regularizedOn','date','Leave blank while on probation.',''],
+  ...MS.flatMap(m=>[[`${m.short.toUpperCase()} MONTH EVALUATION`,'ev_'+m.k,'eval','Date of the evaluation. You may type the score (1 to 5) instead, or Done.',''],
+    ['RESULT/RECOMMENDATION','ev_'+m.k+'_rec','evrec','Continue probation, Recommended for regularization or Not recommended.','']]),
+  ['RECOMMENDATION','','skip',IMP_CALC,''],
+  ['EMPLOYMENT STATUS','employmentType','pickfree','Blank = Probationary','Probationary',0,EMP_TYPES],
+  ['BIOMETRIC ID NO.','biometricId','id','','1023'],
+  ['POSITION','position','text','','Production Operator'],
+  ['DEPARTMENT/SECTION','department','text','','Production'],
   ['DATE OF BIRTH','birthDate','date','','1998-03-15'],
   ['PLACE OF BIRTH','birthPlace','text','','Antipolo City'],
-  ['CIVIL STATUS','civilStatus','pick','','Single',0,['Single','Married','Widowed','Separated']],
+  ['CIVIL STATUS','civilStatus','pickfree','','Single',0,['Single','Married','Widowed','Separated']],
   ['NATIONALITY','nationality','text','Blank = Filipino','Filipino'],
   ['RELIGION','religion','text','','Roman Catholic'],
-  ['EMPLOYEE CONTACT NUMBER','mobile','id','','0917 123 4567'],
-  ['EMAIL','email','text','','juan@example.com'],
-  ['NO. OF DEPENDENTS','dependents','int','','0'],
-  ['PRESENT ADDRESS','address','addr','House no. and street, Barangay, City / Municipality, Province. Separate with commas.','123 Rizal St., Brgy. San Roque, Antipolo City, Rizal'],
+  ['PRESENT ADDRESS','address','addr','House no. and street, Barangay, City / Municipality, Province, separated by commas.','123 Rizal St., Brgy. San Roque, Antipolo City, Rizal'],
   ['PERMANENT ADDRESS','permanentAddress','addr','Same format. Blank = same as present address.',''],
-  ['EDUCATIONAL ATTAINMENT','education','pick','','High school graduate',0,['Elementary graduate','High school graduate','Senior high school graduate','Vocational / TESDA','College level','College graduate','Post-graduate']],
+  ['EMPLOYEE CONTACT NUMBER','mobile','id','','0917 123 4567'],
+  ['EDUCATIONAL ATTAINMENT','education','pickfree','','High school graduate',0,['Elementary graduate','High school graduate','Senior high school graduate','Vocational / TESDA','College level','College graduate','Post-graduate']],
   ['SCHOOL GRADUATED','school','text','','San Roque National High School'],
   ['COURSE','course','text','Course or strand','TVL - ICT'],
-  ['SITE','client','client','The client company. Use the full name or the site code.','Sanno Philippines Manufacturing Corporation',1],
-  ['BIOMETRIC ID NO.','biometricId','id','','1023'],
-  ['POSITION','position','text','','Production Operator',1],
-  ['DEPARTMENT/SECTION','department','text','','Production',1],
-  ['PLANT / BRANCH / AREA','site','text','','Plant 2'],
-  ['EMPLOYMENT STATUS','employmentType','pick','Blank = Probationary','Probationary',0,EMP_TYPES],
-  ['DATE HIRED','hireDate','date','','2026-10-01',1],
-  ['DATE OF REGULARIZATION','regularizedOn','date','Leave blank while on probation.',''],
-  ['SHIFT START','shiftStart','time','Only if the employee has their own schedule, e.g. 8:00 AM',''],
-  ['SHIFT END','shiftEnd','time','',''],
+  ['CONTACT PERSON','emergencyName','text','Emergency contact','Maria Dela Cruz'],
+  ['CONTACT NUMBER','emergencyPhone','id','','0918 765 4321'],
+  ['RELATIONSHIP','emergencyRelation','text','','Mother'],
+  ['SSS','sss','id','','34-1234567-8'],
+  ['TIN','tin','id','','123-456-789-000'],
+  ['PHIC','philhealth','id','PhilHealth no.','12-345678901-2'],
+  ['HDMF','pagibig','id','Pag-IBIG MID no.','1234-5678-9012'],
+  ['HDMF TRACKING NUMBER','hdmfTracking','id','',''],
+  ['DATE OF MEDICAL','medicalDate','date','',''],
+  ['ACCREDITED CLINIC/HOSPITAL','medicalClinic','text','',''],
+  ['MEDICAL RESULT','medicalResult','pickfree','','Fit to work',0,['Fit to work','Fit to work with findings','Pending','Unfit to work']],
+  ['COVID VACCINATION CARD','doc_covid','doc','',''],
+  ['APPLICATION FORM','doc_application','doc','',''],
+  ['EXAM RESULT','doc_exam','doc','',''],
+  ['ID PICTURES','doc_photo','doc','',''],
+  ['BRGY. CLEARANCE','doc_brgy','doc','',''],
+  ['POLICE/ NBI','doc_police','doc','Type NBI, Police or Both if you know which one was submitted.',''],
+  ['BIRTH CERTIFICATE','doc_psa','doc','',''],
+  ['MARRIAGE CONTRACT','doc_marriage','doc','',''],
+  ["DEPENDENT'S BIRTH CERTIFICATE",'doc_dependents','doc','',''],
   ['PROBATIONARY CONTRACT CONTROL NO.','probContractNo','id','',''],
   ['REGULARIZATION CONTRACT CONTROL NO.','regContractNo','id','',''],
+  ['201 FILE  (W/ OR W/O)','','skip',IMP_CALC+' (from the requirements)',''],
   ['COMPANY ORIENTATION DATE','companyOrientation','date','',''],
   ['CLIENT ORIENTATION DATE','clientOrientation','date','',''],
   ['CLIENT MR CTRL NO.','clientMrNo','id','',''],
@@ -1491,41 +1514,30 @@ const IMP_COLS=[
   ['DAILY SALARY','dailySalary','num','Numbers only, no ₱ sign','645'],
   ['MONTHLY SALARY','monthlySalary','num','Blank = daily salary × 26 when a daily salary is given',''],
   ['OTHER ALLOWANCE','allowance','num','',''],
-  ['ALLOWANCE DETAILS','allowanceNote','text','','Rice, transportation'],
-  ['DATE OF MEDICAL','medicalDate','date','',''],
-  ['ACCREDITED CLINIC/HOSPITAL','medicalClinic','text','',''],
-  ['MEDICAL RESULT','medicalResult','pick','','Fit to work',0,['Fit to work','Fit to work with findings','Pending','Unfit to work']],
-  ['STATUS','status','pick','Blank = Active','Active',0,EMP_STATUS],
-  ['REASON OF SEPARATION','separationReason','pick','Required when STATUS is Separated','',0,SEP_REASONS],
   ['LAST WORKING DAY','lastWorkingDay','date','',''],
-  ['DATE SEPARATED','separationDate','date','Required when STATUS is Separated',''],
-  ['SEPARATION DETAILS','separationDetails','text','Required when the reason is Other',''],
-  ['ELIGIBLE FOR REHIRE','rehireEligible','pick','','',0,['Yes','No']],
-  ['BLOCKLIST REASON','blocklistReason','pick','Required when STATUS is Blocklisted','',0,BL_REASONS],
-  ['BLOCKLIST DATE','blocklistDate','date','Blank = today',''],
-  ['BLOCKLIST DETAILS','blocklistDetails','text','Required when STATUS is Blocklisted',''],
-  ['SSS','sss','id','','34-1234567-8'],
-  ['TIN','tin','id','','123-456-789-000'],
-  ['PHIC','philhealth','id','PhilHealth no.','12-345678901-2'],
-  ['HDMF','pagibig','id','Pag-IBIG MID no.','1234-5678-9012'],
-  ['HDMF TRACKING NUMBER','hdmfTracking','id','',''],
-  ['CONTACT PERSON','emergencyName','text','Emergency contact','Maria Dela Cruz'],
-  ['CONTACT NUMBER','emergencyPhone','id','','0918 765 4321'],
-  ['RELATIONSHIP','emergencyRelation','text','','Mother'],
-  ['ACCOUNT NAME','bankAccountName','text',`${BANK} account name`,'Juan S. Dela Cruz'],
-  ['AUB ACCOUNT NO.','bankAccountNo','id','Digits only, 10 to 16 digits. Attach the photo of the card later in the 201 file.',''],
-  ['SOLO PARENT','soloParent','yes','Yes or blank',''],
-  ['SOLO PARENT ID NO.','soloParentId','id','',''],
-  ['SOLO PARENT ID VALID UNTIL','soloParentValidUntil','date','',''],
-  ['NO. OF DEPENDENT CHILDREN','soloChildren','int','For solo parents',''],
-  ...DOCS.map(([k,l])=>[l.toUpperCase(),'doc_'+k,'yes','201 requirement: Yes if already submitted','']),
+  ['DATE SEPARATED','separationDate','date','',''],
+  ['REASON OF SEPARATION','separationReason','sepreason','e.g. Resigned, End of Contract, AWOL. Other reasons are kept as typed.',''],
 ];
+const IMP_TPL=IMP_COLS.length;
+/* Also understood when HR adds these columns (they are in the 201 form and the full export) */
+IMP_COLS.push(
+  ['SUFFIX','suffix','text'],['SEX','gender','pick','','',0,['Male','Female']],['EMAIL','email','text'],['NO. OF DEPENDENTS','dependents','int'],
+  ['PLANT / BRANCH / AREA','site','text'],['SHIFT START','shiftStart','time'],['SHIFT END','shiftEnd','time'],['ALLOWANCE DETAILS','allowanceNote','text'],
+  ['SEPARATION DETAILS','separationDetails','text'],['ELIGIBLE FOR REHIRE','rehireEligible','pick','','',0,['Yes','No']],
+  ['BLOCKLIST REASON','blocklistReason','pick','','',0,BL_REASONS],['BLOCKLIST DATE','blocklistDate','date'],['BLOCKLIST DETAILS','blocklistDetails','text'],
+  ['ACCOUNT NAME','bankAccountName','text'],['AUB ACCOUNT NO.','bankAccountNo','id'],
+  ['SOLO PARENT','soloParent','yes'],['SOLO PARENT ID NO.','soloParentId','id'],['SOLO PARENT ID VALID UNTIL','soloParentValidUntil','date'],['NO. OF DEPENDENT CHILDREN','soloChildren','int'],
+  ...DOCS.filter(([k])=>!IMP_COLS.some(c=>c[1]==='doc_'+k)).map(([k,l])=>[l.toUpperCase(),'doc_'+k,'doc']));
 const impKey=s=>String(s==null?'':s).toUpperCase().replace(/\(.*?\)/g,'').replace(/[^A-Z0-9]/g,'');
-/* Other header spellings HR may use (and the old export headers) */
+/* Other header spellings HR may use */
 const IMP_ALIAS={EMPLOYEENO:'empNo',EMPNO:'empNo',IDNO:'empNo',CLIENT:'client',CLIENTCOMPANY:'client',SITECLIENT:'client',GENDER:'gender',BIRTHDATE:'birthDate',BIRTHDAY:'birthDate',
   MOBILE:'mobile',CONTACTNO:'mobile',MOBILENUMBER:'mobile',PHILHEALTH:'philhealth',PAGIBIG:'pagibig',PAGIBIGMIDNO:'pagibig',SSSNO:'sss',DEPARTMENT:'department',SECTION:'department',
   COURSESTRAND:'course',EMPLOYMENTTYPE:'employmentType',EMERGENCYCONTACT:'emergencyName',AUBACCOUNTNAME:'bankAccountName',ACCOUNTNO:'bankAccountNo',AUBACCOUNTNUMBER:'bankAccountNo',
-  PLANTBRANCHAREA:'site',ALLOWANCE:'allowance',SEX:'gender',REASONFORSEPARATION:'separationReason'};
+  ALLOWANCE:'allowance',REASONFORSEPARATION:'separationReason',BARANGAYCLEARANCE:'doc_brgy',POLICENBI:'doc_police',PSA:'doc_psa',DEPENDENTSBIRTHCERTIFICATE:'doc_dependents'};
+const IMP_TYPE_ALIAS={PROBI:'Probationary',PROB:'Probationary',REG:'Regular',CONTRACT:'Contractual',PROJECT:'Project-based',PROJECTBASED:'Project-based'};
+const IMP_CIVIL={S:'Single',M:'Married',W:'Widowed',WIDOW:'Widowed',WIDOWER:'Widowed'};
+const IMP_SEP={EOC:'End of Contract',ENDOFCONTRACT:'End of Contract',CONTRACTENDED:'End of Contract',EOP:'End of Probationary Employment',EOPE:'End of Probationary Employment',ENDOFPROBI:'End of Probationary Employment',
+  RESIGN:'Resigned',RESIGNED:'Resigned',TERMINATED:'Terminated (just cause)',AWOL:'AWOL / Abandonment of work',ABSCONDED:'AWOL / Abandonment of work',RETIRED:'Retired',DECEASED:'Deceased',DIED:'Deceased'};
 /* Excel serial date or typed text → YYYY-MM-DD. Slashes are read as month/day/year unless the first number is over 12. */
 function impDate(v,X){
   if(v===''||v==null)return'';
@@ -1545,37 +1557,65 @@ function impTime(v){
 }
 function impPick(v,list){
   const k=impKey(v);if(!k)return'';
-  return list.find(x=>impKey(x)===k)||list.find(x=>impKey(x).startsWith(k)&&k.length>=3)||null;
+  return list.find(x=>impKey(x)===k)||(k.length>=3&&list.find(x=>impKey(x).startsWith(k)))||(k.length>=4&&list.find(x=>impKey(x).includes(k)))||null;
 }
 function impClient(v){
   const k=impKey(v);if(!k)return'';
-  return CLIENTS.find(c=>impKey(c)===k||impKey(siteCode(c))===k)||CLIENTS.find(c=>impKey(c).startsWith(k)&&k.length>=4)||null;
+  return CLIENTS.find(c=>impKey(c)===k||impKey(siteCode(c))===k)||(k.length>=4&&CLIENTS.find(c=>impKey(c).startsWith(k)))||null;
 }
-/* Reads the workbook into rows of {row, vals:{key:value}, errs:[]} */
+function impStatus(v){
+  const k=impKey(v);if(!k)return null;
+  if(/^(ACTIVE|EMPLOYED|DEPLOYED|ONDUTY|PROBATIONARY|PROBI|REGULAR|CONTRACTUAL)$/.test(k))return{status:'Active'};
+  if(/BLOCKLIST|BLACKLIST|BANNED/.test(k))return{status:'Blocklisted'};
+  if(/^(SEPARATED|INACTIVE|SEPARATION)$/.test(k))return{status:'Separated'};
+  const r=impSep(v);return r?{status:'Separated',reason:r}:null;
+}
+function impSep(v){const k=impKey(v);return IMP_SEP[k]||impPick(v,SEP_REASONS)||(/RESIGN/.test(k)?'Resigned':/TERMINAT|DISMISS/.test(k)?'Terminated (just cause)':/ENDOFCONTRACT|EOC/.test(k)?'End of Contract':null)}
+function impRec(v){
+  const k=impKey(v);if(!k)return'';
+  return /NOT|FAIL|TERMINAT|ENDOF/.test(k)?'Not recommended':/REGULAR|PASS/.test(k)?'Recommended for regularization':/CONTINU|PROB|EXTEN/.test(k)?'Continue probation':String(v).trim();
+}
+/* Requirement cells: anything except blank, No, None, N/A, Missing, Pending, W/O, X or - counts as submitted */
+const impHas=v=>!/^(no|none|n\/?a|missing|pending|lacking|incomplete|without|w\/?o|x|0|-+|false)$/i.test(String(v).trim());
+/* Reads the workbook into rows of {row, vals:{key:value}, errs:[], warn:[]} */
 function impParse(X,wb){
-  const name=wb.SheetNames.find(n=>/employee|201/i.test(n)&&!/instruction/i.test(n))||wb.SheetNames[0];
+  const name=wb.SheetNames.find(n=>/employee|201|masterlist/i.test(n)&&!/instruction/i.test(n))||wb.SheetNames[0];
   const aoa=X.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''});
-  const byHead={};IMP_COLS.forEach(c=>byHead[impKey(c[0])]=c);
+  const byHead={};IMP_COLS.forEach(c=>{const k=impKey(c[0]);if(!byHead[k])byHead[k]=c});
   const hi=aoa.slice(0,10).findIndex(r=>r.some(c=>impKey(c)==='FIRSTNAME'));
   if(hi<0)return{err:`The sheet “${name}” has no FIRST NAME column. Use the HRIS template.`};
-  const map=aoa[hi].map(h=>{const k=impKey(String(h).replace(/\*/g,''));const c=byHead[k]||IMP_COLS.find(x=>x[1]===IMP_ALIAS[k]);return c||null});
+  /* RESULT/RECOMMENDATION appears three times: each belongs to the evaluation column before it */
+  let lastEv=null;
+  const map=aoa[hi].map(h=>{const k=impKey(String(h).replace(/\*/g,''));
+    if(/^RESULTRECOMMENDATION/.test(k))return lastEv?IMP_COLS.find(c=>c[1]===lastEv+'_rec'):null;
+    const c=byHead[k]||IMP_COLS.find(x=>x[1]===IMP_ALIAS[k])||null;if(c&&c[2]==='eval')lastEv=c[1];return c});
   const rows=[];
   aoa.slice(hi+1).forEach((r,i)=>{
     if(!r.some(c=>String(c).trim()))return;
-    const vals={},errs=[];
-    map.forEach((c,j)=>{if(!c)return;const[head,key,kind,,,,opts]=c;let v=r[j];if(v===''||v==null)return;
+    const vals={},errs=[],warn=[];
+    map.forEach((c,j)=>{if(!c||c[2]==='skip')return;const[head,key,kind,,,,opts]=c;let v=r[j];if(v===''||v==null||String(v).trim()==='')return;
       let out;
       if(kind==='date'){out=impDate(v,X);if(out===null){errs.push(`${head}: “${v}” is not a date`);return}}
       else if(kind==='time'){out=impTime(v);if(out===null){errs.push(`${head}: “${v}” is not a time`);return}}
-      else if(kind==='num'){out=typeof v==='number'?v:parseFloat(String(v).replace(/[₱,\s]/g,''));if(isNaN(out)||out<0){errs.push(`${head}: “${v}” is not an amount`);return}out=String(Math.round(out*100)/100)}
+      else if(kind==='num'){out=typeof v==='number'?v:parseFloat(String(v).replace(/[₱,\s]|php/gi,''));if(isNaN(out)||out<0){errs.push(`${head}: “${v}” is not an amount`);return}out=String(Math.round(out*100)/100)}
       else if(kind==='int'){out=parseInt(String(v).trim(),10);if(isNaN(out)||out<0){errs.push(`${head}: “${v}” is not a number`);return}out=String(out)}
-      else if(kind==='pick'){out=key==='gender'?IMP_SEX[impKey(v)]||impPick(v,opts):impPick(v,opts);if(!out){errs.push(`${head}: “${v}” is not one of ${opts.join(', ')}`);return}}
-      else if(kind==='client'){out=impClient(v);if(!out){errs.push(`SITE: “${v}” is not a client company in the HRIS`);return}}
-      else if(kind==='yes'){out=/^(y|yes|oo|true|1|✓|x|submitted|w\/)$/i.test(String(v).trim())}
-      else{out=String(v).trim();if(kind==='id'&&typeof v==='number'){out=String(v);if(key==='mobile'||key==='emergencyPhone'){if(/^9\d{9}$/.test(out))out='0'+out}}}
+      else if(kind==='pick'||kind==='pickfree'){const k=impKey(v);
+        out=key==='gender'?IMP_SEX[k]:key==='civilStatus'?IMP_CIVIL[k]:key==='employmentType'?IMP_TYPE_ALIAS[k]:null;out=out||impPick(v,opts);
+        if(!out){if(kind==='pickfree'){out=String(v).trim();warn.push(`${head} kept as typed: “${out}”`)}else{errs.push(`${head}: “${v}” is not one of ${opts.join(', ')}`);return}}}
+      else if(kind==='client'){out=impClient(v);if(!out){out=String(v).trim();warn.push(`SITE “${out}” is not in the client list; saved as typed`)}}
+      else if(kind==='status'){const s=impStatus(v);if(!s){errs.push(`STATUS: “${v}” should be Active, Separated or Blocklisted`);return}out=s.status;if(s.reason)vals._stReason=s.reason}
+      else if(kind==='sepreason'){out=impSep(v);if(!out){out='Other';vals.separationDetails=vals.separationDetails||String(v).trim()}}
+      else if(kind==='eval'){
+        if(typeof v==='number'&&v>=1&&v<=5)out={rating:String(Math.round(v*100)/100)};
+        else if(typeof v==='string'&&/^\d(\.\d+)?$/.test(v.trim())&&+v>=1&&+v<=5)out={rating:v.trim()};
+        else{const d=impDate(v,X);out=d?{date:d}:{note:String(v).trim()}}}
+      else if(kind==='evrec')out=impRec(v);
+      else if(kind==='yes')out=/^(y|yes|oo|true|1|✓|✔|\/)$/i.test(String(v).trim());
+      else if(kind==='doc'){out=impHas(v);if(out&&key==='doc_police'){const t=String(v).toUpperCase();vals.doc_nbi=/NBI|BOTH/.test(t);out=/POLICE|BOTH/.test(t)||!/NBI/.test(t)}}
+      else{out=String(v).trim();if(kind==='id'&&typeof v==='number'){out=String(v);if((key==='mobile'||key==='emergencyPhone')&&/^9\d{9}$/.test(out))out='0'+out}}
       vals[key]=out});
     if(vals.bankAccountNo!=null){vals.bankAccountNo=String(vals.bankAccountNo).replace(/[\s-]/g,'');if(!/^\d{10,16}$/.test(vals.bankAccountNo)){errs.push('AUB ACCOUNT NO.: use 10 to 16 digits only');delete vals.bankAccountNo}}
-    rows.push({row:hi+i+2,vals,errs});
+    rows.push({row:hi+i+2,vals,errs,warn});
   });
   return{rows,sheet:name};
 }
@@ -1585,32 +1625,44 @@ function impPlan(parsed){
   const byNo={};S.employees.forEach(e=>{if(e.empNo)byNo[n(e.empNo)]=e});
   const byName={};S.employees.forEach(e=>{byName[[n(e.firstName),n(e.lastName),e.birthDate||''].join('|')]=e});
   let seq=nextSeq();const seen={};
-  return parsed.rows.map(r=>{
-    const v=r.vals,errs=r.errs.slice(),warn=[];
+  const plan=parsed.rows.map(r=>{
+    const v=r.vals,errs=r.errs.slice(),warn=r.warn.slice();
     const ex=(v.empNo&&byNo[n(v.empNo)])||(v.firstName&&v.lastName&&v.birthDate&&byName[[n(v.firstName),n(v.lastName),v.birthDate].join('|')])||null;
     const o=ex?clone(ex):{id:uid(),evals:{},docs:{},nationality:'Filipino',employmentType:'Probationary',status:'Active'};
-    IMP_COLS.forEach(([,k,kind])=>{if(v[k]===undefined||kind==='addr'||kind==='yes'||k.startsWith('bank'))return;o[k]=v[k]});
-    if(!ex)['firstName','lastName','client','position','department','hireDate'].forEach(k=>{if(!o[k]){const c=IMP_COLS.find(x=>x[1]===k);errs.push(`${c[0]} is required`)}});
+    const plain=['text','id','date','time','num','int','pick','pickfree','client','status','sepreason'];
+    IMP_COLS.forEach(([,k,kind])=>{if(v[k]===undefined||!plain.includes(kind)||k.startsWith('bank'))return;o[k]=v[k]});
+    if(!ex)[['firstName','FIRST NAME'],['lastName','LAST NAME'],['client','SITE'],['hireDate','DATE HIRED']].forEach(([k,h])=>{if(!o[k])errs.push(`${h} is required`)});
+    if(!errs.length)[['position','POSITION'],['department','DEPARTMENT/SECTION']].forEach(([k,h])=>{if(!o[k])warn.push(`No ${h}`)});
     if(v.dailySalary&&!v.monthlySalary&&!(ex&&ex.monthlySalary))o.monthlySalary=(Math.round(+v.dailySalary*26*100)/100).toFixed(2);
     if(v.address!==undefined){o.address=v.address;o.addr=null;if(v.permanentAddress===undefined&&(!ex||!ex.permanentAddress)){o.permanentAddress=v.address;o.permAddr=null}}
     if(v.permanentAddress!==undefined){o.permanentAddress=v.permanentAddress;o.permAddr=null}
     if(v.soloParent!==undefined)o.soloParent=v.soloParent;
     o.docs=o.docs||{};DOCS.forEach(([k])=>{if(v['doc_'+k])o.docs[k]=true});
+    /* Evaluations: a date, a score, or both with the result. Without a date the due date is used. */
+    MS.forEach(m=>{const a=v['ev_'+m.k],rec=v['ev_'+m.k+'_rec'];if(!a&&!rec)return;
+      if(!o.hireDate){warn.push(`${m.label} evaluation skipped: no DATE HIRED`);return}
+      const prev=(o.evals&&o.evals[m.k])||{};if(prev.final!=null)return;
+      o.evals=o.evals||{};o.evals[m.k]={...prev,date:(a&&a.date)||prev.date||addMonths(o.hireDate,m.n),rating:(a&&a.rating)||prev.rating||'',recommendation:rec||prev.recommendation||'',remarks:(a&&a.note)||prev.remarks||'',imported:true,recordedBy:MEID}});
     if(v.bankAccountNo!==undefined||v.bankAccountName!==undefined){const b=o.bank||{proof:[]};const acct=v.bankAccountNo!==undefined?v.bankAccountNo:b.accountNo;
       const same=acct===b.accountNo;o.bank={...b,bank:BANK,accountName:v.bankAccountName!==undefined?v.bankAccountName:(b.accountName||''),accountNo:acct||'',proof:b.proof||[],...(same?{}:{verified:false,mismatch:false,verifiedAt:'',verifiedBy:null,checkNote:''})};
       if(!o.bank.accountNo&&!o.bank.proof.length)delete o.bank}
+    if(v._stReason&&!v.separationReason)o.separationReason=v._stReason;
+    if((v.separationReason||v.separationDate||v.lastWorkingDay)&&v.status===undefined&&empStatus(o)==='Active')o.status='Separated';
     const st=empStatus(o);
-    if(st==='Separated'){if(!o.separationReason)errs.push('REASON OF SEPARATION is required when STATUS is Separated');if(!o.separationDate)errs.push('DATE SEPARATED is required when STATUS is Separated');if(o.separationReason==='Other'&&!o.separationDetails)errs.push('SEPARATION DETAILS is required when the reason is Other')}
-    if(st==='Blocklisted'){if(!o.blocklistReason)errs.push('BLOCKLIST REASON is required when STATUS is Blocklisted');if(!o.blocklistDetails)errs.push('BLOCKLIST DETAILS is required when STATUS is Blocklisted');o.blocklistDate=o.blocklistDate||today();o.rehireEligible='No'}
-    const before=ex?empStatus(ex):'Active';const reason=st==='Separated'?o.separationReason:st==='Blocklisted'?o.blocklistReason:'';
-    if(st!=='Active'&&(before!==st||reason!==(ex?(before==='Separated'?sepReason(ex):ex.blocklistReason||''):'')))o.statusHistory=(o.statusHistory||[]).concat([{status:st,reason,details:st==='Separated'?o.separationDetails:o.blocklistDetails,date:st==='Separated'?o.separationDate:o.blocklistDate,at:new Date().toISOString(),by:MEID,via:'Excel import'}]);
-    if(!ex&&!errs.length){if(!o.empNo)o.empNo=makeEmpId(o.client,o.hireDate,seq++);else{const m=ID_RE.exec(o.empNo);if(m)seq=Math.max(seq,+m[1]+1)}}
-    if(o.empNo){const k=n(o.empNo);if(seen[k])errs.push(`ID NUMBER ${o.empNo} is also on row ${seen[k]}`);else seen[k]=r.row;
-      const other=byNo[k];if(!errs.length&&other&&ex&&other.id!==ex.id)errs.push(`ID NUMBER ${o.empNo} already belongs to ${fullName(other)}`)}
-    if(!ex){const bl=blocklistMatch(o.firstName,o.lastName,o.birthDate,null);if(bl)warn.push(`Same name as blocklisted ${fullName(bl)} (${bl.empNo})`)}
-    if(o.bank&&o.bank.accountNo&&!(o.bank.proof||[]).length)warn.push('AUB account has no photo yet');
+    if(st==='Separated'){if(!o.separationReason)warn.push('Separated with no REASON OF SEPARATION');if(!o.separationDate){if(o.lastWorkingDay)o.separationDate=o.lastWorkingDay;else warn.push('Separated with no DATE SEPARATED')}}
+    if(st==='Blocklisted'){if(!o.blocklistReason)warn.push('Blocklisted with no reason');o.blocklistDate=o.blocklistDate||today();o.rehireEligible='No'}
+    const before=ex?empStatus(ex):'Active';const reason=st==='Separated'?o.separationReason||'':st==='Blocklisted'?o.blocklistReason||'':'';
+    if(st!=='Active'&&(before!==st||reason!==(ex?(before==='Separated'?sepReason(ex):ex.blocklistReason||''):'')))o.statusHistory=(o.statusHistory||[]).concat([{status:st,reason,details:(st==='Separated'?o.separationDetails:o.blocklistDetails)||'',date:(st==='Separated'?o.separationDate:o.blocklistDate)||'',at:new Date().toISOString(),by:MEID,via:'Excel import'}]);
+    if(!ex&&!errs.length&&o.empNo){const m=ID_RE.exec(o.empNo);if(m)seq=Math.max(seq,+m[1]+1)}
     return{row:r.row,o,ex,errs,warn};
   });
+  /* New employees without an ID number get the next numbers after every ID in the HRIS and in the file */
+  plan.forEach(p=>{if(!p.ex&&!p.errs.length&&!p.o.empNo)p.o.empNo=makeEmpId(p.o.client,p.o.hireDate,seq++)});
+  plan.forEach(p=>{if(!p.o.empNo||p.errs.length)return;const k=n(p.o.empNo);
+    if(seen[k])p.errs.push(`ID NUMBER ${p.o.empNo} is also on row ${seen[k]}`);else seen[k]=p.row;
+    const other=byNo[k];if(other&&p.ex&&other.id!==p.ex.id)p.errs.push(`ID NUMBER ${p.o.empNo} already belongs to ${fullName(other)}`)});
+  plan.forEach(p=>{if(p.ex||p.errs.length)return;const bl=blocklistMatch(p.o.firstName,p.o.lastName,p.o.birthDate,null);if(bl)p.warn.push(`Same name as blocklisted ${fullName(bl)} (${bl.empNo})`)});
+  return plan;
 }
 async function impAddresses(plan){
   let M=null;try{M=await loadAddr()}catch(err){return}
@@ -1620,25 +1672,26 @@ async function impAddresses(plan){
 }
 async function templateBlob(){
   const X=await loadXLSX();
-  const head=IMP_COLS.map(c=>c[0]+(c[5]?' *':''));
-  const ws=X.utils.aoa_to_sheet([head]);
+  const cols=IMP_COLS.slice(0,IMP_TPL);
+  const ws=X.utils.aoa_to_sheet([cols.map(c=>c[0]+(c[5]?' *':''))]);
   /* ID, phone and account columns are formatted as Text so Excel keeps leading zeros and long numbers */
-  IMP_COLS.forEach((c,j)=>{if(c[2]!=='id')return;for(let r=1;r<=1000;r++)ws[X.utils.encode_cell({r,c:j})]={t:'s',v:'',z:'@'}});
-  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:1000,c:IMP_COLS.length-1}});
-  ws['!cols']=IMP_COLS.map(c=>({wch:Math.max(14,Math.min(40,c[0].length+4,String(c[4]).length+2))}));
-  const opt=c=>c[6]?c[6].join(' / '):c[2]==='client'?CLIENTS.map(x=>`${x} (${siteCode(x)})`).join(' / '):c[2]==='yes'?'Yes, or leave blank':'';
-  const kind={id:'Text',text:'Text',date:'Date: 2026-10-01 or 10/01/2026',time:'Time: 8:00 AM',num:'Amount',int:'Whole number',pick:'Choose one',client:'Choose one',yes:'Yes or blank',addr:'Text'};
+  cols.forEach((c,j)=>{if(c[2]!=='id')return;for(let r=1;r<=1000;r++)ws[X.utils.encode_cell({r,c:j})]={t:'s',v:'',z:'@'}});
+  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:1000,c:cols.length-1}});
+  ws['!cols']=cols.map(c=>({wch:Math.max(14,Math.min(40,c[0].length+4))}));
+  const opt=c=>c[6]?c[6].join(' / '):c[2]==='client'?CLIENTS.map(x=>`${x} (${siteCode(x)})`).join(' / '):c[2]==='doc'?'Yes, Submitted or ✓ if submitted. Blank, No or N/A if not.':c[2]==='status'?EMP_STATUS.join(' / '):c[2]==='evrec'?RECS.join(' / '):c[2]==='sepreason'?SEP_REASONS.join(' / '):'';
+  const kind={id:'Text',text:'Text',date:'Date: 2026-10-01 or 10/01/2026',time:'Time: 8:00 AM',num:'Amount',int:'Whole number',pick:'Choose one',pickfree:'Choose one',client:'Choose one',status:'Choose one',sepreason:'Choose one',eval:'Date or score',evrec:'Choose one',doc:'Requirement',addr:'Text',skip:'Not imported'};
   const ins=[['How to use this template'],
-    ['1. Type one employee per row in the “Employees” sheet, starting on row 2. Do not change the headings in row 1.'],
-    ['2. Columns marked * are required for new employees: LAST NAME, FIRST NAME, SITE, POSITION, DEPARTMENT/SECTION and DATE HIRED.'],
+    ['1. The columns are the same as the GBMA 201 masterlist, in the same order. You can copy the rows of your existing masterlist and paste them under row 1 (Paste Special › Values).'],
+    ['2. Columns marked * are required for new employees: LAST NAME, FIRST NAME, SITE and DATE HIRED.'],
     ['3. Leave a cell blank if you do not have the detail yet. Blank cells never erase what is already saved in the HRIS.'],
-    ['4. Leave ID NUMBER blank for new employees. The HRIS creates it from the site and the date hired.'],
-    ['5. To update employees already in the HRIS, fill in their ID NUMBER. Rows with the same first name, last name and date of birth are also treated as the same person.'],
-    ['6. Save the file, then in the HRIS go to 201 Files › Import from Excel and choose the file. You will see a preview before anything is saved.'],
-    ['7. Scanned documents and the photo of the AUB card cannot go in Excel. Attach them later in each 201 file.'],
+    ['4. Keep each employee’s existing ID NUMBER. Leave it blank only for new employees; the HRIS creates it from the site and the date hired.'],
+    ['5. Importing the same file again updates the same employees, matched by ID NUMBER (or by first name, last name and date of birth). It does not make duplicates.'],
+    ['6. In the HRIS go to 201 Files › Import from Excel and choose the file. You will see a preview before anything is saved.'],
+    ['7. Scanned documents cannot go in Excel. Attach them later in each 201 file.'],
     [],
     ['Column','Required','What to enter','Example','Allowed values']]
-    .concat(IMP_COLS.map(c=>[c[0],c[5]?'Yes':'',[kind[c[2]],c[3]].filter(Boolean).join('. '),c[4],opt(c)]));
+    .concat(cols.map(c=>[c[0],c[5]?'Yes':'',[kind[c[2]],c[3]].filter(Boolean).join('. '),c[4],opt(c)]))
+    .concat([[],['Optional extra columns'],['You may also add any of these columns at the end of the Employees sheet:'],[IMP_COLS.slice(IMP_TPL).map(c=>c[0]).join(', ')]]);
   const wi=X.utils.aoa_to_sheet(ins);wi['!cols']=[{wch:38},{wch:9},{wch:70},{wch:34},{wch:80}];
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Employees');X.utils.book_append_sheet(wb,wi,'Instructions');
   wb.Props={Title:'201 File Import Template',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
@@ -2082,7 +2135,7 @@ const r2=v=>Math.round(v*100)/100;
 function evalSummary(rec){
   if(!rec||!rec.date)return'';
   if(rec.final!=null)return`Final <b>${rec.final.toFixed(2)}</b> · ${scoreLabel(rec.final)} <span style="color:var(--muted)">(Client ${Number(rec.client.avg).toFixed(2)} + HR ${Number(rec.hr.avg).toFixed(2)})</span>`;
-  return`Rating <b>${esc(rec.rating)}/5</b>`;
+  return rec.rating?`Rating <b>${esc(rec.rating)}/5</b>`:'Done';
 }
 function evalForm(id,k){
   const e=EMP[id];const m=MS.find(x=>x.k===k);const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
@@ -2146,7 +2199,7 @@ function evalForm(id,k){
 function regularizeForm(id){
   const e=EMP[id];const ms=milestones(e);const missing=ms.items.filter(x=>x.state!=='done');
   const last=e.evals&&e.evals.m5;const notRec=last&&last.recommendation==='Not recommended';
-  openModal({title:'Regularize Employee',body:`<dl class="summary"><dt>Employee</dt><dd>${esc(fullName(e))}</dd><dt>Date hired</dt><dd>${fmt(e.hireDate)}</dd><dt>6th month</dt><dd>${fmt(ms.reg.due)}</dd><dt>Evaluations</dt><dd>${ms.items.map(x=>`${x.short}: ${x.state==='done'?(x.rec.final!=null?x.rec.final.toFixed(2)+' '+scoreLabel(x.rec.final):esc(x.rec.rating)+'/5'):'Not done'}`).join(' · ')}</dd></dl>
+  openModal({title:'Regularize Employee',body:`<dl class="summary"><dt>Employee</dt><dd>${esc(fullName(e))}</dd><dt>Date hired</dt><dd>${fmt(e.hireDate)}</dd><dt>6th month</dt><dd>${fmt(ms.reg.due)}</dd><dt>Evaluations</dt><dd>${ms.items.map(x=>`${x.short}: ${x.state==='done'?(x.rec.final!=null?x.rec.final.toFixed(2)+' '+scoreLabel(x.rec.final):x.rec.rating?esc(x.rec.rating)+'/5':'Done'):'Not done'}`).join(' · ')}</dd></dl>
     ${missing.length?`<div class="formerr" role="alert">${missing.map(x=>x.label).join(', ')} evaluation${missing.length>1?'s are':' is'} not recorded yet. You can still regularize, but record them first to keep the 201 file complete.</div>`:''}
     ${notRec?`<div class="formerr" role="alert">The 5th month evaluation says “Not recommended”.</div>`:''}
     ${field({id:'rg-date',name:'date',label:'Effective date of regularization',type:'date',req:1,value:ms.reg.due})}
@@ -2519,7 +2572,7 @@ function renderDrawer(){
   let body='';
   if(drawerTab==='overview'){
     const dk=(l,v)=>kv(l,v?fmt(v):'');const peso=v=>v===''||v==null?'':'₱'+Number(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const evT=k=>{const r=e.evals&&e.evals[k];return r&&r.date?`${fmt(r.date)} · ${r.final!=null?r.final.toFixed(2)+' '+scoreLabel(r.final):'Rating '+r.rating}`:(e.hireDate?'Due '+fmt(addMonths(e.hireDate,MS.find(m=>m.k===k).n)):'')};
+    const evT=k=>{const r=e.evals&&e.evals[k];return r&&r.date?`${fmt(r.date)} · ${r.final!=null?r.final.toFixed(2)+' '+scoreLabel(r.final):r.rating?'Rating '+r.rating:'Done'}`:(e.hireDate?'Due '+fmt(addMonths(e.hireDate,MS.find(m=>m.k===k).n)):'')};
     const evR=k=>{const r=e.evals&&e.evals[k];return r&&r.date?r.recommendation:''};const sepd=empStatus(e)==='Separated';
     body=`${silCard(e)}<section class="sect"><h4>Employment</h4><dl class="kv">${kv('ID number',e.empNo)}${kv('Biometric ID no.',e.biometricId)}<div><dt>Status</dt><dd>${empStatusChip(e)}</dd></div>${kv('Employment status',e.employmentType)}
       <div style="grid-column:1/-1"><dt>Site (client company)</dt><dd>${esc(e.client||'Not set. Edit the 201 file to assign a client.')}</dd></div>${kv('Plant / branch / area',e.site)}${kv('Position',e.position)}${kv('Department / section',e.department)}${kv('Year employed',e.hireDate?e.hireDate.slice(0,4):'')}
