@@ -278,6 +278,12 @@ svg.i.sm{width:14px;height:14px}
 @media (max-width:720px){.files{padding-left:0}}
 
 .flabel{font-weight:600;font-size:14px}
+.addr-lbl{display:block;font-weight:600;margin-bottom:6px}
+.addr-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.addr-g input{grid-column:1/-1}
+.addr-g select:disabled{opacity:.6}
+.addr-msg:empty{display:none}
+@media (max-width:640px){.addr-g{grid-template-columns:1fr}}
 .pol-bar{position:sticky;top:8px;z-index:5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px;border-radius:12px;background:var(--surface);border:1px solid var(--btn);box-shadow:0 6px 20px rgba(0,0,0,.12)}
 .pol-bar[hidden]{display:none}
 .pol-tbl select{min-height:38px;padding:6px 10px;font-size:14.5px}
@@ -1439,6 +1445,54 @@ function export201(){
 }
 
 /* ---------------- employee form ---------------- */
+/* ---- Address picker ----
+   ph-address.json (published next to the page) = {p:[[province,[[city,[barangay,…]],…]],…]} from the PSA PSGC list.
+   Saved as e.addr / e.permAddr = {prov,city,brgy,street}; e.address / e.permanentAddress keep the full address as one line. */
+let ADDRP=null;
+const loadAddr=()=>ADDRP||(ADDRP=fetch('ph-address.json').then(r=>{if(!r.ok)throw new Error(r.status);return r.json()}).then(j=>{const m={};j.p.forEach(([p,cs])=>{m[p]={};cs.forEach(([c,bs])=>m[p][c]=bs)});return m}).catch(err=>{ADDRP=null;throw err}));
+const brgyLabel=b=>/^(barangay|brgy\.?)\s/i.test(b)?b:'Brgy. '+b;
+const addrLine=a=>a?[a.street,a.brgy&&brgyLabel(a.brgy),a.city,a.prov].map(x=>String(x||'').trim()).filter(Boolean).join(', '):'';
+/* Best guess of {prov,city,brgy,street} from a one-line address, e.g. "123 Rizal St., Brgy. San Roque, Antipolo City, Rizal". */
+function guessAddr(M,text){
+  const full=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s*\(.*?\)\s*/g,' ').replace(/^(brgy\.?|barangay)\s+/,'').replace(/[^a-z0-9]+/g,' ').trim();
+  const base=s=>full(s).replace(/^city of\s+|\s+city$/g,'').trim();
+  const segs=String(text||'').split(',').map(s=>s.trim()).filter(Boolean),F=segs.map(full),B=segs.map(base);
+  let pi=-1,provs=Object.keys(M).filter(p=>{const i=F.findIndex(x=>x===full(p)||(p==='Metro Manila'&&/^(metro manila|ncr)$/.test(x)));if(i>=0)pi=i;return i>=0});
+  if(provs.length!==1){provs=[];pi=-1}
+  const pool=provs.length?provs:Object.keys(M),cityAt=c=>{let i=F.findIndex((x,k)=>k!==pi&&x===full(c));if(i<0)i=B.findIndex((x,k)=>k!==pi&&x===base(c));return i};
+  const cands=[];pool.forEach(p=>Object.keys(M[p]).forEach(c=>{const i=cityAt(c);if(i>=0)cands.push([p,c,i])}));
+  const exact=cands.filter(x=>F[x[2]]===full(x[1]));const hit=cands.length===1?cands[0]:exact.length===1?exact[0]:null;
+  if(!hit)return provs.length?{prov:provs[0],city:'',brgy:'',street:segs.filter((s,i)=>i!==pi).join(', ')}:null;
+  const[p,c,ci]=hit;const bi=M[p][c].map(b=>F.findIndex((x,k)=>k!==pi&&k!==ci&&x===full(b)));const bk=bi.findIndex(i=>i>=0);
+  const drop=new Set([pi,ci,bk>=0?bi[bk]:-1]);
+  return{prov:p,city:c,brgy:bk>=0?M[p][c][bk]:'',street:segs.filter((s,i)=>!drop.has(i)).join(', ')};
+}
+function addrBlock(k,label,a,old){
+  a=a||{};const sel=(n,ph)=>`<select name="${k}_${n}" aria-label="${label}: ${ph}" disabled><option value="">${ph}</option></select>`;
+  return`<div class="field full addr" data-addr="${k}" data-prov="${esc(a.prov||'')}" data-city="${esc(a.city||'')}" data-brgy="${esc(a.brgy||'')}"><span class="addr-lbl" id="${k}-lbl">${label}</span>
+    <div class="addr-g" role="group" aria-labelledby="${k}-lbl">${sel('prov','Province')}${sel('city','City / Municipality')}${sel('brgy','Barangay')}
+    <input name="${k}_street" value="${esc(a.street!=null?a.street:(old||''))}" placeholder="House no., street, subdivision / village" aria-label="${label}: house no., street, subdivision"></div>
+    <p class="help addr-msg">${!a.prov&&old?'Saved as typed before. Choose the province, city and barangay, then keep only the house no. and street in the last box.':''}</p></div>`;
+}
+function wireAddr(f,k,onChange){
+  const box=f.querySelector(`[data-addr="${k}"]`);if(!box)return{};
+  const P=box.querySelector(`[name="${k}_prov"]`),C=box.querySelector(`[name="${k}_city"]`),B=box.querySelector(`[name="${k}_brgy"]`),St=box.querySelector(`[name="${k}_street"]`);
+  let M=null,locked=false;
+  const opts=(el,ph,list,v)=>{el.innerHTML=`<option value="">${ph}</option>`+list.map(x=>`<option ${x===v?'selected':''}>${esc(x)}</option>`).join('');el.disabled=locked||!list.length};
+  const fill=(p,c,b)=>{if(!M)return;opts(P,'Province',Object.keys(M),p);const cs=p&&M[p]?Object.keys(M[p]):[];opts(C,'City / Municipality',cs,c);opts(B,'Barangay',c&&cs.includes(c)?M[p][c]:[],b)};
+  P.addEventListener('change',()=>{fill(P.value,'','');onChange&&onChange()});
+  C.addEventListener('change',()=>{fill(P.value,C.value,'');onChange&&onChange()});
+  B.addEventListener('change',()=>onChange&&onChange());St.addEventListener('input',()=>onChange&&onChange());
+  loadAddr().then(m=>{M=m;
+    if(!box.dataset.prov&&St.value.trim()){const g=guessAddr(M,St.value);if(g){Object.assign(box.dataset,{prov:g.prov,city:g.city,brgy:g.brgy});St.value=g.street;
+      box.querySelector('.addr-msg').textContent=`Filled in from the address typed before${g.brgy?'':g.city?'. Choose the barangay':'. Choose the city and barangay'}. Please check before saving.`}}
+    fill(box.dataset.prov,box.dataset.city,box.dataset.brgy);onChange&&onChange()},()=>{box.querySelector('.addr-msg').textContent='The province and barangay list could not load. Type the full address in the box for now.'});
+  const api={get:()=>({prov:P.value,city:C.value,brgy:B.value,street:St.value.trim()}),
+    set:a=>{St.value=a.street||'';if(M)fill(a.prov,a.city,a.brgy);else Object.assign(box.dataset,{prov:a.prov||'',city:a.city||'',brgy:a.brgy||''})},
+    lock:on=>{locked=on;St.readOnly=on;[P,C,B].forEach(x=>x.disabled=on||x.options.length<2)},
+    el:{P,C,B,St}};
+  return api;
+}
 function empForm(id){
   const e=id?clone(EMP[id]):{empNo:nextEmpNo('',today()),status:'Active',employmentType:'Probationary',hireDate:today(),nationality:'Filipino',docs:{}};
   const newSeq=id?(ID_RE.exec(e.empNo||'')?+ID_RE.exec(e.empNo)[1]:nextSeq(id)):nextSeq();
@@ -1450,8 +1504,9 @@ function empForm(id){
     ${F('gender','Sex',{type:'select',opts:['Male','Female']})}${F('birthDate','Date of birth',{type:'date'})}${F('birthPlace','Place of birth')}${F('civilStatus','Civil status',{type:'select',opts:['Single','Married','Widowed','Separated']})}
     ${F('nationality','Nationality',{attrs:'list="nat-list"'})}<datalist id="nat-list"><option value="Filipino"></datalist>${F('religion','Religion',{attrs:'list="rel-list"'})}<datalist id="rel-list">${['Roman Catholic','Iglesia ni Cristo','Christian','Islam','Seventh-day Adventist','Born Again Christian','Aglipayan','Jehovah’s Witness','None'].map(x=>`<option value="${x}">`).join('')}</datalist>
     ${F('mobile','Employee contact number',{type:'tel',attrs:'placeholder="09XX XXX XXXX"'})}${F('email','Email',{type:'email'})}${F('dependents','No. of dependents',{type:'number',attrs:'min="0" max="20" inputmode="numeric"'})}
-    ${F('address','Present address',{full:1})}
-    <div class="field full"><label for="ef-permanentAddress">Permanent address</label><input id="ef-permanentAddress" name="permanentAddress" value="${esc(e.permanentAddress||'')}"><label class="ck" style="min-height:32px;font-size:14px"><input type="checkbox" id="ef-same" ${e.permanentAddress&&e.permanentAddress===e.address?'checked':''}>Same as present address</label></div>
+    ${addrBlock('pa','Present address',e.addr,e.address)}
+    ${addrBlock('pm','Permanent address',e.permAddr,e.permanentAddress)}
+    <div class="field full" style="margin-top:-8px"><label class="ck" style="min-height:32px;font-size:14px"><input type="checkbox" id="ef-same" ${e.permanentAddress&&e.permanentAddress===e.address?'checked':''}>Permanent address is the same as present address</label></div>
     <div class="field full solo-box"><label class="ck" style="font-weight:700"><input type="checkbox" id="ef-solo" name="soloParent" ${e.soloParent?'checked':''}>Solo parent</label>
       <p class="help" style="margin:0">Tag the employee as a solo parent so HR can find them quickly and send solo-parent memos and privileges (for example, PhilHealth advisories).</p>
       <div class="fg" id="ef-solo-more" ${e.soloParent?'':'hidden'} style="margin-top:8px">
@@ -1525,8 +1580,11 @@ function empForm(id){
       f.client.addEventListener('change',regen);
       f.hireDate.addEventListener('change',()=>{regen();f.querySelector('#ef-probend').textContent=fmt(probEnd({hireDate:f.hireDate.value}))});
       const nb=f.querySelector('#ef-newid');if(nb)nb.onclick=()=>{idIn.value=makeEmpId(f.client.value,f.hireDate.value,newSeq);nb.remove();f.querySelector('#ef-idhelp').textContent='New ID filled in. Save to keep it.'};
-      const same=f.querySelector('#ef-same'),perm=f.permanentAddress;const syncP=()=>{if(same.checked){perm.value=f.address.value;perm.readOnly=true}else perm.readOnly=false};
-      same.addEventListener('change',syncP);f.address.addEventListener('input',syncP);syncP();
+      const same=f.querySelector('#ef-same');let PM=null;
+      const syncP=()=>{if(!PM)return;if(same.checked){PM.set(PA.get());PM.lock(true)}else PM.lock(false)};
+      const PA=wireAddr(f,'pa',()=>{if(same.checked)syncP()});PM=wireAddr(f,'pm');
+      same.addEventListener('change',syncP);syncP();
+      f._addr={PA,PM,same};
       f.querySelector('#ef-calcm').onclick=()=>{const d=parseFloat(f.dailySalary.value);if(!(d>0)){setErr(f.dailySalary,'Enter the daily salary first.');return}f.monthlySalary.value=(Math.round(d*26*100)/100).toFixed(2)};
       const draw=k=>{const box=f.querySelector('#ef-st-'+k);if(!box)return;const fl=staged[k]||[];
         box.innerHTML=fl.map((x,i)=>`<div class="file"><span class="fic" style="color:var(--info)">${ic(/^image\//.test(fileType(x)||'')?'pclip':'pdf')}</span><div class="fn"><b style="overflow-wrap:anywhere;font-weight:600">${esc(x.name)}</b><span>${fsize(x.size)} · uploads when you save</span></div><button type="button" class="icon-btn" data-unstage="${k}|${i}" aria-label="Remove ${esc(x.name)}">${ic('x')}</button></div>`).join('');
@@ -1560,7 +1618,8 @@ function empForm(id){
         sb.textContent='Saving…'}
       if(acct&&newProof&&!(ups.__bank||[]).length&&!(prevBank.proof||[]).length){sb.textContent=id?'Save changes':'Add employee';setErr(f.querySelector('#ef-bankproof'),'The account photo did not upload: '+errs.join(' · '));return false}
       const o=id?clone(EMP[id]):{id:uid(),evals:{}};
-      ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','address','client','empNo','position','department','site','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','permanentAddress','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      {const A=f._addr,pa=A.PA.get(),pm=A.same.checked?pa:A.PM.get();o.addr=pa;o.permAddr=pm;o.address=addrLine(pa);o.permanentAddress=addrLine(pm)}
       if(o.employmentType==='Regular'&&!o.regularizedOn&&EMP[id]&&EMP[id].employmentType==='Probationary')o.regularizedOn=today();
       if(!applyStatus(fd,f,'es',o,id?EMP[id]:null)){sb.textContent=id?'Save changes':'Add employee';return false}
       o.docs={};DOCS.forEach(([k])=>{if(fd.get('doc_'+k))o.docs[k]=true});
