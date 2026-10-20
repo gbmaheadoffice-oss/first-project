@@ -645,6 +645,9 @@ function nextNo(col,prefix){const y=new Date().getFullYear();const re=new RegExp
 function nextEmpNo(client,hire){return makeEmpId(client||'',hire||today(),nextSeq())}
 /* Internal = GBMA office staff (employees assigned to Head Office). External = deployed employees and outside parties. */
 const OFFICE='Head Office';
+/* Departments differing only in capitals ("ADMIN" vs "Admin") are the same; the first spelling in the list wins */
+const deptKey=d=>String(d||'').trim().toLowerCase().replace(/\s+/g,' ');
+const deptList=base=>{const m=new Map();base.concat(S.employees.map(x=>x.department)).forEach(d=>{if(d&&!m.has(deptKey(d)))m.set(deptKey(d),String(d).trim())});return[...m.values()]};
 const GBMA_DEPTS=['Human Resources','Recruitment','Operations','Admin','Payroll','Management'];
 const ORG_KINDS=['Client','Applicant','Supplier','Business partner','Government / regulatory office'];
 const INT_TYPES=['Disciplinary','Notice to Explain','Written Warning','Notice of Decision','Policy & Procedures','General Announcement','Reminder','Commendation','Other'];
@@ -786,10 +789,10 @@ VIEWS.dashboard=function(){
 /* ---- 201 Files ---- */
 VIEWS.employees=function(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
-  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||e.department===f.dept)&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
+  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.biometricId,e.position,e.department,e.client].join(' ').toLowerCase().includes(q));
   list.sort(sortName);
-  const depts=[...new Set(DEPTS.concat(S.employees.map(e=>e.department).filter(Boolean)))];
+  const depts=deptList(DEPTS);
   const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
   const clCount=c=>S.employees.filter(e=>e.client===c&&isActive(e)).length;
   let h=ph('201 Files',`${S.employees.length} employee record${S.employees.length===1?'':'s'} across ${CLIENTS.length} client companies · personal data, deployment, government IDs and scanned requirements.`,`<button class="btn ghost" data-act="import-201" data-write>${ic('upload')}Import from Excel</button><button class="btn ghost" data-act="export-201">${ic('download')}Export to Excel</button><button class="btn" data-act="add-emp" data-write>${ic('plus')}Add Employee</button>`);
@@ -797,7 +800,7 @@ VIEWS.employees=function(){
   h+=`<section class="card">${tabsHtml('emp',['Active','Separated','Blocklisted','All'].map(s=>[s,stc(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 12px">
     ${searchBox('f-emp-q','emp.q',f.q,'Search name, employee no., position, client')}
     <label class="sr" for="f-emp-client">Client company</label><select id="f-emp-client" data-filter="emp.client" style="flex:1 1 260px;max-width:340px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)} (${clCount(c)})</option>`).join('')}</select>
-    <label class="sr" for="f-emp-dept">Department</label><select id="f-emp-dept" data-filter="emp.dept"><option value="">All departments</option>${depts.map(d=>`<option ${d===f.dept?'selected':''}>${esc(d)}</option>`).join('')}</select>
+    <label class="sr" for="f-emp-dept">Department</label><select id="f-emp-dept" data-filter="emp.dept"><option value="">All departments</option>${depts.map(d=>`<option ${deptKey(d)===deptKey(f.dept)?'selected':''}>${esc(d)}</option>`).join('')}</select>
     <label class="sr" for="f-emp-type">Employment type</label><select id="f-emp-type" data-filter="emp.type"><option value="">All types</option>${EMP_TYPES.map(d=>`<option ${d===f.type?'selected':''}>${d}</option>`).join('')}</select>
     <label class="sr" for="f-emp-tag">Tag</label><select id="f-emp-tag" data-filter="emp.tag"><option value="">All employees</option><option value="solo" ${f.tag==='solo'?'selected':''}>Solo parents only (${S.employees.filter(e=>e.soloParent&&isActive(e)).length})</option></select>  </div>`;
   if(!list.length)h+=S.employees.length?emptyBlock('No matching employees','Try a different search or clear the filters.'):emptyBlock('No employee records yet','Add an employee to create their 201 file.',`<div data-write><button class="btn" data-act="add-emp">${ic('plus')}Add Employee</button></div>`);
@@ -1353,7 +1356,7 @@ function loadXLSX(){
 }
 function empFiltered(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
-  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||e.department===f.dept)&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
+  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.biometricId,e.position,e.department,e.client].join(' ').toLowerCase().includes(q));
   return list.sort(sortName);
 }
@@ -1632,6 +1635,7 @@ function impPlan(parsed){
     const plain=['text','id','date','time','num','int','pick','pickfree','client','status','sepreason'];
     IMP_COLS.forEach(([,k,kind])=>{if(v[k]===undefined||!plain.includes(kind)||k.startsWith('bank'))return;o[k]=v[k]});
     if(!ex)[['firstName','FIRST NAME'],['lastName','LAST NAME'],['client','SITE'],['hireDate','DATE HIRED']].forEach(([k,h])=>{if(!o[k])errs.push(`${h} is required`)});
+    if(v.department){const known=deptList(DEPTS).find(d=>deptKey(d)===deptKey(v.department));o.department=known||(v.department===v.department.toUpperCase()?v.department.toLowerCase().replace(/(^|[\s/&(-])([a-z])/g,(m,a,b)=>a+b.toUpperCase()):v.department)}
     if(!errs.length)[['position','POSITION'],['department','DEPARTMENT/SECTION']].forEach(([k,h])=>{if(!o[k])warn.push(`No ${h}`)});
     if(v.dailySalary&&!v.monthlySalary&&!(ex&&ex.monthlySalary))o.monthlySalary=(Math.round(+v.dailySalary*26*100)/100).toFixed(2);
     if(v.address!==undefined){o.address=v.address;o.addr=null;if(v.permanentAddress===undefined&&(!ex||!ex.permanentAddress)){o.permanentAddress=v.address;o.permAddr=null}}
@@ -1796,7 +1800,7 @@ function wireAddr(f,k,onChange){
 function empForm(id,pre){
   const e=id?clone(EMP[id]):{empNo:nextEmpNo('',today()),status:'Active',employmentType:'Probationary',hireDate:today(),nationality:'Filipino',docs:{},...(pre||{})};
   const newSeq=id?(ID_RE.exec(e.empNo||'')?+ID_RE.exec(e.empNo)[1]:nextSeq(id)):nextSeq();
-  const depts=[...new Set(DEPTS.concat(S.employees.map(x=>x.department).filter(Boolean)))];
+  const depts=deptList(DEPTS);
   const F=(n,l,o={})=>field({id:'ef-'+n,name:n,label:l,value:e[n],...o});
   const body=`
   <fieldset><legend>Personal information</legend><div class="fg">
@@ -2343,7 +2347,7 @@ function deployedOpts(sel){const list=S.employees.filter(e=>!isOffice(e)&&isActi
 function memoForm(id,presetType,empId){
   const m=id?clone(S.memos.find(x=>x.id===id)):{scope:'internal',type:presetType||'General Announcement',toType:empId||presetType==='Notice to Explain'?'employee':'office',toValue:empId||'',from:'GBMA – HR',issuedOn:today(),body:presetType==='Notice to Explain'?NTE_TEMPLATE:''};
   if(!m)return;
-  const depts=[...new Set(GBMA_DEPTS.concat(S.employees.filter(isOffice).map(x=>x.department).filter(Boolean)))];
+  const depts=deptList(GBMA_DEPTS).filter(d=>GBMA_DEPTS.includes(d)||S.employees.some(x=>isOffice(x)&&deptKey(x.department)===deptKey(d)));
   openModal({title:id?`Edit ${esc(m.no)}`:(m.type==='Notice to Explain'?'Internal Notice to Explain':'New Internal Memo'),wide:1,body:`
     <div class="banner">${ic('info')}<span class="grow"><b>Internal memo</b> · for GBMA office staff: HR, Recruitment, Operations, Admin, Payroll and Management. For deployed employees, clients and other outside parties, use <b>External Memos</b>.</span></div>
     <div class="fg">
@@ -2609,7 +2613,7 @@ function renderDrawer(){
   }else{
     const lv=S.leaves.filter(l=>l.employeeId===e.id).sort((a,b)=>a.from<b.from?1:-1);
     const pm=S.permits.filter(p=>p.employeeId===e.id).sort((a,b)=>a.date<b.date?1:-1);
-    const mm=S.memos.filter(m=>(m.toType==='employee'&&m.toValue===e.id)||(m.toType==='solo'&&e.soloParent)||(m.toType==='deployed'&&!isOffice(e))||(m.toType==='office'&&isOffice(e))||(m.toType==='department'&&isOffice(e)&&m.toValue===e.department)||(m.toType==='client'&&e.client&&m.toValue===e.client)).sort((a,b)=>a.issuedOn<b.issuedOn?1:-1);
+    const mm=S.memos.filter(m=>(m.toType==='employee'&&m.toValue===e.id)||(m.toType==='solo'&&e.soloParent)||(m.toType==='deployed'&&!isOffice(e))||(m.toType==='office'&&isOffice(e))||(m.toType==='department'&&isOffice(e)&&deptKey(m.toValue)===deptKey(e.department))||(m.toType==='client'&&e.client&&m.toValue===e.client)).sort((a,b)=>a.issuedOn<b.issuedOn?1:-1);
     const used=lv.filter(l=>l.status==='Approved'&&(l.from||'').startsWith(String(new Date().getFullYear()))).reduce((s,l)=>s+(l.days||0),0);
     const attM=today().slice(0,7),attPrev=(()=>{const d=parse(attM+'-01');d.setMonth(d.getMonth()-1);return iso(d).slice(0,7)})();
     const attLine=(m,s)=>`<button class="row" data-act="att-edit" data-id="${e.id}" data-k="${m}"><div class="grow"><span class="nm">${fmtMonth(m)}</span><div class="meta">${s.present} present · ${s.late} late (${hm(s.lateMin)}) · ${s.ut} undertime · ${s.absent} absent · ${s.leave} leave${s.norecord?` · ${s.norecord} no record`:''}</div></div>${s.perfect?`<span class="chip ok">${ic('award')}Perfect</span>`:s.late>3?`<span class="chip bad">${s.late} lates</span>`:s.ut>3?`<span class="chip warn">${s.ut} undertime</span>`:''}</button>`;
