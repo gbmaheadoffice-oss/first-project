@@ -1,6 +1,7 @@
 # Makes the PDF version of the GBMA application form (REV-FM-GBMA-HR-006) for the HRIS.
 # Input: the blank form exported to PDF by Word. Output: hris/application-form.pdf (copy of it) and
-# hris/application-form.json = where each answer goes: [key, page, x, baseline y from top, width] in PDF points.
+# hris/application-form.json = where each answer goes: [key, page, x, baseline y from top, width] in PDF points;
+# the family and reference tables' rows (so unused rows can be removed) and the page border.
 import json, shutil, sys, pymupdf
 SRC, OUTDIR = sys.argv[1], sys.argv[2]
 K = ['position','desiredSalary','availableFrom','dateApplied','lastName','firstName','middleName','suffix',
@@ -29,7 +30,10 @@ for k, (pi, y, x0, x1) in zip(K, blanks): fields.append([k, pi, round(x0 + 1, 1)
 fam = [['fa'], ['mo']] + [[f's{i}'] for i in range(1, 9)]
 tabs = [(pi, t) for pi, p in enumerate(d) for t in p.find_tables().tables]
 assert len(tabs) == 2
+tables = []
 def cells(pi, t, rowkeys, cols):
+    tables.append({'page': pi, 'keep': 3 if len(rowkeys) > 3 else 1, 'cols': cols,
+                   'rows': [[k[0], round(r.bbox[1], 1), round(r.bbox[3], 1)] for r, k in zip(t.rows[1:], rowkeys)]})
     words = d[pi].get_text('words')
     for row, keys in zip(t.rows[1:], rowkeys):
         for (x0, y0, x1, y1), suf in zip(row.cells, cols):
@@ -39,5 +43,9 @@ def cells(pi, t, rowkeys, cols):
 cells(*tabs[0], fam, ['Name','Age','Birth','Occupation','Address'])
 cells(*tabs[1], [[f'r{i}'] for i in range(1, 4)], ['Name','Occupation','Address','Phone'])
 shutil.copy(SRC, OUTDIR + '/application-form.pdf')
-json.dump({'fields': fields}, open(OUTDIR + '/application-form.json', 'w'), separators=(',', ':'))
+# page border: the side bars' x ranges and the top of the bottom bar, from the filled rectangles near the edges
+bars = [dr['rect'] for dr in d[0].get_drawings() if dr.get('fill') and (dr['rect'].width > 500 or dr['rect'].height > 500)]
+side = sorted([r for r in bars if r.height > 500], key=lambda r: r.x0); bottom = max(r.y0 for r in bars if r.width > 500)
+border = {'sides': [[round(r.x0, 1), round(r.x1, 1)] for r in side], 'bottom': round(bottom, 1)}
+json.dump({'fields': fields, 'tables': tables, 'border': border}, open(OUTDIR + '/application-form.json', 'w'), separators=(',', ':'))
 print(len(fields), 'fields')

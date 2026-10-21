@@ -2773,9 +2773,27 @@ async function appFormDownload(id,btn){
   try{
     const get=(u,t)=>fetch(u).then(r=>{if(!r.ok)throw new Error(r.status);return r[t]()});
     const[L,buf,lay]=await Promise.all([loadPdfLib(),get('application-form.pdf','arrayBuffer'),get('application-form.json','json')]);
-    const doc=await L.PDFDocument.load(buf);const font=await doc.embedFont(L.StandardFonts.TimesRoman);const pages=doc.getPages();const v=appFormValues(a);
+    const src=await L.PDFDocument.load(buf),doc=await L.PDFDocument.create(),v=appFormValues(a);
+    /* Unused rows at the end of the family and reference tables are cut out and the rest of that page moves up.
+       The page is rebuilt from three slices: above the cut, below it (shifted up), and the bottom border; the
+       border's side bars are redrawn over the space freed at the bottom. Positions here are from the top. */
+    const cuts={};(lay.tables||[]).forEach(t=>{
+      const used=t.rows.map(([k])=>t.cols.some(c=>String(v[k+c]||'').trim()));let n=t.rows.length;while(n>t.keep&&!used[n-1])n--;
+      if(n<t.rows.length)cuts[t.page]={from:t.rows[n][1],to:t.rows[t.rows.length-1][2],gap:t.rows[t.rows.length-1][2]-t.rows[n][1]}});
+    const B=lay.border;
+    for(let pi=0;pi<src.getPageCount();pi++){
+      const sp=src.getPage(pi),c=cuts[pi];
+      if(!c){const[cp]=await doc.copyPages(src,[pi]);doc.addPage(cp);continue}
+      const{width:W,height:H}=sp.getSize(),Y=t=>H-t,a1=c.from+.6,b1=c.to+.6,bb=B.bottom-2;
+      const[top,mid,bot]=await doc.embedPages([sp,sp,sp],[{left:0,right:W,bottom:Y(a1),top:H},{left:0,right:W,bottom:Y(bb),top:Y(b1)},{left:0,right:W,bottom:0,top:Y(bb)}]);
+      const pg=doc.addPage([W,H]);
+      pg.drawPage(top,{x:0,y:Y(a1)});pg.drawPage(mid,{x:0,y:Y(bb)+c.gap});pg.drawPage(bot,{x:0,y:0});
+      B.sides.forEach(([x0,x1])=>pg.drawRectangle({x:x0,y:Y(bb)-.1,width:x1-x0,height:c.gap+.2,color:L.rgb(0,0,0)}));
+    }
+    const font=await doc.embedFont(L.StandardFonts.TimesRoman);const pages=doc.getPages();
     lay.fields.forEach(([k,pi,x,y,w])=>{
       let t=pdfSafe(String(v[k]==null?'':v[k]).replace(/\s+/g,' ').trim());if(!t)return;
+      const c=cuts[pi];if(c&&y>c.to)y-=c.gap;
       /* 10 pt, smaller for long answers so they stay on the line */
       let size=10;while(size>6&&font.widthOfTextAtSize(t,size)>w)size-=.5;
       while(t.length>1&&font.widthOfTextAtSize(t,size)>w)t=t.slice(0,-2)+'…';
