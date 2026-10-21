@@ -2550,6 +2550,85 @@ function noticeStep(e){
   if(n.status==='Draft')return`<div class="notice-step"><span class="chip">${ic('edit')}Notice saved as draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button></div>`;
   return`<div class="notice-step"><span class="chip ok">${ic('check')}Notice sent ${fmtTs(n.sentAt||n.statusAt)}</span><button class="link" data-act="view-memo" data-id="${n.id}" style="padding-left:0">View ${esc(n.no)}</button></div>`;
 }
+/* ---- Regularization contract (GBMA's REGULARIZATION CONTRACT TEMPLATE.docx) ----
+   Drawn with pdf-lib on US Letter in the template's layout. regularization-letterhead.jpg is the template's header
+   image; positions are baselines from the top of the page, taken from the template exported by Word. */
+const longD=s=>s?parse(s).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+function regContractValues(e){return{no:e.regContractNo||'',date:e.regularizedOn||today(),probEnd:e.regularizedOn?addDays(e.regularizedOn,-1):probEnd(e),
+  salutation:e.gender==='Female'?'Ms.':e.gender==='Male'?'Mr.':'Mr./Ms.',name:fullName(e),firstName:e.firstName||'',lastName:e.lastName||'',address:e.address||'',email:e.email||''}}
+async function regContractPdf(v){
+  const L=await loadPdfLib();
+  const jpg=await fetch('regularization-letterhead.jpg').then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()});
+  const doc=await L.PDFDocument.create();doc.setTitle(`Regularization Contract - ${pdfSafe(v.name)}`);doc.setAuthor('Golden Bear Manpower Agency');
+  const H=792,X=72,W=471,pg=doc.addPage([612,H]),R=await doc.embedFont(L.StandardFonts.Helvetica),B=await doc.embedFont(L.StandardFonts.HelveticaBold),ink=L.rgb(0,0,0);
+  pg.drawImage(await doc.embedJpg(jpg),{x:157.5,y:H-109.8,width:296.7,height:73.8});
+  const wd=(s,b,z=10)=>(b?B:R).widthOfTextAtSize(pdfSafe(s),z);
+  const put=(s,x,y,o={})=>{s=pdfSafe(s);const z=o.size||10,w=wd(s,o.bold,z);pg.drawText(s,{x,y:H-y,size:z,font:o.bold?B:R,color:ink});
+    if(o.u)pg.drawLine({start:{x,y:H-y-1.6},end:{x:x+w,y:H-y-1.6},thickness:.7,color:ink});return w};
+  /* Wraps runs of [text, bold] to the width; justify spreads every line but the last, like Word. Returns the last baseline. */
+  const para=(runs,y,lh,{x0=X,w=W,justify=true}={})=>{
+    const words=[];let glue=false;
+    runs.forEach(([t,b])=>pdfSafe(t).split(/(\s+)/).forEach(p=>{if(!p)return;if(/^\s/.test(p)){glue=false;return}
+      if(glue&&words.length)words[words.length-1].push([p,b]);else words.push([[p,b]]);glue=true}));
+    const ww=wo=>wo.reduce((n,[p,b])=>n+wd(p,b),0),sp=wd(' ');const lines=[[]];let cur=0;
+    words.forEach(wo=>{const n=ww(wo),l=lines[lines.length-1];if(l.length&&cur+sp+n>w){lines.push([wo]);cur=n}else{cur+=(l.length?sp:0)+n;l.push(wo)}});
+    lines.forEach((l,i)=>{const used=l.reduce((n,wo)=>n+ww(wo),0),gap=justify&&i<lines.length-1&&l.length>1?(w-used)/(l.length-1):sp;
+      let x=x0;l.forEach(wo=>{wo.forEach(([p,b])=>{x+=put(p,x,y+i*lh,{bold:b})});x+=gap})});
+    return y+(lines.length-1)*lh};
+  if(v.no)put(v.no,X,131.6,{size:8});
+  put('Date: ',X,166);put(longD(v.date),X+wd('Date: '),166,{bold:1});
+  put('Name of Recipient: ',X,190);put(v.name,X+wd('Name of Recipient: '),190,{bold:1});
+  const ax=X+wd('Address: ');put('Address: ',X,214);let y=v.address?para([[v.address,1]],214,12,{x0:ax,w:W-(ax-X),justify:false}):214;
+  y+=25;const sg=wd('SUBJECT:',1)+30,sx=(612-sg-wd('REGULARIZATION OF EMPLOYMENT',1))/2;
+  put('SUBJECT:',sx,y,{bold:1});put('REGULARIZATION OF EMPLOYMENT',sx+sg,y,{bold:1,u:1});
+  y+=36;put(`Dear ${v.salutation} ${v.lastName},`,X,y);y+=24;put('Congratulations!',X,y);
+  y=para([['Your probation period with the company has ended on '],[longD(v.probEnd),1],[' and upon evaluation of your work performances, observance of company rules and regulations, work ethics toward other employees and the noted contributions to the company, we are pleased to inform you that your employment with the company is now '],['REGULARIZED',1],['.']],y+25.5,14);
+  y=para([['The terms and conditions of employment set out in your original contract will continue to apply to your ongoing position.']],y+32,14);
+  y=para([['It is understood that you will continue to be bound by the Confidentiality Agreement and Non-Competition Clause incorporated in the Probationary Employment Contract that you signed with us.  Such provisions shall be deemed incorporated as part of the terms and conditions of your regular employment with us.']],y+31,12.2);
+  y=para([['Thank you for your contribution and we look forward to more years of fruitful partnership with you.']],y+36,12);
+  y+=36;put('Sincerely yours,',X,y);y+=36;put('Gladys Espedillon',X,y,{bold:1});put('Owner',X,y+12);
+  y+=48;put('WITH MY CONFORMITY:',X,y);y+=36.5;
+  /* the employee's name is printed on the Name line; Signature and Date stay blank for them to fill in */
+  const nx=X+wd('Name: '),ne=X+170;put('Name: ',X,y);pg.drawLine({start:{x:nx,y:H-y-1.6},end:{x:ne,y:H-y-1.6},thickness:.7,color:ink});
+  let nz=10;while(nz>7&&wd(v.name,0,nz)>ne-nx-2)nz-=.5;put(v.name,nx+2,y-1,{size:nz});
+  put('Signature: _____________________',X,y+12);put('Date:  ________________________',X,y+24);
+  return doc.save();
+}
+function regContractStep(e){
+  if(e.employmentType!=='Regular'||!e.regularizedOn)return'';
+  return`<div class="notice-step"><span class="chip">${ic('download')}Regularization contract${e.regContractNo?' '+esc(e.regContractNo):''}</span><button class="btn sm ghost" data-act="reg-contract" data-id="${e.id}">Download or email</button></div>`;
+}
+function regContractForm(id){
+  const e=EMP[id];if(!e)return;const d=regContractValues(e),ro=document.body.classList.contains('ro');
+  openModal({title:'Regularization Contract',
+    body:`<p class="help" style="margin:0 0 12px">Makes the GBMA regularization contract as a PDF for <b>${esc(fullName(e))}</b>. Check the details first.</p>
+    <div class="fg">
+      ${field({id:'rc-no',name:'no',label:'Control no.',value:d.no,help:ro?'':'Saved to the 201 file.'})}
+      ${field({id:'rc-date',name:'date',label:'Date of the letter',type:'date',req:1,value:d.date})}
+      ${field({id:'rc-end',name:'probEnd',label:'Probation ended on',type:'date',req:1,value:d.probEnd,help:`Regularized ${fmt(e.regularizedOn)}.`})}
+      ${field({id:'rc-sal',name:'salutation',label:'Dear',type:'select',opts:['Mr.','Ms.','Mr./Ms.'],value:d.salutation,blank:false})}
+      ${field({id:'rc-addr',name:'address',label:'Address',full:1,value:d.address})}
+      ${field({id:'rc-mail',name:'email',label:'Employee email',type:'email',full:1,value:d.email,help:'For <b>Email to employee</b>: Gmail opens with the message ready. Attach the PDF that was just downloaded, then click Send.'})}
+    </div>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="submit" class="btn ghost" value="dl">${ic('download')}Download PDF</button><button type="submit" class="btn ok" value="mail">${ic('send')}Email to employee</button>`,
+    onSubmit:async(fd,f,sub)=>{
+      const mail=!!(sub&&sub.value==='mail'),v={...d};['no','date','probEnd','salutation','address','email'].forEach(k=>v[k]=String(fd.get(k)||'').trim());
+      if(mail&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)){setErr(f.email,'Enter the employee’s email address.');return false}
+      /* Gmail's tab is opened now, while the click still allows it, and pointed at the message once the PDF is saved */
+      const win=mail?window.open('','_blank'):null;
+      const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+      if(!dl){win&&win.close();toast('Downloads are not available in this view.',{kind:'bad'});return false}
+      try{
+        const file=`Regularization Contract - ${v.lastName}, ${v.firstName}.pdf`.replace(/[\\/:*?"<>|]/g,'');
+        await dl.save({filename:file,data:new Blob([await regContractPdf(v)],{type:'application/pdf'})});
+        if(!ro&&(v.no!==(e.regContractNo||'')||(v.email&&v.email!==(e.email||'')))){const o=clone(EMP[id]);o.regContractNo=v.no;if(v.email)o.email=v.email;await save('employees',o)}
+        if(win){const body=`Dear ${v.salutation} ${v.lastName},\n\nCongratulations! Attached is your Regularization Contract with Golden Bear Manpower Agency.\n\nPlease read it, sign the "With my conformity" part, and return the signed copy to the HR Department.\n\nThank you,\n${SIGN.hrName}\n${SIGN.hrTitle}`;
+          win.location.href=`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(v.email)}&su=${encodeURIComponent('Regularization Contract - '+v.name)}&body=${encodeURIComponent(body)}`;
+          toast(`Saved “${file}”. Attach it in the Gmail tab, then click Send.`)}
+        else toast(`Saved “${file}”.`);
+      }catch(err){win&&win.close();toast('The contract could not be made. Check your connection and try again.',{kind:'bad'})}
+      return false}});
+}
 function bankSection(e){
   const b=e.bank||{};const p=(b.proof||[])[0];
   if(!b.accountNo&&!p)return`<section class="sect"><h4>Payroll bank account</h4><p class="help" style="color:var(--muted);margin:0">No ${BANK} account on file. Add it with <b>Edit 201 file</b>, together with a photo of the account number.</p></section>`;
@@ -2584,7 +2663,7 @@ function renderDrawer(){
       ${kv('1st month evaluation',evT('m1'))}${kv('Result / recommendation',evR('m1'))}${kv('3rd month evaluation',evT('m3'))}${kv('Result / recommendation',evR('m3'))}${kv('5th month evaluation',evT('m5'))}${kv('Result / recommendation',evR('m5'))}
       ${kv('Recommendation',overallRec(e))}<div><dt>201 file</dt><dd>${docCount(e)>=docTotal(e)?'<span class="chip ok">With 201 file</span>':`<span class="chip warn">Without · ${docCount(e)} of ${docTotal(e)}</span>`}</dd></div>
       ${sepd?dk('Last working day',e.lastWorkingDay)+dk('Date separated',e.separationDate)+`<div style="grid-column:1/-1"><dt>Reason of separation</dt><dd>${esc(sepReason(e)||'—')}${e.separationDetails?' · '+esc(e.separationDetails):''}</dd></div>`:''}</dl></section>
-    <section class="sect"><h4>Contracts, orientation and deployment</h4><dl class="kv">${kv('Probationary contract control no.',e.probContractNo)}${kv('Regularization contract control no.',e.regContractNo)}${dk('Company orientation date',e.companyOrientation)}${dk('Client orientation date',e.clientOrientation)}${kv('Client MR control no.',e.clientMrNo)}${kv('Endorsement no.',e.endorsementNo)}</dl></section>
+    <section class="sect"><h4>Contracts, orientation and deployment</h4><dl class="kv">${kv('Probationary contract control no.',e.probContractNo)}${kv('Regularization contract control no.',e.regContractNo)}${dk('Company orientation date',e.companyOrientation)}${dk('Client orientation date',e.clientOrientation)}${kv('Client MR control no.',e.clientMrNo)}${kv('Endorsement no.',e.endorsementNo)}</dl>${e.employmentType==='Regular'&&e.regularizedOn?`<button class="btn sm ghost" data-act="reg-contract" data-id="${e.id}" style="margin-top:10px">${ic('download')}Regularization contract</button>`:''}</section>
     <section class="sect"><h4>Compensation</h4><dl class="kv">${kv('Daily salary',peso(e.dailySalary))}${kv('Monthly salary',peso(e.monthlySalary))}${kv('Other allowance',peso(e.allowance)+(e.allowanceNote?' · '+e.allowanceNote:''))}</dl></section>
     <section class="sect"><h4>Personal information</h4><dl class="kv">${kv('Last name',e.lastName+(e.suffix?' '+e.suffix:''))}${kv('First name',e.firstName)}${kv('Middle name',e.middleName)}${kv('Sex',e.gender)}<div><dt>Date of birth</dt><dd>${e.birthDate?fmt(e.birthDate)+` (${Math.floor(diff(e.birthDate,today())/365.25)} yrs)`:'—'}</dd></div>${kv('Place of birth',e.birthPlace)}${kv('Civil status',e.civilStatus)}${kv('Nationality',e.nationality)}${kv('Religion',e.religion)}${kv('Employee contact number',e.mobile)}${kv('Email',e.email)}${kv('No. of dependents',e.dependents)}<div style="grid-column:1/-1"><dt>Present address</dt><dd>${esc(e.address||'—')}</dd></div><div style="grid-column:1/-1"><dt>Permanent address</dt><dd>${esc(e.permanentAddress||'—')}</dd></div></dl></section>
     <section class="sect"><h4>Educational background</h4><dl class="kv">${kv('Educational attainment',e.education)}${kv('School graduated',e.school)}${kv('Course / strand',e.course)}</dl></section>
@@ -2597,7 +2676,7 @@ function renderDrawer(){
     if(!ms)body=emptyBlock('No hire date','Add a hire date to build the evaluation schedule.');
     else body=`<div class="tl">${ms.items.map((x,i)=>{const cls=x.state==='done'?'ok':x.state==='overdue'?'bad':x.state==='soon'?'warn':'';return`<div class="st"><div class="bub ${cls}">${x.state==='done'?ic('check'):x.short}</div><div><h5>${x.label} Evaluation ${stateChip(x.state,x.due)}</h5><p>Due ${fmt(x.due)}</p>
       ${x.rec&&x.rec.date?`<p>Evaluated ${fmt(x.rec.date)} by ${esc(x.rec.evaluator)} · ${esc(x.rec.recommendation)}</p><p>${evalSummary(x.rec)}</p>${x.rec.hr?`<p>HR Section I: ${HR_FACTORS.map(([key,t])=>`${t} ${x.rec.hr[key]}`).join(' · ')}${x.rec.client&&x.rec.client.evaluator?` · Client evaluator: ${esc(x.rec.client.evaluator)}`:''}</p>`:''}${x.rec.client&&(x.rec.client.files||[]).length?`<p>${x.rec.client.files.map(f=>`<a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener">${ic('pclip','i sm')} ${esc(f.name)}</a>`).join(' ')}</p>`:''}${x.rec.remarks?`<p style="white-space:pre-wrap">“${esc(x.rec.remarks)}”</p>`:''}<button class="link" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="padding-left:0">Edit evaluation</button>`:`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="margin-top:6px">Record evaluation</button>`}</div></div>`}).join('')}
-      <div class="st"><div class="bub ${ms.reg.done?'ok':ms.reg.state==='overdue'?'bad':ms.reg.state==='soon'?'warn':''}">${ic('award')}</div><div><h5>Regularization ${ms.reg.done?`<span class="chip ok">${ic('check')}Regular</span>`:stateChip(ms.reg.state,ms.reg.due)}</h5><p>${e.regularizedOn?`Regularized ${fmt(e.regularizedOn)}`:`6th month: ${fmt(ms.reg.due)}`}</p>${!ms.reg.done&&isProb(e)&&!notRecommended(e)?`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}" style="margin-top:6px">Set as Regular</button>`:''}${noticeStep(e)}${eopStep(e)}</div></div></div>`;
+      <div class="st"><div class="bub ${ms.reg.done?'ok':ms.reg.state==='overdue'?'bad':ms.reg.state==='soon'?'warn':''}">${ic('award')}</div><div><h5>Regularization ${ms.reg.done?`<span class="chip ok">${ic('check')}Regular</span>`:stateChip(ms.reg.state,ms.reg.due)}</h5><p>${e.regularizedOn?`Regularized ${fmt(e.regularizedOn)}`:`6th month: ${fmt(ms.reg.due)}`}</p>${!ms.reg.done&&isProb(e)&&!notRecommended(e)?`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}" style="margin-top:6px">Set as Regular</button>`:''}${noticeStep(e)}${regContractStep(e)}${eopStep(e)}</div></div></div>`;
   }else if(drawerTab==='docs'){
     const n=docCount(e),fc=fileCount(e),ro=document.body.classList.contains('ro');
     body=`<div class="prog"><div class="t" style="width:160px"><div class="f ${n>=docTotal(e)?'full':''}" style="width:${n/docTotal(e)*100}%"></div></div><b class="num">${n} of ${docTotal(e)} submitted · ${fc} file${fc===1?'':'s'} uploaded</b></div>
@@ -2911,6 +2990,7 @@ const ACT={
   'eop-notice':(el,id)=>{const e=EMP[id];const n=e&&eopNotice(e);if(n)viewMemo(n.id);else eopForm(id)},
   'set-eoc':(el,id)=>{const e=EMP[id];const n=eopNotice(e);confirmBox('Set as Separated?',`This changes ${esc(fullName(e))}'s status to <b>Separated</b>, reason <b>End of Probationary Employment</b>${n&&n.effectiveOn?`, effective ${fmt(n.effectiveOn)} as stated in ${esc(n.no)}`:''}. The 201 file is kept.`,'Set as Separated',async()=>{const prev=clone(e);const o=clone(e);const d=(n&&n.effectiveOn)||today();Object.assign(o,{status:'Separated',separationReason:'End of Probationary Employment',separationDate:d,separationDetails:n?`Per ${n.no}.`:'',rehireEligible:o.rehireEligible||''});o.statusHistory=(o.statusHistory||[]).concat([{status:'Separated',reason:'End of Probationary Employment',details:o.separationDetails,date:d,at:new Date().toISOString(),by:MEID}]);await save('employees',o);toast(`${fullName(e)} is now Separated.`,{undo:()=>save('employees',prev)})})},
   'change-status':(el,id)=>statusForm(id),
+  'reg-contract':(el,id)=>regContractForm(id),
   'reg-notice':(el,id)=>{const e=EMP[id];const n=e&&regNotice(e);if(n)viewMemo(n.id);else noticeForm(id)},
   'view-att':(el,id,k)=>viewAtt(id,k),
   'del-file':(el,id,k)=>delFile(id,k),
