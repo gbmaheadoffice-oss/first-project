@@ -2547,7 +2547,7 @@ async function regContractPdf(v){
 }
 function regContractStep(e){
   if(e.employmentType!=='Regular'||!e.regularizedOn)return'';
-  return`<div class="notice-step"><span class="chip">${ic('download')}Regularization contract${e.regContractNo?' '+esc(e.regContractNo):''}</span><button class="btn sm ghost" data-act="reg-contract" data-id="${e.id}">Download or email</button></div>`;
+  return`<div class="notice-step"><button class="btn sm" data-act="reg-contract" data-id="${e.id}">${ic('download')}Download or email regularization contract</button></div>`;
 }
 function regContractForm(id){
   const e=EMP[id];if(!e)return;const d=regContractValues(e),ro=document.body.classList.contains('ro');
