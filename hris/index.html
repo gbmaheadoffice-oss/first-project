@@ -2731,6 +2731,64 @@ VIEWS.applicants=function(){
   return h+'</section>';
 };
 
+/* ---- Application form (Word) ----
+   application-form.docx is GBMA's REV-FM-GBMA-HR-006 form with {{key|length}} in each blank (made from the original
+   by supabase/tools/prep-application-form.py). The applicant's Jotform answers fill the blanks; empty answers keep the line. */
+let ZIPP=null;
+function loadZip(){
+  if(window.JSZip)return Promise.resolve(window.JSZip);if(ZIPP)return ZIPP;
+  ZIPP=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=()=>window.JSZip?res(window.JSZip):rej(new Error('missing'));s.onerror=()=>{ZIPP=null;rej(new Error('load failed'))};document.head.appendChild(s)});
+  return ZIPP;
+}
+function appFormValues(a){
+  const f=a.form||{},v={},d=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||'')?fmt(s):(s||''),cap=s=>String(s||'').replace(/^./,c=>c.toUpperCase());
+  Object.assign(v,{position:f.position,desiredSalary:f.desiredSalary,availableFrom:d(f.availableFrom),dateApplied:fmt(appDate(a)),
+    lastName:f.lastName,firstName:f.firstName,middleName:f.middleName,suffix:f.suffix,presentAddress:f.presentAddress,height:f.height,weight:f.weight,
+    facebook:f.facebook,mobile:f.mobile,email:f.email,age:f.age,birthDate:d(f.birthDate),birthPlace:f.birthPlace,
+    civilStatus:cap(f.civilStatus),citizenship:f.citizenship,religion:f.religion,gender:cap(f.gender),sss:f.sss,tin:f.tin,philhealth:f.philhealth,pagibig:f.pagibig,
+    spouseName:f.spouseName,spouseOccupation:f.spouseOccupation,childrenCount:f.childrenCount,
+    childrenList:(f.children||[]).map(c=>c.name+(c.age?` (${c.age})`:'')).join(', '),
+    currentlyEmployed:f.currentlyEmployed,formerEmployee:f.formerEmployee,formerWhen:f.formerWhen,hasRelatives:f.hasRelatives,relatives:f.relatives,
+    overtime:f.overtime,overtimeReason:f.overtimeReason,sundays:f.sundays,sundaysReason:f.sundaysReason,
+    otherQualifications:f.otherQualifications,equipment:f.equipment,licenses:f.licenses,skills:f.skills});
+  const em=f.emergency||{};Object.assign(v,{emName:em.name,emRelationship:em.relationship,emAddress:em.address,emPhone:em.phone});
+  const ed=f.education||{};[['pri','primary'],['sec','secondary'],['ter','tertiary'],['voc','vocational']].forEach(([p,k])=>{const s=ed[k]||{};
+    Object.assign(v,{[p+'School']:s.school,[p+'Location']:s.location,[p+'Years']:s.years,[p+'Course']:s.course,[p+'Major']:s.major,[p+'Honors']:s.honors})});
+  (f.employment||[]).slice(0,5).forEach((w,i)=>{const p='w'+(i+1);Object.assign(v,{[p+'Employer']:w.employer,[p+'Location']:w.location,[p+'Title']:w.title,[p+'Nature']:w.nature,[p+'Salary']:w.salary,[p+'From']:d(w.from),[p+'To']:d(w.to)})});
+  const fam=(p,x)=>{x=x||{};Object.assign(v,{[p+'Name']:x.name,[p+'Age']:x.age,[p+'Birth']:d(x.birthDate),[p+'Occupation']:x.occupation,[p+'Address']:x.address})};
+  fam('fa',f.father);fam('mo',f.mother);(f.siblings||[]).slice(0,8).forEach((x,i)=>fam('s'+(i+1),x));
+  (f.references||[]).slice(0,3).forEach((x,i)=>Object.assign(v,{[`r${i+1}Name`]:x.name,[`r${i+1}Occupation`]:x.occupation,[`r${i+1}Address`]:x.address,[`r${i+1}Phone`]:x.phone}));
+  v.signName=[f.firstName,f.middleName,f.lastName,f.suffix].filter(Boolean).join(' ').toUpperCase();
+  return v;
+}
+const TNR_W=(()=>{const w={' ':250,'.':250,',':250,':':278,';':278,'-':333,'/':278,'(':333,')':333,"'":180,'@':921,'&':778,'#':500,'_':500};
+  'abcdefghijklmnopqrstuvwxyz'.split('').forEach((c,i)=>w[c]=[444,500,444,500,444,333,500,500,278,278,500,278,778,500,500,500,500,333,389,278,500,500,722,500,500,444][i]);
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach((c,i)=>w[c]=[722,667,667,722,611,556,722,722,333,389,722,611,889,722,722,556,722,667,556,611,722,722,944,722,722,611][i]);return w})();
+const tnrWidth=s=>[...s].reduce((t,c)=>t+(TNR_W[c]||500),0);
+async function appFormDownload(id,btn){
+  const a=S.applicants.find(x=>x.id===id);if(!a)return;
+  const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+  if(!dl)return toast('Downloads are not available in this view.',{kind:'bad'});
+  const t=btn.innerHTML;btn.disabled=true;btn.textContent='Preparing…';
+  try{
+    const[Z,buf]=await Promise.all([loadZip(),fetch('application-form.docx').then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()})]);
+    const zip=await Z.loadAsync(buf);const v=appFormValues(a);
+    /* A blank is a run holding {{key|n}}: n underscores wide (0 in table cells). The answer is underlined, then
+       plain underscores fill the rest of the line so it keeps its length. Widths are Times New Roman, in 1/1000 em. */
+    const xml=(await zip.file('word/document.xml').async('string')).replace(/<w:r>(<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?<w:t xml:space="preserve">\{\{(\w+)\|(\d+)\}\}<\/w:t><\/w:r>/g,(m,rpr,k,n)=>{
+      rpr=rpr||'<w:rPr></w:rPr>';n=+n;const s=String(v[k]==null?'':v[k]).replace(/\s+/g,' ').trim();
+      const run=(r,t)=>t?`<w:r>${r}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`:'';
+      if(!n)return run(rpr,s);
+      const left=Math.floor((n*500-tnrWidth(s))/500)-(s?1:0);
+      return run(rpr.replace('</w:rPr>','<w:u w:val="single"/></w:rPr>'),s)+run(rpr,'_'.repeat(Math.max(s?2:n,left)))})
+      .replace(/\{\{(\w+)\|\d+\}\}/g,(m,k)=>esc(String(v[k]==null?'':v[k]).replace(/\s+/g,' ').trim()));
+    zip.file('word/document.xml',xml);
+    const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const f=a.form||{};
+    await dl.save({filename:`Application Form - ${[f.lastName,f.firstName].filter(Boolean).join(', ')||'Applicant'}.docx`.replace(/[\/:*?"<>|]/g,''),data:blob});
+  }catch(err){const c=err&&err.code;if(c!=='declined')toast('The application form could not be prepared. Check your connection and try again.',{kind:'bad'})}
+  finally{btn.disabled=false;btn.innerHTML=t}
+}
 function viewApplicant(id){
   const a=S.applicants.find(x=>x.id===id);if(!a)return;const x=a.form||{};const bl=appBl(a);
   const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;
@@ -2766,13 +2824,13 @@ function viewApplicant(id){
     <section class="sect"><h4>Employment history</h4>${tbl([['Employer','employer'],['Job title','title'],['Location','location'],['Industry','nature'],['Salary','salary'],['From','from'],['To','to']],x.employment)}</section>
     <section class="sect"><h4>Skills &amp; qualifications</h4><dl class="kv">${wide('Other qualifications',x.otherQualifications)}${wide('Computers, software, equipment',x.equipment)}${wide('Licenses / certifications',x.licenses)}${wide('Additional skills',x.skills)}</dl></section>
     <section class="sect"><h4>Character references</h4>${tbl([['Name','name'],['Occupation','occupation'],['Contact no.','phone'],['Address','address']],x.references)}</section>`,
-    foot:`<button type="button" class="btn ghost left" data-close>Close</button>${hired?'':`<button type="button" class="btn ghost" data-write id="ap-hire">${ic('plus')}Hire · create 201 file</button>`}<button type="submit" class="btn" data-write>Save</button>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="button" class="btn ghost" id="ap-form">${ic('download')}Application form</button>${hired?'':`<button type="button" class="btn ghost" data-write id="ap-hire">${ic('plus')}Hire · create 201 file</button>`}<button type="submit" class="btn" data-write>Save</button>`,
     onSubmit:async fd=>{
       const o=clone(a);const st=String(fd.get('status'));
       if(st!==appStatus(a))o.statusHistory=(o.statusHistory||[]).concat({from:appStatus(a),to:st,at:new Date().toISOString(),by:MEID});
       o.status=st;o.notes=String(fd.get('notes')||'').trim();await save('applicants',o);toast(`${appName(a)} · ${st}.`);
     },
-    onOpen:f=>{const b=f.querySelector('#ap-hire');if(b)b.onclick=()=>{if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;MD.close();hireApplicant(id)}}});
+    onOpen:f=>{f.querySelector('#ap-form').onclick=ev=>appFormDownload(id,ev.currentTarget);const b=f.querySelector('#ap-hire');if(b)b.onclick=()=>{if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;MD.close();hireApplicant(id)}}});
 }
 
 /* Pre-fills a new 201 file from the application. HR completes deployment details, then saves. */
