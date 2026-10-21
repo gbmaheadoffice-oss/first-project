@@ -2731,15 +2731,19 @@ VIEWS.applicants=function(){
   return h+'</section>';
 };
 
-/* ---- Application form (Word) ----
-   application-form.docx is GBMA's REV-FM-GBMA-HR-006 form with {{key|length}} in each blank (made from the original
-   by supabase/tools/prep-application-form.py). The applicant's Jotform answers fill the blanks; empty answers keep the line. */
-let ZIPP=null;
-function loadZip(){
-  if(window.JSZip)return Promise.resolve(window.JSZip);if(ZIPP)return ZIPP;
-  ZIPP=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=()=>window.JSZip?res(window.JSZip):rej(new Error('missing'));s.onerror=()=>{ZIPP=null;rej(new Error('load failed'))};document.head.appendChild(s)});
-  return ZIPP;
+/* ---- Application form (PDF) ----
+   application-form.pdf is GBMA's blank REV-FM-GBMA-HR-006 form; application-form.json gives where each answer goes
+   ([key, page, x, baseline from top, width], made by supabase/tools/prep-application-form.py). The applicant's
+   Jotform answers are written on the lines with pdf-lib. */
+let PDFP=null;
+function loadPdfLib(){
+  if(window.PDFLib)return Promise.resolve(window.PDFLib);if(PDFP)return PDFP;
+  PDFP=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';s.onload=()=>window.PDFLib?res(window.PDFLib):rej(new Error('missing'));s.onerror=()=>{PDFP=null;rej(new Error('load failed'))};document.head.appendChild(s)});
+  return PDFP;
 }
+/* The built-in PDF font only has Western characters: accented letters keep their base letter, anything else becomes ? */
+const WIN_EXTRA='‘’“”–—…•€™';
+const pdfSafe=s=>[...String(s)].map(c=>{const n=c.charCodeAt(0);return(n>31&&n<127)||(n>159&&n<256)||WIN_EXTRA.includes(c)?c:(c.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7e\xa0-\xff]/g,'')||'?')}).join('');
 function appFormValues(a){
   const f=a.form||{},v={},d=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||'')?fmt(s):(s||''),cap=s=>String(s||'').replace(/^./,c=>c.toUpperCase());
   Object.assign(v,{position:f.position,desiredSalary:f.desiredSalary,availableFrom:d(f.availableFrom),dateApplied:fmt(appDate(a)),
@@ -2761,31 +2765,25 @@ function appFormValues(a){
   v.signName=[f.firstName,f.middleName,f.lastName,f.suffix].filter(Boolean).join(' ').toUpperCase();
   return v;
 }
-const TNR_W=(()=>{const w={' ':250,'.':250,',':250,':':278,';':278,'-':333,'/':278,'(':333,')':333,"'":180,'@':921,'&':778,'#':500,'_':500};
-  'abcdefghijklmnopqrstuvwxyz'.split('').forEach((c,i)=>w[c]=[444,500,444,500,444,333,500,500,278,278,500,278,778,500,500,500,500,333,389,278,500,500,722,500,500,444][i]);
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach((c,i)=>w[c]=[722,667,667,722,611,556,722,722,333,389,722,611,889,722,722,556,722,667,556,611,722,722,944,722,722,611][i]);return w})();
-const tnrWidth=s=>[...s].reduce((t,c)=>t+(TNR_W[c]||500),0);
 async function appFormDownload(id,btn){
   const a=S.applicants.find(x=>x.id===id);if(!a)return;
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl)return toast('Downloads are not available in this view.',{kind:'bad'});
   const t=btn.innerHTML;btn.disabled=true;btn.textContent='Preparing…';
   try{
-    const[Z,buf]=await Promise.all([loadZip(),fetch('application-form.docx').then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()})]);
-    const zip=await Z.loadAsync(buf);const v=appFormValues(a);
-    /* A blank is a run holding {{key|n}}: n underscores wide (0 in table cells). The answer is underlined, then
-       plain underscores fill the rest of the line so it keeps its length. Widths are Times New Roman, in 1/1000 em. */
-    const xml=(await zip.file('word/document.xml').async('string')).replace(/<w:r>(<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?<w:t xml:space="preserve">\{\{(\w+)\|(\d+)\}\}<\/w:t><\/w:r>/g,(m,rpr,k,n)=>{
-      rpr=rpr||'<w:rPr></w:rPr>';n=+n;const s=String(v[k]==null?'':v[k]).replace(/\s+/g,' ').trim();
-      const run=(r,t)=>t?`<w:r>${r}<w:t xml:space="preserve">${esc(t)}</w:t></w:r>`:'';
-      if(!n)return run(rpr,s);
-      const left=Math.floor((n*500-tnrWidth(s))/500)-(s?1:0);
-      return run(rpr.replace('</w:rPr>','<w:u w:val="single"/></w:rPr>'),s)+run(rpr,'_'.repeat(Math.max(s?2:n,left)))})
-      .replace(/\{\{(\w+)\|\d+\}\}/g,(m,k)=>esc(String(v[k]==null?'':v[k]).replace(/\s+/g,' ').trim()));
-    zip.file('word/document.xml',xml);
-    const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-    const f=a.form||{};
-    await dl.save({filename:`Application Form - ${[f.lastName,f.firstName].filter(Boolean).join(', ')||'Applicant'}.docx`.replace(/[\/:*?"<>|]/g,''),data:blob});
+    const get=(u,t)=>fetch(u).then(r=>{if(!r.ok)throw new Error(r.status);return r[t]()});
+    const[L,buf,lay]=await Promise.all([loadPdfLib(),get('application-form.pdf','arrayBuffer'),get('application-form.json','json')]);
+    const doc=await L.PDFDocument.load(buf);const font=await doc.embedFont(L.StandardFonts.TimesRoman);const pages=doc.getPages();const v=appFormValues(a);
+    lay.fields.forEach(([k,pi,x,y,w])=>{
+      let t=pdfSafe(String(v[k]==null?'':v[k]).replace(/\s+/g,' ').trim());if(!t)return;
+      /* 10 pt, smaller for long answers so they stay on the line */
+      let size=10;while(size>6&&font.widthOfTextAtSize(t,size)>w)size-=.5;
+      while(t.length>1&&font.widthOfTextAtSize(t,size)>w)t=t.slice(0,-2)+'…';
+      const pg=pages[pi];pg.drawText(t,{x,y:pg.getHeight()-y,size,font,color:L.rgb(0,0,.55)});
+    });
+    const f=a.form||{};doc.setTitle(`Application for Employment - ${[f.firstName,f.lastName].filter(Boolean).join(' ')}`);doc.setAuthor('Golden Bear Manpower Agency');
+    const blob=new Blob([await doc.save()],{type:'application/pdf'});
+    await dl.save({filename:`Application Form - ${[f.lastName,f.firstName].filter(Boolean).join(', ')||'Applicant'}.pdf`.replace(/[\\/:*?"<>|]/g,''),data:blob});
   }catch(err){const c=err&&err.code;if(c!=='declined')toast('The application form could not be prepared. Check your connection and try again.',{kind:'bad'})}
   finally{btn.disabled=false;btn.innerHTML=t}
 }
