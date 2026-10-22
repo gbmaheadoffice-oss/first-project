@@ -28,7 +28,8 @@ create index if not exists hris_docs_applicant_created on public.hris_docs ((dat
 create or replace view public.applicants with (security_invoker = true) as
 select d.id,
   d.data->>'status' as status,
-  left(d.data->'jotform'->>'createdAt', 10) as date_applied,
+  -- Jotform's API gives US Eastern time, date_applied is the Philippine date
+  to_char(((d.data->'jotform'->>'createdAt')::timestamp at time zone 'America/New_York') at time zone 'Asia/Manila', 'YYYY-MM-DD') as date_applied,
   d.data->'form'->>'position' as position,
   d.data->'form'->>'lastName' as last_name, d.data->'form'->>'firstName' as first_name, d.data->'form'->>'middleName' as middle_name,
   d.data->'form'->>'mobile' as mobile, d.data->'form'->>'email' as email,

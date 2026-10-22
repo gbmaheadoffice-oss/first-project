@@ -1,4 +1,5 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}.jfsteps{margin:6px 0 0;padding-left:20px;display:grid;gap:8px}.jfsteps .chip{vertical-align:middle}.jfnote{margin-top:4px;white-space:pre-wrap;color:var(--muted);font-size:.92em}
+</style></head><body>
 <title>Manpower HRIS</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2115,7 +2116,7 @@ function viewPermit(id){
     body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(p.status==='Approved'?'Issued':p.status)}${sampleChip(p)}${reqChips(p)}</div>
     <dl class="kv"><div><dt>Employee</dt><dd>${esc(reqName(p))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(p)}
     <div><dt>Leave</dt><dd>${ptwLeaveText(p)}${l?` <button type="button" class="link" data-act="view-leave" data-id="${l.id}" style="padding:0 4px">View leave</button>`:''}</dd></div><div><dt>Returning to work on</dt><dd><b>${fmt(p.returnDate)}</b></dd></div>
-    <div><dt>Filed on</dt><dd>${fmtTs(p.filedAt)}</dd></div><div><dt>Status</dt><dd>${esc(p.status==='Approved'?'Issued':p.status)}${p.decidedAt?` by ${uname(p.decidedBy)} · ${fmtTs(p.decidedAt)}`:''}</dd></div>
+    <div><dt>Filed on</dt><dd>${fmtTs(p.filedAt)}</dd></div><div><dt>Status</dt><dd>${esc(p.status==='Approved'?'Issued':p.status)}${p.decidedAt?` by ${decider(p)} · ${fmtTs(p.decidedAt)}`:''}</dd></div>
     ${p.note?`<div style="grid-column:1/-1"><dt>Employee's note</dt><dd style="white-space:pre-wrap">${esc(p.note)}</dd></div>`:''}
     ${p.remarks?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(p.remarks)}</dd></div>`:''}</dl>
     ${needsFit(p)&&p.status==='Pending'?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached.</span></div>`:''}
@@ -2127,6 +2128,14 @@ function viewPermit(id){
   resolveNames();
 }
 const JF_FORMS={leaves:'261329099923466',permits:'261331432840448'};
+/* Decisions made in the Jotform approval workflow (HR Staff, then Gladys Espedillon) come in as r.jotformDecision */
+const decider=r=>r.decidedVia==='jotform'?esc([...new Set(((r.jotformDecision||{}).steps||[]).map(x=>x.by))].join(', ')||'Jotform')+' on Jotform':uname(r.decidedBy);
+function jfApproval(r){
+  const d=r.jotformDecision;if(!d||!(d.steps||[]).length)return'';
+  return`<h4 style="margin-top:14px">Jotform approval</h4>
+    <ol class="jfsteps">${d.steps.map(x=>`<li><span class="chip ${x.outcome==='Approved'?'ok':'bad'}">${ic(x.outcome==='Approved'?'check':'x2')}${esc(x.outcome)}</span> by <b>${esc(x.by)}</b> · ${fmtTs(x.at)}${x.comment?`<div class="jfnote">${esc(x.comment)}</div>`:''}</li>`).join('')}</ol>
+    ${d.outcome?'':`<p class="help" style="margin:6px 0 0">Waiting for the next approver in Jotform. The decision comes in here once the workflow is finished.</p>`}`;
+}
 function jfSection(col,r){
   const j=r.jotform;if(!j)return'';
   const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;
@@ -2137,6 +2146,7 @@ function jfSection(col,r){
     <dl class="kv">${kv('Name typed',j.name)}${kv('Employee ID typed',j.empNo)}${kv('Email',j.email)}${kv('Site assignment',j.site)}${kv('Regular work schedule',j.schedule)}
     ${col==='leaves'?kv('Leave type chosen',j.leaveType)+kv('Leave date',dt(j.leaveDate))+kv('Return date',dt(j.returnDate))+kv('No. of days (Jotform)',j.days)
       :kv('Date filed',j.dateFiled&&fmt(j.dateFiled))+kv('Absence',j.startDate?fmt(j.startDate)+' – '+fmt(j.endDate):'')+kv('Days of absence',j.days)+kv('Leave Submission ID# typed',j.leaveSubmissionId)}</dl>
+    ${jfApproval(r)}
     <p style="margin:8px 0 0"><a class="link" href="https://www.jotform.com/inbox/${JF_FORMS[col]}/${esc(j.submissionId)}" target="_blank" rel="noopener">${ic('ext')}Open in Jotform</a></p></section>`;
 }
 async function linkReq(col,id,empId){
@@ -2153,7 +2163,7 @@ function viewLeave(id){
     body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(l.status)}${sampleChip(l)}${reqChips(l)}</div>
     <dl class="kv"><div><dt>Employee</dt><dd>${esc(reqName(l))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(l)}
     <div><dt>Leave type</dt><dd>${esc(l.type)}</dd></div><div><dt>Dates</dt><dd>${fmt(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}</dd></div>
-    <div><dt>Filed on</dt><dd>${fmtTs(l.filedAt)}</dd></div><div><dt>Status</dt><dd>${esc(l.status)}${l.decidedAt?` by ${uname(l.decidedBy)} · ${fmtTs(l.decidedAt)}`:''}</dd></div>
+    <div><dt>Filed on</dt><dd>${fmtTs(l.filedAt)}</dd></div><div><dt>Status</dt><dd>${esc(l.status)}${l.decidedAt?` by ${decider(l)} · ${fmtTs(l.decidedAt)}`:''}</dd></div>
     <div style="grid-column:1/-1"><dt>Reason</dt><dd style="white-space:pre-wrap">${esc(l.reason||'—')}</dd></div>
     ${l.remarks?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(l.remarks)}</dd></div>`:''}</dl>
     <section class="sect"><h4>Leave credits</h4>${creditPanel(l)}</section>
@@ -2781,7 +2791,9 @@ const appStatus=a=>a.status||'New';
 const appChip=a=>`<span class="chip ${APP_CHIP[appStatus(a)]||''}">${appStatus(a)==='Blocklisted'?ic('x2'):''}${esc(appStatus(a))}</span>`;
 const appName=a=>{const f=a.form||{};return[f.firstName,f.middleName?f.middleName[0]+'.':'',f.lastName,f.suffix].filter(Boolean).join(' ')||'Unnamed applicant'};
 /* The date Jotform received the form; applicants sometimes type a wrong "Date Applied". */
-const appDate=a=>((a.jotform&&a.jotform.createdAt)||'').slice(0,10)||(a.form&&a.form.dateApplied)||'';
+/* Jotform's API gives times in US Eastern time (not the account's Asia/Singapore setting); this turns one into the Philippine date */
+const jfDay=t=>{if(!t)return'';const u=Date.parse(String(t).replace(' ','T')+'Z');if(isNaN(u))return'';const m=/GMT([+-]\d+)/.exec(new Date(u).toLocaleString('en-US',{timeZone:'America/New_York',timeZoneName:'shortOffset'}));return new Date(u-(m?+m[1]:-5)*36e5+8*36e5).toISOString().slice(0,10)};
+const appDate=a=>jfDay(a.jotform&&a.jotform.createdAt)||(a.form&&a.form.dateApplied)||'';
 const appBl=a=>{const f=a.form||{};return blocklistMatch(f.firstName,f.lastName,f.birthDate)};
 const titleCase=s=>String(s||'').trim().toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
 const APP_MAX=200;
@@ -2951,7 +2963,7 @@ async function syncJotform(el){
   if(!window.HRIS_SB)return;el.disabled=true;const t=el.innerHTML;el.textContent='Checking Jotform…';
   const req=el.dataset.k==='requests';
   try{const{data,error}=await window.HRIS_SB.functions.invoke('jotform-sync',{body:req?{only:'requests'}:{only:'applicants'}});if(error)throw error;
-    if(req){const n=((data.leaves||{}).written||0)+((data.permits||{}).written||0);toast(n?`${n} leave or permit request${n===1?'':'s'} added or updated.`:'No new leave or permit requests.')}
+    if(req){const n=((data.leaves||{}).written||0)+((data.permits||{}).written||0),dn=((data.leaveDecisions||{}).decided||0)+((data.permitDecisions||{}).decided||0);toast(n||dn?`${n} leave or permit request${n===1?'':'s'} added or updated${dn?`, ${dn} decided in Jotform`:''}.`:'No new leave or permit requests.')}
     else toast(data&&data.written?`${data.written} application${data.written===1?'':'s'} added or updated.`:'No new applications.')}
   catch(e){toast('Could not reach Jotform. Try again in a minute.',{kind:'bad'})}
   finally{el.disabled=false;el.innerHTML=t}

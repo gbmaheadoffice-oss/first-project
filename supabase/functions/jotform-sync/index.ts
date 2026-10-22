@@ -2,6 +2,7 @@
 //   GBMA Online Job Application Form -> "applicants" (only the answers are refreshed; HR's status and notes are kept)
 //   GBMA Leave Form                  -> "leaves"  (new requests start as Pending)
 //   GBMA Permit to Work              -> "permits" (new requests start as Pending, linked to their leave)
+//   Approve/Deny in the Jotform approval workflows is copied to requests still Pending in the HRIS
 // Runs every 5 minutes from pg_cron, and on demand from the HRIS "Check Jotform now" buttons.
 import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 
@@ -114,8 +115,10 @@ type Sub = { id: string; status: string; created_at: string; updated_at: string 
 type Doc = Record<string, any>;
 type File = { id?: string; name: string; type?: string; size?: number; at?: string; url?: string; source: string; error?: string };
 
-// Jotform times are in the account's time zone (Asia/Singapore, UTC+8, same as the Philippines).
-const isoAt = (t: string) => new Date(t.replace(" ", "T") + "+08:00").toISOString();
+// The API gives times in US Eastern time (EDT/EST), not the account's Asia/Singapore setting:
+// submissions at 8 AM in Manila come in as 20:00 the day before.
+const nyOffset = (ms: number) => Number(/GMT([+-]\d+)/.exec(new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", timeZoneName: "shortOffset" }))?.[1] ?? -5);
+const isoAt = (t: string) => { const u = Date.parse(t.replace(" ", "T") + "Z"); return new Date(u - nyOffset(u) * 36e5).toISOString(); };
 const iso = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 const addDays = (d: string, n: number) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return iso(x); };
 const sunday = (d: string) => new Date(d + "T00:00:00Z").getUTCDay() === 0;
@@ -319,6 +322,79 @@ async function syncPermits(full: boolean, match: ReturnType<typeof matcher>, sto
   return { fetched: subs.length, written: await save("permits", rows) };
 }
 
+// ---------- decisions from the Jotform approval workflows ----------
+// "GBMA Leave Form: Workflow" and "GBMA Permit to Work: Workflow" send each submission to HR Staff, then Gladys
+// Espedillon, who Approve or Deny it in Jotform. A request still Pending in the HRIS takes the same decision once the
+// workflow is finished; one HR already decided in the HRIS is left alone (the upsert applies "sync" only while Pending).
+const SIL_TYPES = ["Vacation", "Sick", "Service Incentive"];
+const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+const addMonths = (d: string, n: number) => {
+  const [y, m, day] = d.split("-").map(Number);
+  const r = new Date(Date.UTC(y, m - 1 + n, 1)), last = new Date(Date.UTC(r.getUTCFullYear(), r.getUTCMonth() + 1, 0)).getUTCDate();
+  r.setUTCDate(Math.min(day, last));
+  return iso(r);
+};
+// SIL credits available on asOf, as silInfo() in the HRIS computes them (Sick + Vacation combined)
+function silAvailable(e: Doc | undefined, leaves: Doc[], asOf: string) {
+  if (!e?.hireDate || asOf < addMonths(e.hireDate, 12)) return 0;
+  let k = 1;
+  while (addMonths(e.hireDate, 12 * (k + 1)) <= asOf) k++;
+  const anniv = addMonths(e.hireDate, 12 * k), next = addMonths(e.hireDate, 12 * (k + 1));
+  let months = 0;
+  while (months < 12 && addMonths(anniv, months + 1) <= asOf) months++;
+  const used = leaves.filter((l) => l.employeeId === e.id && SIL_TYPES.includes(l.type) && l.status === "Approved" && l.from >= anniv && l.from < next)
+    .reduce((t, l) => t + (l.creditDays != null ? l.creditDays : l.days || 0), 0);
+  return Math.max(0, r4((5 / 12) * months - used));
+}
+async function instance(sid: string) {
+  const r = await fetch(`${JF}/workflow/instance/${sid}`, { headers: { APIKEY: env("JOTFORM_API_KEY") } });
+  const j = await r.json().catch(() => null);
+  return r.ok && j?.responseCode === 200 ? (j.content as Doc) : null;
+}
+type Step = { by: string; outcome: string; comment: string; at: string };
+function steps(w: Doc): Step[] {
+  const comment = new Map<string, string>();
+  for (const t of w.taskList ?? []) comment.set(String(t.properties?.submissionID ?? ""), s(t.properties?.comment));
+  return (w.thread ?? []).filter((t: Doc) => t.action_type === "APPROVE_REJECT").sort((a: Doc, b: Doc) => (a.created_at < b.created_at ? -1 : 1)).map((t: Doc) => {
+    const v = JSON.parse(t.action_value || "{}");
+    return { by: s(t.user?.name) || s(v.assigneeEmail), outcome: v.type === "APPROVE" ? "Approved" : "Denied", comment: s(v.comment) || comment.get(String(v.submissionID ?? "")) || "", at: isoAt(t.created_at) };
+  });
+}
+async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) {
+  const all = await docs(col), leaves = col === "leaves" ? all : [];
+  const open = all.filter((d) => d.source === "jotform" && d.status === "Pending" && d.jotform?.submissionId);
+  const found: { d: Doc; w: Doc }[] = [];
+  for (let i = 0; i < open.length; i += 8) {
+    const ws = await Promise.all(open.slice(i, i + 8).map((d) => instance(d.jotform.submissionId)));
+    ws.forEach((w, k) => { if (w) found.push({ d: open[i + k], w }); });
+  }
+  const rows = [];
+  // in the order they were decided, so each SIL deduction sees the ones before it
+  const at = (x: { w: Doc }) => steps(x.w).at(-1)?.at ?? "";
+  for (const { d, w } of found.sort((a, b) => (at(a) < at(b) ? -1 : 1))) {
+    const st = steps(w), done = w.status === "COMPLETED" && w.approvalSummary?.status === "COMPLETED";
+    const status = !done ? "" : w.approvalSummary.text === "Approve" ? "Approved" : w.approvalSummary.text === "Deny" ? "Declined" : "";
+    const jotformDecision = { outcome: status, steps: st };
+    // approving needs the 201 file (SIL credits); it waits until HR links the request
+    if (!status || (status === "Approved" && !emps.has(d.employeeId))) {
+      if (st.length && JSON.stringify(d.jotformDecision ?? null) !== JSON.stringify(jotformDecision)) rows.push({ id: d.id, sync: { jotformDecision } });
+      continue;
+    }
+    const last = st.at(-1)?.at || new Date().toISOString();
+    // the approvers' comments stay in jotformDecision: they are internal notes (credit balances), and remarks print on the permit
+    const o: Doc = { status, jotformDecision, decidedAt: last, decidedBy: "", decidedVia: "jotform" };
+    const day = iso(new Date(new Date(last).getTime() + 8 * 36e5));
+    if (col === "leaves" && status === "Approved" && SIL_TYPES.includes(d.type)) {
+      o.creditDays = r4(Math.min(d.days || 0, silAvailable(emps.get(d.employeeId), leaves, day)));
+      o.unpaidDays = r4((d.days || 0) - o.creditDays);
+    }
+    if (col === "permits" && status === "Approved") o.issuedOn = day;
+    Object.assign(d, o);
+    rows.push({ id: d.id, sync: o });
+  }
+  return { checked: open.length, decided: rows.filter((r) => r.sync.status).length, written: await save(col, rows) };
+}
+
 async function syncApplicants(full: boolean) {
   const subs = await fetchSubs(FORM_ID, await sinceFor("hris_applicants_last_created", {}, full));
   const rows = subs.map((x) => ({
@@ -352,6 +428,9 @@ Deno.serve(async (req) => {
       const match = matcher(emps);
       out.leaves = await syncLeaves(full, match, new Map(leaves.map((l) => [l.id, l])));
       out.permits = await syncPermits(full, match, new Map(permits.map((p) => [p.id, p])), await docs("leaves"));
+      const byId = new Map(emps.map((e) => [e.id, e]));
+      out.leaveDecisions = await syncDecisions("leaves", byId);
+      out.permitDecisions = await syncDecisions("permits", byId);
     }
   } catch (e) {
     return json({ ...out, ok: false, error: String((e as Error)?.message ?? e) }, 502);
