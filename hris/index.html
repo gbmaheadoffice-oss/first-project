@@ -544,6 +544,8 @@ function empStatus(e){const s=e&&e.status;if(s==='Separated'||s==='Blocklisted')
 const sepReason=e=>e.separationReason||LEGACY_SEP[e.status]||'';
 const DOCS=[['application','Application form'],['resume','Resume / Bio-data'],['exam','Exam result'],['photo','ID pictures (2x2)'],['psa','Birth certificate (PSA)'],['marriage','Marriage contract'],['dependents','Dependents’ birth certificates'],['brgy','Barangay clearance'],['police','Police clearance'],['nbi','NBI clearance'],['medical','Medical result / Fit-to-work'],['covid','COVID vaccination card'],['tor','Diploma / Transcript of records'],['coe','Previous certificate of employment'],['sssdoc','SSS E-1 / ID'],['phdoc','PhilHealth MDR'],['pidoc','Pag-IBIG MDF'],['tindoc','BIR 1902 / TIN'],['contract','Signed employment contract'],['jd','Signed job description']];
 /* Marriage contract applies when the civil status is not Single; dependents' birth certificates when the employee has dependents. */
+/* Files that are not one of the requirements; shown last in the 201 Checklist and not counted as a requirement */
+const OTHER_DOC=['other','Other documents'];
 const DOC_COND={marriage:e=>!!e.civilStatus&&e.civilStatus!=='Single',dependents:e=>(+e.dependents||0)>0||(e.soloParent&&(+e.soloChildren||0)>0)};
 const docApplies=(e,k)=>!DOC_COND[k]||DOC_COND[k](e);
 const docsFor=e=>DOCS.filter(([k])=>docApplies(e,k));
@@ -634,7 +636,7 @@ function statusBanner(e){const s=empStatus(e);if(s==='Active')return'';
 const docFiles=(e,k)=>(e.files&&e.files[k])||[];
 const docHas=(e,k)=>!!((e.docs&&e.docs[k])||docFiles(e,k).length);
 const docCount=e=>docsFor(e).filter(([k])=>docHas(e,k)).length;
-const fileCount=e=>DOCS.reduce((s,[k])=>s+docFiles(e,k).length,0);
+const fileCount=e=>DOCS.concat([OTHER_DOC]).reduce((s,[k])=>s+docFiles(e,k).length,0);
 const fsize=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
 const soloExpired=e=>!!(e.soloParent&&e.soloParentValidUntil&&e.soloParentValidUntil<today());
 /* PWD: disability types follow the NCDA PWD ID categories */
@@ -2656,9 +2658,9 @@ function renderDrawer(){
     const n=docCount(e),fc=fileCount(e),ro=document.body.classList.contains('ro');
     body=`<div class="prog"><div class="t" style="width:160px"><div class="f ${n>=docTotal(e)?'full':''}" style="width:${n/docTotal(e)*100}%"></div></div><b class="num">${n} of ${docTotal(e)} submitted · ${fc} file${fc===1?'':'s'} uploaded</b></div>
     ${ASSETS?`<p class="help" style="margin:0;color:var(--muted)">Upload a scanned or digital copy for each requirement: PDF, JPG or PNG, up to 20 MB per file. You can also drag files onto a row. Uploading ticks the requirement as submitted.</p>`:`<div class="banner">${ic('info')}<span class="grow">${MODE==='db'?'You can view the uploaded documents, but only people with edit access can upload or remove them.':'Document uploads need the online version of this system. Open the shared link to upload files.'}</span></div>`}
-    <ul class="docs">${docsFor(e).map(([k,l])=>{const fs=docFiles(e,k);const ticked=!!(e.docs&&e.docs[k]);const busy=UPL[e.id+':'+k];
-      const chip=fs.length?`<span class="chip ok">${ic('pclip')}${fs.length} file${fs.length===1?'':'s'}</span>`:ticked?`<span class="chip warn">No soft copy</span>`:`<span class="chip">Missing</span>`;
-      return`<li class="doc" data-dockey="${k}"><div class="doc-h"><label class="ck"><input type="checkbox" data-doc="${k}" ${ticked||fs.length?'checked':''} ${ro||fs.length?'disabled':''} aria-label="${esc(l)} submitted">${esc(l)}</label>${chip}
+    <ul class="docs">${docsFor(e).concat([OTHER_DOC]).map(([k,l])=>{const other=k===OTHER_DOC[0],fs=docFiles(e,k);const ticked=!!(e.docs&&e.docs[k]);const busy=UPL[e.id+':'+k];
+      const chip=fs.length?`<span class="chip ok">${ic('pclip')}${fs.length} file${fs.length===1?'':'s'}</span>`:other?`<span class="chip">None</span>`:ticked?`<span class="chip warn">No soft copy</span>`:`<span class="chip">Missing</span>`;
+      return`<li class="doc" data-dockey="${k}"><div class="doc-h">${other?`<span class="ck" style="flex-direction:column;align-items:flex-start;gap:0"><b>${esc(l)}</b><span class="help" style="margin:0;font-weight:400">Any other file for this employee, e.g. certificates, IDs, letters. Not counted as a requirement.</span></span>`:`<label class="ck"><input type="checkbox" data-doc="${k}" ${ticked||fs.length?'checked':''} ${ro||fs.length?'disabled':''} aria-label="${esc(l)} submitted">${esc(l)}</label>`}${chip}
         ${ASSETS?`<button class="btn sm ghost" data-act="upload" data-id="${e.id}" data-k="${k}" ${busy?'disabled':''}>${busy?'Uploading…':ic('upload')+'Upload'}</button><input type="file" id="up-${k}" data-upload="${k}" accept=".pdf,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,application/pdf" multiple hidden>`:''}</div>
         ${fs.length?`<div class="files">${fs.map(f=>{const img=/^image\//.test(f.type);return`<div class="file">${img?`<img src="/_blob/${esc(f.id)}" alt="" loading="lazy" width="44" height="44">`:`<span class="fic">${ic('pdf')}<b>PDF</b></span>`}
           <div class="fn"><button class="link" data-act="view-file" data-id="${e.id}" data-k="${k}|${esc(f.id)}">${esc(f.name)}</button><span>${fsize(f.size||0)} · ${fmtTs(f.at)}</span></div>
@@ -2696,7 +2698,7 @@ function fileType(f){const t=(f.type||'').toLowerCase();if(Object.values(FILE_TY
 function upErr(e){const c=e&&e.code;return c==='too_large'?'larger than 20 MB':c==='unsupported_type'?'use PDF, JPG or PNG':c==='quota_or_state'?'document storage is full':c==='rate_limited'?'too many uploads at once, try again in a minute':c==='not_granted'||c==='capability_disabled'?'you do not have upload access':'upload failed, try again'}
 async function uploadFiles(empId,k,files){
   if(!ASSETS)return toast('Uploads are not available here.',{kind:'bad'});
-  const label=(DOCS.find(d=>d[0]===k)||[k,k])[1];const key=empId+':'+k;const ok=[],errs=[];
+  const label=(DOCS.concat([OTHER_DOC]).find(d=>d[0]===k)||[k,k])[1];const key=empId+':'+k;const ok=[],errs=[];
   UPL[key]=true;renderDrawer();
   for(const file of files){
     const type=fileType(file);
@@ -2707,7 +2709,7 @@ async function uploadFiles(empId,k,files){
   }
   delete UPL[key];
   if(ok.length&&EMP[empId]){
-    const o=clone(EMP[empId]);o.files=o.files||{};o.files[k]=(o.files[k]||[]).concat(ok);o.docs=o.docs||{};o.docs[k]=true;
+    const o=clone(EMP[empId]);o.files=o.files||{};o.files[k]=(o.files[k]||[]).concat(ok);o.docs=o.docs||{};if(k!==OTHER_DOC[0])o.docs[k]=true;
     try{await save('employees',o);toast(`${ok.length} file${ok.length===1?'':'s'} added to ${label}.`)}catch(err){for(const f of ok){try{await ASSETS.delete(f.id)}catch(e3){}}}
   }
   renderDrawer();
@@ -2724,8 +2726,8 @@ function viewFile(empId,ref){
   resolveNames();
 }
 function delFile(empId,ref){
-  const{e,k,fid,f}=findFile(empId,ref);if(!f)return;const label=(DOCS.find(d=>d[0]===k)||[k,k])[1];
-  confirmBox('Remove this document?',`This permanently deletes <b>${esc(f.name)}</b> from the ${esc(label)} requirement of ${esc(fullName(e))}.`,'Remove document',async()=>{
+  const{e,k,fid,f}=findFile(empId,ref);if(!f)return;const label=(DOCS.concat([OTHER_DOC]).find(d=>d[0]===k)||[k,k])[1];
+  confirmBox('Remove this document?',`This permanently deletes <b>${esc(f.name)}</b> from ${k===OTHER_DOC[0]?'the other documents':`the ${esc(label)} requirement`} of ${esc(fullName(e))}.`,'Remove document',async()=>{
     const o=clone(EMP[empId]);o.files[k]=(o.files[k]||[]).filter(x=>x.id!==fid);if(!o.files[k].length)delete o.files[k];
     await save('employees',o);try{await ASSETS.delete(fid)}catch(err){}toast('Document removed.');
   });
