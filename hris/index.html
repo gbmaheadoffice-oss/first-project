@@ -2725,10 +2725,10 @@ function clearSample(){
 /* ---------------- Applicants (from the Jotform "GBMA Online Job Application Form") ----------------
    Each applicant is {id:'jf-<submission id>', form:{…answers}, jotform:{submissionId,createdAt}, status, notes, statusHistory, hiredEmployeeId}.
    The answers are kept in sync from Jotform by the jotform-sync function; HR only edits status and notes here. */
-const APP_STATUS=['New','Shortlisted','For interview','Hired','Not hired'];
-const APP_CHIP={New:'info',Shortlisted:'warn','For interview':'warn',Hired:'ok','Not hired':'bad'};
+const APP_STATUS=['New','Shortlisted','For interview','Hired','Not hired','Blocklisted'];
+const APP_CHIP={New:'info',Shortlisted:'warn','For interview':'warn',Hired:'ok','Not hired':'bad',Blocklisted:'blk'};
 const appStatus=a=>a.status||'New';
-const appChip=a=>`<span class="chip ${APP_CHIP[appStatus(a)]||''}">${esc(appStatus(a))}</span>`;
+const appChip=a=>`<span class="chip ${APP_CHIP[appStatus(a)]||''}">${appStatus(a)==='Blocklisted'?ic('x2'):''}${esc(appStatus(a))}</span>`;
 const appName=a=>{const f=a.form||{};return[f.firstName,f.middleName?f.middleName[0]+'.':'',f.lastName,f.suffix].filter(Boolean).join(' ')||'Unnamed applicant'};
 /* The date Jotform received the form; applicants sometimes type a wrong "Date Applied". */
 const appDate=a=>((a.jotform&&a.jotform.createdAt)||'').slice(0,10)||(a.form&&a.form.dateApplied)||'';
@@ -2853,7 +2853,7 @@ function viewApplicant(id){
     ${hired?`<div class="silline">${ic('check')}<span>Hired as <b>${esc(hired.empNo)}</b>. <button type="button" class="link" data-act="open-emp" data-id="${hired.id}" style="padding:0 4px">Open 201 file</button></span></div>`:''}
     <fieldset data-write><legend>HR decision</legend><div class="fg">
       ${field({id:'ap-status',name:'status',label:'Status',type:'select',opts:APP_STATUS,value:appStatus(a),blank:false})}
-      ${field({id:'ap-notes',name:'notes',label:'HR notes',type:'textarea',value:a.notes||'',attrs:'style="min-height:70px"',help:'Interview schedule, results, reason for not hiring…'})}
+      ${field({id:'ap-notes',name:'notes',label:'HR notes',type:'textarea',value:a.notes||'',attrs:'style="min-height:70px"',help:'Interview schedule, results, reason for not hiring or blocklisting…'})}
     </div></fieldset>
     <section class="sect"><h4>Position &amp; availability</h4><dl class="kv">${kv('Position applied for',x.position)}${kv('Desired salary',x.desiredSalary&&'₱'+x.desiredSalary)}${kv('Available from',x.availableFrom&&fmt(x.availableFrom))}${kv('Currently employed',x.currentlyEmployed)}
       ${kv('Willing to render overtime',yn(x.overtime,x.overtimeReason))}${kv('Willing to work Sundays / holidays',yn(x.sundays,x.sundaysReason))}
@@ -2876,7 +2876,7 @@ function viewApplicant(id){
       if(st!==appStatus(a))o.statusHistory=(o.statusHistory||[]).concat({from:appStatus(a),to:st,at:new Date().toISOString(),by:MEID});
       o.status=st;o.notes=String(fd.get('notes')||'').trim();await save('applicants',o);toast(`${appName(a)} · ${st}.`);
     },
-    onOpen:f=>{f.querySelector('#ap-form').onclick=ev=>appFormDownload(id,ev.currentTarget);const b=f.querySelector('#ap-hire');if(b)b.onclick=()=>{if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;MD.close();hireApplicant(id)}}});
+    onOpen:f=>{f.querySelector('#ap-form').onclick=ev=>appFormDownload(id,ev.currentTarget);const b=f.querySelector('#ap-hire');if(b)b.onclick=()=>{if(appStatus(a)==='Blocklisted'&&!confirm('This applicant is blocklisted. Hire anyway?'))return;if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;MD.close();hireApplicant(id)}}});
 }
 
 /* Pre-fills a new 201 file from the application. HR completes deployment details, then saves. */
