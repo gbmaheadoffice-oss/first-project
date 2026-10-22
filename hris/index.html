@@ -637,6 +637,10 @@ const docCount=e=>docsFor(e).filter(([k])=>docHas(e,k)).length;
 const fileCount=e=>DOCS.reduce((s,[k])=>s+docFiles(e,k).length,0);
 const fsize=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
 const soloExpired=e=>!!(e.soloParent&&e.soloParentValidUntil&&e.soloParentValidUntil<today());
+/* PWD: disability types follow the NCDA PWD ID categories */
+const PWD_TYPES=['Deaf or hard of hearing','Intellectual disability','Learning disability','Mental disability','Physical disability (orthopedic)','Psychosocial disability','Speech and language impairment','Visual disability','Cancer (RA 11215)','Rare disease (RA 10747)'];
+const pwdExpired=e=>!!(e.pwd&&e.pwdValidUntil&&e.pwdValidUntil<today());
+const pwdChip=e=>e&&e.pwd?` <span class="chip ${pwdExpired(e)?'warn':'info'}" title="${pwdExpired(e)?'PWD ID expired':'Person with disability'}">${ic('users')}PWD${pwdExpired(e)?' · ID expired':''}</span>`:'';
 const soloChip=e=>e&&e.soloParent?` <span class="chip ${soloExpired(e)?'warn':'solo'}" title="${soloExpired(e)?'Solo Parent ID expired':'Solo parent'}">${ic('users')}Solo parent${soloExpired(e)?' · ID expired':''}</span>`:'';
 const sampleChip=o=>o&&o.sample?' <span class="chip sample">Sample</span>':'';
 const uname=id=>id?`<span data-uid="${esc(id)}">HR</span>`:'HR';
@@ -788,7 +792,7 @@ VIEWS.dashboard=function(){
 /* ---- 201 Files ---- */
 VIEWS.employees=function(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
-  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
+  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.biometricId,e.position,e.department,e.client].join(' ').toLowerCase().includes(q));
   list.sort(sortName);
   const depts=deptList(DEPTS);
@@ -801,10 +805,10 @@ VIEWS.employees=function(){
     <label class="sr" for="f-emp-client">Client company</label><select id="f-emp-client" data-filter="emp.client" style="flex:1 1 260px;max-width:340px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)} (${clCount(c)})</option>`).join('')}</select>
     <label class="sr" for="f-emp-dept">Department</label><select id="f-emp-dept" data-filter="emp.dept"><option value="">All departments</option>${depts.map(d=>`<option ${deptKey(d)===deptKey(f.dept)?'selected':''}>${esc(d)}</option>`).join('')}</select>
     <label class="sr" for="f-emp-type">Employment type</label><select id="f-emp-type" data-filter="emp.type"><option value="">All types</option>${EMP_TYPES.map(d=>`<option ${d===f.type?'selected':''}>${d}</option>`).join('')}</select>
-    <label class="sr" for="f-emp-tag">Tag</label><select id="f-emp-tag" data-filter="emp.tag"><option value="">All employees</option><option value="solo" ${f.tag==='solo'?'selected':''}>Solo parents only (${S.employees.filter(e=>e.soloParent&&isActive(e)).length})</option></select>  </div>`;
+    <label class="sr" for="f-emp-tag">Tag</label><select id="f-emp-tag" data-filter="emp.tag"><option value="">All employees</option><option value="solo" ${f.tag==='solo'?'selected':''}>Solo parents only (${S.employees.filter(e=>e.soloParent&&isActive(e)).length})</option><option value="pwd" ${f.tag==='pwd'?'selected':''}>PWD only (${S.employees.filter(e=>e.pwd&&isActive(e)).length})</option></select>  </div>`;
   if(!list.length)h+=S.employees.length?emptyBlock('No matching employees','Try a different search or clear the filters.'):emptyBlock('No employee records yet','Add an employee to create their 201 file.',`<div data-write><button class="btn" data-act="add-emp">${ic('plus')}Add Employee</button></div>`);
   else h+=`<div class="tw"><table class="tbl" style="min-width:920px"><thead><tr><th>ID Number</th><th>Name</th><th>Site (Client)</th><th>Type</th><th>Date Hired</th><th>201 Requirements</th><th>Status</th></tr></thead><tbody>
-    ${list.map(e=>{const n=docCount(e),fc=fileCount(e);return`<tr class="click" data-act="open-emp" data-id="${e.id}" tabindex="0"><td class="num">${esc(e.empNo)}</td><td><div class="nm">${esc(fullName(e))}${sampleChip(e)}${soloChip(e)}</div><div class="sub">${esc(e.position)}</div></td><td style="max-width:240px"><div>${esc(e.client||'—')}</div><div class="sub">${esc(e.department||'')}${e.site?' · '+esc(e.site):''}</div></td><td>${typeChip(e.employmentType)}</td><td class="num">${fmt(e.hireDate)}</td><td><div class="prog"><div class="t"><div class="f ${n>=docTotal(e)?'full':''}" style="width:${n/docTotal(e)*100}%"></div></div><span class="num sub">${n}/${docTotal(e)}</span></div><div class="sub" style="display:flex;gap:4px;align-items:center;margin-top:2px">${ic('pclip','i sm')}${fc} scanned file${fc===1?'':'s'}</div><div style="margin-top:4px">${bankChip(e)}</div></td><td>${empStatusChip(e)}${statusSub(e)?`<div class="sub" style="max-width:200px">${statusSub(e)}</div>`:''}</td></tr>`}).join('')}
+    ${list.map(e=>{const n=docCount(e),fc=fileCount(e);return`<tr class="click" data-act="open-emp" data-id="${e.id}" tabindex="0"><td class="num">${esc(e.empNo)}</td><td><div class="nm">${esc(fullName(e))}${sampleChip(e)}${soloChip(e)}${pwdChip(e)}</div><div class="sub">${esc(e.position)}</div></td><td style="max-width:240px"><div>${esc(e.client||'—')}</div><div class="sub">${esc(e.department||'')}${e.site?' · '+esc(e.site):''}</div></td><td>${typeChip(e.employmentType)}</td><td class="num">${fmt(e.hireDate)}</td><td><div class="prog"><div class="t"><div class="f ${n>=docTotal(e)?'full':''}" style="width:${n/docTotal(e)*100}%"></div></div><span class="num sub">${n}/${docTotal(e)}</span></div><div class="sub" style="display:flex;gap:4px;align-items:center;margin-top:2px">${ic('pclip','i sm')}${fc} scanned file${fc===1?'':'s'}</div><div style="margin-top:4px">${bankChip(e)}</div></td><td>${empStatusChip(e)}${statusSub(e)?`<div class="sub" style="max-width:200px">${statusSub(e)}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 };
@@ -1353,7 +1357,7 @@ function loadXLSX(){
 }
 function empFiltered(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
-  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
+  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.biometricId,e.position,e.department,e.client].join(' ').toLowerCase().includes(q));
   return list.sort(sortName);
 }
@@ -1398,6 +1402,7 @@ function empColumns(){
     ['Bank',e=>e.bank&&e.bank.accountNo?BANK:''],['Account Name',e=>e.bank&&e.bank.accountName],['AUB Account No.',e=>e.bank&&e.bank.accountNo],
     ['AUB Validation',e=>({ok:'Verified',bad:'Does not match',pending:'Not yet verified',none:''})[bankState(e)]],
     ['Solo Parent',e=>yn(e.soloParent)],['Solo Parent ID No.',e=>e.soloParent?e.soloParentId:''],['Solo Parent ID Valid Until',e=>e.soloParent?e.soloParentValidUntil:''],
+    ['PWD',e=>yn(e.pwd)],['Type of Disability',e=>e.pwd?e.pwdType:''],['PWD ID No.',e=>e.pwd?e.pwdId:''],['PWD ID Valid Until',e=>e.pwd?e.pwdValidUntil:''],
     ['201 Requirements Submitted',e=>`${docCount(e)} of ${docTotal(e)}`],['Scanned Files Uploaded',e=>fileCount(e)],
     ...DOCS.filter(([k])=>!['covid','application','exam','photo','brgy','police','nbi','psa','marriage','dependents'].includes(k)).map(([k,l])=>[l,req(k)]),
     ...MS.flatMap(m=>[[`${m.label} Client Score`,ev(m.k,r=>r.client?Number(r.client.avg):'')],[`${m.label} HR Score`,ev(m.k,r=>r.hr?Number(r.hr.avg):'')],[`${m.label} Final Score`,ev(m.k,r=>r.final!=null?r.final:Number(r.rating)||r.rating)]]),
@@ -1527,6 +1532,7 @@ IMP_COLS.push(
   ['BLOCKLIST REASON','blocklistReason','pick','','',0,BL_REASONS],['BLOCKLIST DATE','blocklistDate','date'],['BLOCKLIST DETAILS','blocklistDetails','text'],
   ['ACCOUNT NAME','bankAccountName','text'],['AUB ACCOUNT NO.','bankAccountNo','id'],
   ['SOLO PARENT','soloParent','yes'],['SOLO PARENT ID NO.','soloParentId','id'],['SOLO PARENT ID VALID UNTIL','soloParentValidUntil','date'],['NO. OF DEPENDENT CHILDREN','soloChildren','int'],
+  ['PWD','pwd','yes'],['TYPE OF DISABILITY','pwdType','pickfree','','',0,PWD_TYPES],['PWD ID NO.','pwdId','id'],['PWD ID VALID UNTIL','pwdValidUntil','date'],
   ...DOCS.filter(([k])=>!IMP_COLS.some(c=>c[1]==='doc_'+k)).map(([k,l])=>[l.toUpperCase(),'doc_'+k,'doc']));
 const impKey=s=>String(s==null?'':s).toUpperCase().replace(/\(.*?\)/g,'').replace(/[^A-Z0-9]/g,'');
 /* Other header spellings HR may use */
@@ -1638,6 +1644,7 @@ function impPlan(parsed){
     if(v.address!==undefined){o.address=v.address;o.addr=null;if(v.permanentAddress===undefined&&(!ex||!ex.permanentAddress)){o.permanentAddress=v.address;o.permAddr=null}}
     if(v.permanentAddress!==undefined){o.permanentAddress=v.permanentAddress;o.permAddr=null}
     if(v.soloParent!==undefined)o.soloParent=v.soloParent;
+    if(v.pwd!==undefined)o.pwd=v.pwd;
     o.docs=o.docs||{};DOCS.forEach(([k])=>{if(v['doc_'+k])o.docs[k]=true});
     /* Evaluations: a date, a score, or both with the result. Without a date the due date is used. */
     MS.forEach(m=>{const a=v['ev_'+m.k],rec=v['ev_'+m.k+'_rec'];if(!a&&!rec)return;
@@ -1817,6 +1824,15 @@ function empForm(id,pre){
         <div class="field full"><span class="flabel">Copy of Solo Parent ID (optional)</span>${(e.soloProof||[]).length?`<p class="help" style="margin:0"><span class="chip ok">${ic('pclip')}ID copy on file</span> A new file replaces it.</p>`:''}
           ${ASSETS?`<div><button type="button" class="btn sm ghost" data-stage="__solo">${ic('upload')}Attach ID copy</button><input type="file" data-stagein="__solo" accept="${ACCEPT}" hidden></div><div class="files staged" id="ef-st-__solo" style="padding-left:0"></div>`:''}</div>
       </div></div>
+    <div class="field full solo-box"><label class="ck" style="font-weight:700"><input type="checkbox" id="ef-pwd" name="pwd" ${e.pwd?'checked':''}>Person with disability (PWD)</label>
+      <p class="help" style="margin:0">Tag the employee as a PWD. A PWD ID number and a copy of the PWD ID are required.</p>
+      <div class="fg" id="ef-pwd-more" ${e.pwd?'':'hidden'} style="margin-top:8px">
+        ${F('pwdType','Type of disability',{type:'select',opts:PWD_TYPES.concat(e.pwdType&&!PWD_TYPES.includes(e.pwdType)?[e.pwdType]:[]),blank:'Select'})}
+        ${F('pwdId','PWD ID no. <span class="req" aria-hidden="true">*</span>')}
+        ${F('pwdValidUntil','ID valid until',{type:'date',help:'As printed on the PWD ID.'})}
+        <div class="field full"><span class="flabel">Copy of PWD ID <span class="req" aria-hidden="true">*</span></span>${(e.pwdProof||[]).length?`<p class="help" style="margin:0"><span class="chip ok">${ic('pclip')}ID copy on file</span> A new file replaces it.</p>`:''}
+          ${ASSETS?`<div><button type="button" class="btn sm ghost" id="ef-pwdproof" data-stage="__pwd">${ic('upload')}Attach PWD ID</button><input type="file" data-stagein="__pwd" accept="${ACCEPT}" hidden></div><div class="files staged" id="ef-st-__pwd" style="padding-left:0"></div>`:''}</div>
+      </div></div>
   </div></fieldset>
   <fieldset><legend>Educational background</legend><div class="fg">
     ${F('education','Educational attainment',{type:'select',opts:['Elementary graduate','High school graduate','Senior high school graduate','Vocational / TESDA','College level','College graduate','Post-graduate'],blank:'Select'})}
@@ -1891,7 +1907,8 @@ function empForm(id,pre){
         box.innerHTML=fl.map((x,i)=>`<div class="file"><span class="fic" style="color:var(--info)">${ic(/^image\//.test(fileType(x)||'')?'pclip':'pdf')}</span><div class="fn"><b style="overflow-wrap:anywhere;font-weight:600">${esc(x.name)}</b><span>${fsize(x.size)} · uploads when you save</span></div><button type="button" class="icon-btn" data-unstage="${k}|${i}" aria-label="Remove ${esc(x.name)}">${ic('x')}</button></div>`).join('');
         const cb=f.querySelector(`[name="doc_${k}"]`);if(cb&&fl.length)cb.checked=true};
       const solo=f.querySelector('#ef-solo');solo.addEventListener('change',()=>{f.querySelector('#ef-solo-more').hidden=!solo.checked});
-      const single=k=>k==='__bank'||k==='__solo';
+      const pwd=f.querySelector('#ef-pwd');pwd.addEventListener('change',()=>{f.querySelector('#ef-pwd-more').hidden=!pwd.checked});
+      const single=k=>k==='__bank'||k==='__solo'||k==='__pwd';
       const add=(k,files)=>{const bad=[];staged[k]=single(k)?[]:(staged[k]||[]);
         for(const x of files){const t=fileType(x);if(!t)bad.push(`${x.name}: use PDF, JPG or PNG`);else if(x.size>20*1048576)bad.push(`${x.name}: larger than 20 MB`);else{staged[k].push(x);if(single(k))break}}
         draw(k);if(bad.length)toast(bad.join(' · '),{kind:'bad'})};
@@ -1912,6 +1929,10 @@ function empForm(id,pre){
       const newProof=(staged.__bank||[]).length>0;
       if(acct&&!newProof&&!(prevBank.proof||[]).length){const b=f.querySelector('#ef-bankproof')||f.querySelector('#ef-bankAccountNo');setErr(b,'Attach a photo of the account number so HR can cross-check it.');return false}
       const isSolo=!!fd.get('soloParent');if(!isSolo)delete staged.__solo;
+      const isPwd=!!fd.get('pwd');if(!isPwd)delete staged.__pwd;
+      const prevPwd=(id&&EMP[id]&&EMP[id].pwdProof)||[];
+      if(isPwd&&!String(fd.get('pwdId')||'').trim()){setErr(f.querySelector('#ef-pwdId'),'Enter the PWD ID number.');return false}
+      if(isPwd&&ASSETS&&!(staged.__pwd||[]).length&&!prevPwd.length){setErr(f.querySelector('#ef-pwdproof'),'Attach a copy of the PWD ID.');return false}
       const sb=f.querySelector('button[type=submit]');const total=Object.values(staged).reduce((s,a)=>s+a.length,0);
       const ups={},errs=[];
       if(total&&ASSETS){let n=0;for(const k of Object.keys(staged)){ups[k]=[];for(const x of staged[k]){n++;sb.textContent=`Uploading ${n} of ${total}…`;
@@ -1928,7 +1949,9 @@ function empForm(id,pre){
       const prevSolo=(id&&EMP[id]&&EMP[id].soloProof)||[];
       o.soloParent=isSolo;
       if(isSolo){o.soloParentId=String(fd.get('soloParentId')||'').trim();o.soloParentValidUntil=String(fd.get('soloParentValidUntil')||'');o.soloChildren=String(fd.get('soloChildren')||'').trim();if((ups.__solo||[]).length)o.soloProof=ups.__solo;}
-      const replaced=((ups.__bank||[]).length?(prevBank.proof||[]):[]).concat((ups.__solo||[]).length?prevSolo:[]);
+      o.pwd=isPwd;
+      if(isPwd){o.pwdType=String(fd.get('pwdType')||'');o.pwdId=String(fd.get('pwdId')||'').trim();o.pwdValidUntil=String(fd.get('pwdValidUntil')||'');if((ups.__pwd||[]).length)o.pwdProof=ups.__pwd;}
+      const replaced=((ups.__bank||[]).length?(prevBank.proof||[]):[]).concat((ups.__solo||[]).length?prevSolo:[]).concat((ups.__pwd||[]).length?prevPwd:[]);
       const proof=(ups.__bank||[]).length?ups.__bank:(prevBank.proof||[]);
       const same=acct===prevBank.accountNo&&!(ups.__bank||[]).length;
       if(acct||proof.length)o.bank={bank:BANK,accountName:String(fd.get('bankAccountName')||'').trim(),accountNo:acct,proof,verified:same?!!prevBank.verified:false,mismatch:same?!!prevBank.mismatch:false,verifiedAt:same?prevBank.verifiedAt||'':'',verifiedBy:same?prevBank.verifiedBy||null:null,checkNote:same?prevBank.checkNote||'':''};
@@ -2620,6 +2643,7 @@ function renderDrawer(){
     <section class="sect"><h4>Educational background</h4><dl class="kv">${kv('Educational attainment',e.education)}${kv('School graduated',e.school)}${kv('Course / strand',e.course)}</dl></section>
     <section class="sect"><h4>Pre-employment medical</h4><dl class="kv">${dk('Date of medical',e.medicalDate)}${kv('Accredited clinic / hospital',e.medicalClinic)}${kv('Medical result',e.medicalResult)}</dl></section>
     ${e.soloParent?`<section class="sect"><h4>Solo parent</h4><dl class="kv">${kv('Solo Parent ID no.',e.soloParentId)}<div><dt>ID valid until</dt><dd>${e.soloParentValidUntil?fmt(e.soloParentValidUntil)+(soloExpired(e)?' <span class="chip warn">Expired · ask for the renewed ID</span>':''):'—'}</dd></div>${kv('Dependent children',e.soloChildren)}<div><dt>ID copy</dt><dd>${(e.soloProof||[]).length?`<a href="/_blob/${esc(e.soloProof[0].id)}" target="_blank" rel="noopener">${esc(e.soloProof[0].name)}</a>`:'Not uploaded'}</dd></div></dl></section>`:''}
+    ${e.pwd?`<section class="sect"><h4>Person with disability (PWD)</h4><dl class="kv">${kv('Type of disability',e.pwdType)}${kv('PWD ID no.',e.pwdId)}<div><dt>ID valid until</dt><dd>${e.pwdValidUntil?fmt(e.pwdValidUntil)+(pwdExpired(e)?' <span class="chip warn">Expired · ask for the renewed ID</span>':''):'—'}</dd></div><div><dt>ID copy</dt><dd>${(e.pwdProof||[]).length?`<a href="/_blob/${esc(e.pwdProof[0].id)}" target="_blank" rel="noopener">${esc(e.pwdProof[0].name)}</a>`:'<span class="chip warn">Not uploaded</span>'}</dd></div></dl></section>`:''}
     <section class="sect"><h4>Government IDs</h4><dl class="kv">${kv('SSS',e.sss)}${kv('TIN',e.tin)}${kv('PHIC (PhilHealth)',e.philhealth)}${kv('HDMF (Pag-IBIG)',e.pagibig)}${kv('HDMF tracking no.',e.hdmfTracking)}</dl></section>
     <section class="sect"><h4>Contact person (emergency)</h4><dl class="kv">${kv('Contact person',e.emergencyName)}${kv('Contact number',e.emergencyPhone)}${kv('Relationship',e.emergencyRelation)}</dl></section>
     ${bankSection(e)}`;
@@ -2652,7 +2676,7 @@ function renderDrawer(){
     <section class="sect"><h4>Memos to this employee or their client</h4>${mm.length?`<div class="rows">${mm.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${esc(m.subject)}</span><div class="meta">${esc(m.no)} · ${esc(m.type)} · ${fmt(m.issuedOn)}</div></div>${statusChip(m.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No memos.</p>'}</section>`;
   }
   DR.innerHTML=`<div class="dwrap"><header class="dhead">
-    <div class="dtop"><div class="avatar" aria-hidden="true">${esc(initials(e))}</div><div style="flex:1;min-width:0"><h2>${esc(fullName(e))}</h2><p>${esc(e.position)} · ${esc(e.empNo)}</p><p style="color:var(--ink);font-weight:600">${esc(e.client||'No client assigned')}${e.site?` <span style="color:var(--muted);font-weight:400">· ${esc(e.site)}</span>`:''}</p><div class="dchips">${empStatusChip(e)}${typeChip(e.employmentType)}${soloChip(e)}${sampleChip(e)}</div></div><button class="icon-btn" id="dr-x" aria-label="Close 201 file">${ic('x')}</button></div>
+    <div class="dtop"><div class="avatar" aria-hidden="true">${esc(initials(e))}</div><div style="flex:1;min-width:0"><h2>${esc(fullName(e))}</h2><p>${esc(e.position)} · ${esc(e.empNo)}</p><p style="color:var(--ink);font-weight:600">${esc(e.client||'No client assigned')}${e.site?` <span style="color:var(--muted);font-weight:400">· ${esc(e.site)}</span>`:''}</p><div class="dchips">${empStatusChip(e)}${typeChip(e.employmentType)}${soloChip(e)}${pwdChip(e)}${sampleChip(e)}</div></div><button class="icon-btn" id="dr-x" aria-label="Close 201 file">${ic('x')}</button></div>
     <div class="dacts" data-write><button class="btn sm" data-act="edit-emp" data-id="${e.id}">${ic('edit')}Edit 201 file</button><button class="btn sm ghost" data-act="change-status" data-id="${e.id}">Change status</button><button class="btn sm ghost" data-act="issue-memo" data-id="${e.id}">Issue memo</button></div>
     <div class="tabs" role="tablist" style="border-bottom:0">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${drawerTab===k}" data-act="dtab" data-id="${k}">${l}</button>`).join('')}</div>
   </header><div class="dbody">${statusBanner(e)}${body}${drawerTab==='overview'&&(e.statusHistory||[]).length?`<section class="sect"><h4>Status history</h4><div class="rows">${e.statusHistory.slice().reverse().map(h=>`<div class="row"><div class="grow"><span class="nm">${esc(h.status)}</span>${h.reason?` · ${esc(h.reason)}`:''}${h.details?`<div class="meta" style="overflow-wrap:anywhere">${esc(h.details)}</div>`:''}</div><span class="dt">${h.date?fmt(h.date):fmtTs(h.at)}</span></div>`).join('')}</div></section>`:''}</div></div>`;
