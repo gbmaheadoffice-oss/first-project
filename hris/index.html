@@ -1,4 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}.jfsteps{margin:6px 0 0;padding-left:20px;display:grid;gap:8px}.jfsteps .chip{vertical-align:middle}.jfnote{margin-top:4px;white-space:pre-wrap;color:var(--muted);font-size:.92em}
+.chks{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px 16px;margin-top:6px}.field .chk{display:flex;gap:8px;align-items:flex-start;font-size:14px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink);cursor:pointer}.chk input{margin-top:3px}
 </style></head><body>
 <title>Manpower HRIS</title>
 <link rel="icon" href="data:,">
@@ -585,6 +586,62 @@ This may constitute a violation of [company rule / Code of Conduct section].
 
 You may request an administrative conference if you wish to be heard in person. If you do not submit a written explanation within the period given, management will decide the matter based on the records available.`;
 
+/* GBMA Company Rules and Regulations, 2025 Edition, Article V: offenses and progressive penalties.
+   The penalty follows how many times the employee was already found liable for the same offense. */
+const CRR={
+  minor:{sec:'I',name:'Minor',ladder:['Oral Reprimand','Written Warning',"3 Days' Work Suspension","5 Days' Work Suspension","7 Days' Work Suspension","30 Days' Work Suspension",'Dismissal'],items:[
+    ['A','Failure and improper wearing of Company ID'],['B','Failure to wear the prescribed uniform or improperly attired'],['C','Not properly groomed'],
+    ['D','Distractive conduct during working hours (laughing, shouting, playing, singing and similar acts)'],['E','Failure or late filing of leave form and permit to work'],
+    ['F','Failure to inform HRD within 2 hours of inability to work, before the shift starts'],['G','Non-compliance with overtime filing procedures'],
+    ['H','Not following the procedure in filing the Change Shift Schedule'],['I','Failure to ensure accurate logging in and out on the biometrics system or employee log sheet'],
+    ['J','Unauthorized use of headphones or earphones, or playing music in the workplace without approval, during working hours']]},
+  less:{sec:'II',name:'Less Serious',ladder:['Written Warning',"3 Days' Work Suspension","5 Days' Work Suspension","7 Days' Work Suspension","30 Days' Work Suspension",'Dismissal'],items:[
+    ['A','Unauthorized food consumption during work hours'],['B','Failure to maintain 5S in the working area'],['C','Unsanitary behavior, such as spitting or urinating outside designated restrooms'],
+    ['D','Failure to keep personal belongings in their proper places (lockers and designated areas)'],['E','Loitering or staying at the guard house without official purpose'],
+    ['F','Using a cellular phone during working hours for matters not related to the company'],['G','Bringing personal cell phones into production areas, warehouses or other restricted zones'],
+    ['H','Taking or posting photos or videos in the production area without prior Management approval'],['I','Vandalism'],['J','Non-compliance with overtime commitment'],
+    ['K','Non-keeping of working hours (loitering, frequent comfort room breaks, selling or buying, early break or over break)']]},
+  serious:{sec:'III',name:'Serious',ladder:['Written Warning',"5 Days' Work Suspension","7 Days' Work Suspension","30 Days' Work Suspension",'Dismissal'],items:[
+    ['A','Bringing pets without prior approval from Management'],['B','Wasteful use of materials or resources'],['C','Giving or accepting finished items without considering the quality or technical aspects'],
+    ['D','Bullying'],['E','More than three (3) under-times in a month'],['F','More than three (3) half-days in a month'],['G','More than three (3) lates in a month (no grace period)'],
+    ['H','Unauthorized absence'],['I','Failure to cooperate with investigations by Management or the Grievance Committee'],
+    ['J','Failure to notify the immediate supervisor of material or supply shortages and other department-related issues'],['K','Failure to wear or use required safety gear or personal protective equipment (PPE)'],
+    ['L','Failure of the supervisor to report to HRD employees who are not following company policies'],['M','Failure of the supervisor to provide orientation and training to subordinates, especially on safety protocols and work procedures'],
+    ['N','Failure to liquidate company cash advances within the given time frame'],['O','Inconsistency or discrepancy in the preparation of documents'],
+    ['P','Unauthorized alteration, tampering, posting or removal of documents, forms and posted materials'],['Q',"Using, handling or transferring another department's materials, tools or property without approval"],
+    ['R','Failure to keep issued company property safe (machine tools, cell phones, keys), including misplacement'],['S','Conducting meetings inside the company during working hours without Management approval'],
+    ['T','Circulating false rumors, statements or reports']]},
+  severe:{sec:'IV',name:'Severe',ladder:["7 Days' Work Suspension","30 Days' Work Suspension",'Dismissal'],items:[
+    ['A','Entering or staying within company premises after working hours without prior Management approval'],['B','Bringing or displaying obscene and immoral materials within company premises'],
+    ['C',"Unauthorized use or handling of a co-employee's belongings or vehicle without the owner's consent"],
+    ['D','Failure to follow proper or approved procedures, including SOPs, departmental guidelines and memorandums'],
+    ['E',"Going outside company premises without an approved gate pass, employee's pass or trip ticket"],
+    ['F','Negligence of duty (habitual negligence, failing work standards or quota, slowdowns, habitual absences)'],['G','Sleeping during working hours, intentional or unintentional'],
+    ['H','Moonlighting'],['I','Insubordination'],['J','Being disrespectful, insulting or using indecent or obscene language toward a co-employee, superior, client, visitor or supplier'],
+    ['K','Withholding important information or making decisions without proper communication with Management'],
+    ['L','Biased or prejudiced decision-making based on race, gender, religion or other protected characteristics']]},
+  grave:{sec:'V',name:'Grave',ladder:['Dismissal'],items:[
+    ['A','Smoking outside the designated smoking area'],['B','Abandonment of work'],['C','Refusal to undergo security checks and medical examinations'],
+    ['D','Unauthorized use of company assets, including for personal benefit or non-work-related purposes'],['E','Using the company name for personal transactions without prior Management approval'],
+    ['F','Willful disregard of safety rules and regulations that may result in accidents or damage to company property'],['G','Intentional damage of company products and properties'],
+    ['H','Falsification of documents'],['I','Malversation of company funds or property'],['J','Gross negligence'],['K','Revealing confidential information or reproducing confidential documents'],
+    ['L','Engaging in activities or relationships that may compromise objectivity and the interests of the company or stakeholders'],['M',"Misuse or unethical use of one's position or authority"],
+    ['N','Serious misconduct or intentional refusal to comply with lawful orders'],['O','Fraud or willful breach of trust'],
+    ['P','Commission of a crime or offense against a co-employee, the employer or its representative'],['Q','Demanding or accepting bribes or kickbacks, or fraudulent activities for personal gain'],
+    ['R','Gambling, betting or similar activities within company premises'],['S','Rebellious or similar acts (fighting, deadly weapons, grave threats, libel, slander)'],
+    ['T','Bringing liquor or prohibited drugs into company premises, or reporting for work under their influence'],['U','Positive result in a drug test'],['V','Theft or similar acts'],['W','Harassment']]}};
+const CRR_MIT=["Employee's length of service",'No similar offense within a year','Good performance record','Did not gain any benefit from the offense','Did not cause character defamation to others','Was provoked or threatened into committing the offense','Reported or exposed wrongdoing (whistleblower)',"Employer's discretion or prerogative"];
+const CRR_AGG=['Previous record of a similar offense','Repeated misconduct','Caused significant damage or loss to the company','Gained personal benefit from the offense','Poor performance record','Under the influence of drugs or alcohol at the time of the offense','Used their position to force a subordinate into the offense','Loss of confidence and trust from Management',"Employer's discretion or prerogative"];
+const NOT_LIABLE='Not liable (no penalty)';
+const ord=n=>n+(n%100>10&&n%100<14?'th':['th','st','nd','rd'][n%10]||'th');
+const offKey=o=>o&&o.lvl&&o.code?o.lvl+':'+o.code:'';
+const offRef=o=>{const c=CRR[o.lvl];return`Article V, Section ${c.sec} (${c.name} Offenses), item ${o.code}`};
+/* Earlier decisions that found the employee liable for the same offense */
+const priorOffenses=(empId,key,selfId,upTo)=>S.memos.filter(m=>m.id!==selfId&&m.type==='Notice of Decision'&&m.status!=='Draft'&&m.toValue===empId&&offKey(m.offense)===key&&m.penalty&&m.penalty.label!==NOT_LIABLE&&(!upTo||(m.issuedOn||'')<=upTo));
+const crrPenalty=(lvl,n)=>{const l=CRR[lvl].ladder;return l[Math.min(n,l.length)-1]};
+const susDays=label=>{const r=/^(\d+) Days/.exec(label||'');return r?+r[1]:0};
+function susEnd(from,days){let d=from,k=1;while(parse(d).getDay()===0)d=addDays(d,1);const start=d;while(k<days){d=addDays(d,1);if(parse(d).getDay()!==0)k++}return{from:start,to:d,resume:nextWorkday(d)}}
+
 /* ---------------- state + storage ---------------- */
 const COLS=['employees','leaves','permits','memos','attendance','applicants'];
 const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[]};
@@ -661,7 +718,7 @@ const GBMA_DEPTS=['Human Resources','Recruitment','Operations','Admin','Payroll'
 /* Memos come in three kinds: Disciplinary Action Memo (an employee's violation, to that employee), Company Memorandum
    (official announcements, company policies, general instructions) and Holiday Advisory (regular holidays,
    special non-working days, holiday work schedules). */
-const DISC_TYPES=['Notice to Explain','Written Warning','Notice of Decision','Other Disciplinary Action'];
+const DISC_TYPES=['Notice to Explain','Notice of Decision','Other Disciplinary Action'];
 const CO_TYPES=['Announcement','Company Policy','General Instruction','Reminder','Commendation','Other'];
 const HOL_TYPES=['Regular Holiday','Special Non-Working Day','Holiday Work Schedule'];
 const MEMO_CATS={disc:{route:'memos',name:'Disciplinary Action Memo',ui:'memo',act:'issue-memo',new:'New Disciplinary Memo'},
@@ -1238,7 +1295,7 @@ const memoSort=(a,b)=>(b.issuedOn||'')<(a.issuedOn||'')?-1:(b.issuedOn||'')>(a.i
 const inTab=(m,tab)=>tab==='All'||m.status===tab;
 const holDay=m=>(m.event&&m.event.date)||m.issuedOn||'';
 function memoRow(m){const late=m.type==='Notice to Explain'&&m.status==='Open'&&m.responseDue&&diff(today(),m.responseDue)<0;const hol=memoCat(m)==='hol';
-  return`<tr class="click" data-act="view-memo" data-id="${m.id}" tabindex="0"><td class="num nm" style="white-space:nowrap">${esc(m.no)}</td><td style="max-width:320px"><div class="nm" style="overflow-wrap:anywhere">${esc(m.subject)}${sampleChip(m)}</div>${m.type==='Notice to Explain'&&m.responseDue?`<div class="sub">Explanation due ${fmt(m.responseDue)}${late?' · <b style="color:var(--bad)">past due</b>':''}</div>`:''}</td><td>${memoTypeChip(m)}</td>${hol?`<td class="num" style="white-space:nowrap">${fmt(holDay(m))}</td>`:''}<td style="max-width:260px"><div style="overflow-wrap:anywhere">${esc(memoTo(m))}</div>${recGroup(m).toLowerCase()!==memoTo(m).toLowerCase()?`<div class="sub">${esc(recGroup(m))}</div>`:''}</td><td class="num" style="white-space:nowrap">${fmt(m.issuedOn)}</td>${hol?'':`<td>${statusChip(m.status)}</td>`}</tr>`}
+  return`<tr class="click" data-act="view-memo" data-id="${m.id}" tabindex="0"><td class="num nm" style="white-space:nowrap">${esc(m.no)}</td><td style="max-width:320px"><div class="nm" style="overflow-wrap:anywhere">${esc(m.subject)}${sampleChip(m)}</div>${m.offense&&m.offense.lvl?`<div class="sub">${esc(CRR[m.offense.lvl].name)} offense ${CRR[m.offense.lvl].sec}-${esc(m.offense.code)} · ${ord(m.offense.count||1)} offense${m.penalty?` · <b>${esc(m.penalty.label)}</b>`:''}</div>`:''}${m.type==='Notice to Explain'&&m.responseDue?`<div class="sub">Explanation due ${fmt(m.responseDue)}${late?' · <b style="color:var(--bad)">past due</b>':''}</div>`:''}</td><td>${memoTypeChip(m)}</td>${hol?`<td class="num" style="white-space:nowrap">${fmt(holDay(m))}</td>`:''}<td style="max-width:260px"><div style="overflow-wrap:anywhere">${esc(memoTo(m))}</div>${recGroup(m).toLowerCase()!==memoTo(m).toLowerCase()?`<div class="sub">${esc(recGroup(m))}</div>`:''}</td><td class="num" style="white-space:nowrap">${fmt(m.issuedOn)}</td>${hol?'':`<td>${statusChip(m.status)}</td>`}</tr>`}
 function memoPage(cat){
   const C=MEMO_CATS[cat],f=UI[C.ui],q=f.q.trim().toLowerCase(),hol=cat==='hol',all=S.memos.filter(m=>memoCat(m)===cat);
   const tabs=hol?['Upcoming','Past','All']:['Open','Draft','Acknowledged','Closed','All'];
@@ -2383,10 +2440,164 @@ Please coordinate with your site coordinator or the HR Department for your sched
 For questions, please contact your site coordinator or the HR Department.`};
 }
 
+/* ---------------- disciplinary memos (Company Rules and Regulations, due process) ---------------- */
+function nteBody(v){const o=v.offense||{},c=CRR[o.lvl];if(!c)return NTE_TEMPLATE;const n=o.count||1;
+  return`This is to inform you that on ${longDate(o.incidentOn)}, you were reported to have committed the following:
+
+${o.details||'[Describe the incident: time, place and what happened.]'}
+
+This may be a violation of the GBMA Company Rules and Regulations (2025 Edition), ${offRef(o)}: "${o.text}". Based on your record, this would be your ${ord(n)} offense of this kind, which carries the penalty of ${crrPenalty(o.lvl,n)}.
+
+You are hereby directed to explain in writing, within five (5) calendar days from receipt of this notice, why no disciplinary action should be taken against you.
+
+You may request an administrative conference if you wish to be heard in person. If you do not submit a written explanation within the period given, management will decide the matter based on the records available.`}
+function nodBody(v){const o=v.offense||{},c=CRR[o.lvl],p=v.penalty||{},nte=S.memos.find(x=>x.id===v.nteId),f=v.factors||{};if(!c)return'';
+  const ref=nte?`This refers to the Notice to Explain ${nte.no} dated ${fmt(nte.issuedOn)} about the following incident on ${longDate(o.incidentOn)}:`:`This refers to the following incident on ${longDate(o.incidentOn)}:`;
+  const heard=v.explained==='yes'?`Management has reviewed your written explanation${v.explainedOn?` dated ${fmt(v.explainedOn)}`:''} and the records of the incident.`:'You did not submit a written explanation within the period given, so management decided the matter based on the records available.';
+  if(p.label===NOT_LIABLE)return`${ref}
+
+${o.details}
+
+${heard}
+
+After evaluating the facts, management finds that you are not liable for violating ${offRef(o)} of the Company Rules and Regulations. No penalty is imposed. This notice is kept in your 201 file as a record of the investigation.`;
+  const fs=[f.mit&&f.mit.length?`mitigating: ${f.mit.join('; ')}`:'',f.agg&&f.agg.length?`aggravating: ${f.agg.join('; ')}`:''].filter(Boolean);
+  const pen=p.label==='Oral Reprimand'?'This notice serves as the record of the oral reprimand given to you.'
+    :p.label==='Written Warning'?'This notice serves as your written warning. A repetition of the same or a similar offense will be dealt with more severely under the Company Rules and Regulations.'
+    :p.days?`You are suspended without pay for ${p.days} working day${p.days===1?'':'s'}, from ${longDate(p.from)} to ${longDate(p.to)}. You are expected to report back to work on ${longDate(p.resume)}.`
+    :p.label==='Dismissal'?`Your employment with GOLDEN BEAR MANPOWER AGENCY is terminated effective ${longDate(p.from)}. Please coordinate with the HR Department for your clearance and final pay.`:'';
+  return`${ref}
+
+${o.details}
+
+${heard}
+
+After evaluating the facts, management finds you liable for violating the GBMA Company Rules and Regulations (2025 Edition), ${offRef(o)}: "${o.text}". This is your ${ord(o.count||1)} offense of this kind.${fs.length?`
+
+In deciding the penalty, management considered these factors: ${fs.join('. ')}.`:''}
+
+Accordingly, the penalty of ${p.label} is imposed. ${pen}
+
+Please be guided accordingly.`}
+const crrOpts=sel=>`<option value="">Select the offense</option>`+Object.entries(CRR).map(([lvl,c])=>`<optgroup label="Section ${c.sec}: ${esc(c.name)} offenses">${c.items.map(([code,t])=>`<option value="${lvl}:${code}" ${sel===lvl+':'+code?'selected':''}>${c.sec}-${code}. ${esc(t)}</option>`).join('')}</optgroup>`).join('');
+function discForm(id,presetType,empId,nteId){
+  const nte0=nteId&&S.memos.find(x=>x.id===nteId);
+  const type0=DISC_TYPES.includes(presetType)?presetType:'Notice to Explain';
+  const m=id?clone(S.memos.find(x=>x.id===id)):{cat:'disc',type:type0,toType:'employee',toValue:empId||(nte0&&nte0.toValue)||'',from:SIGN.hrTitle,issuedOn:today(),
+    offense:nte0?clone(nte0.offense||{}):{},nteId:nte0?nte0.id:'',explained:'yes',factors:{mit:[],agg:[]},body:''};
+  if(!m)return;
+  const o=m.offense||{},pen=m.penalty||{},fac=m.factors||{mit:[],agg:[]};
+  const box=(name,list,on)=>list.map((t,i)=>`<label class="chk"><input type="checkbox" name="${name}" value="${esc(t)}" ${(on||[]).includes(t)?'checked':''}> <span>${esc(t)}</span></label>`).join('');
+  openModal({title:id?`Edit ${esc(m.no)}`:'New Disciplinary Action Memo',wide:1,body:`
+    <div class="banner">${ic('info')}<span class="grow">Based on the <b>GBMA Company Rules and Regulations (2025 Edition)</b>. Due process: issue a <b>Notice to Explain</b> first, give at least 5 days to explain, then issue the <b>Notice of Decision</b>.</span></div>
+    <div class="fg">
+    ${field({id:'mf-type',name:'type',label:'Memo type',type:'select',req:1,opts:DISC_TYPES,value:m.type,blank:false})}
+    ${field({id:'mf-date',name:'issuedOn',label:'Date issued',type:'date',req:1,value:m.issuedOn})}
+    <div class="field"><label for="mf-tov">Employee <span class="req" aria-hidden="true">*</span></label><select id="mf-tov" name="toValue" required>${empOpts(m.toValue,!!id)}</select></div>
+    ${field({id:'mf-from',name:'from',label:'From',req:1,value:m.from})}
+    <div class="field full" id="df-nte-wrap"></div>
+    <div class="field full"><label for="df-off">Offense (Company Rules and Regulations) <span class="req df-oreq" aria-hidden="true">*</span></label><select id="df-off" name="offense">${crrOpts(offKey(o))}</select></div>
+    ${field({id:'df-inc',name:'incidentOn',label:'Date of the incident',type:'date',value:o.incidentOn||''})}
+    <div class="field" id="mf-due-wrap">${field({id:'mf-due',name:'responseDue',label:'Written explanation due',type:'date',value:m.responseDue||addDays(m.issuedOn,5),help:'At least 5 calendar days from receipt.'}).replace(/^<div class="field ">|<\/div>$/g,'')}</div>
+    ${field({id:'df-det',name:'details',label:'What happened',type:'textarea',full:1,value:o.details||'',attrs:'style="min-height:80px" placeholder="Time, place and what the employee did, and who reported it"'})}
+    <div class="field full" id="df-rec" aria-live="polite"></div>
+    </div>
+    <fieldset id="df-dec" style="margin-top:12px"><legend>Decision</legend><div class="fg">
+      ${field({id:'df-exp',name:'explained',label:'Written explanation',type:'select',opts:[['yes','Received'],['no','Not submitted within the period']],value:m.explained||'yes',blank:false})}
+      ${field({id:'df-expd',name:'explainedOn',label:'Explanation dated',type:'date',value:m.explainedOn||''})}
+      <div class="field"><label for="df-pen">Penalty <span class="req" aria-hidden="true">*</span></label><select id="df-pen" name="penalty"></select></div>
+      ${field({id:'df-pfrom',name:'penFrom',label:'Effective from',type:'date',value:pen.from||nextWorkday(m.issuedOn)})}
+      <div class="field full" id="df-peninfo" aria-live="polite"></div>
+      <div class="field full"><label>Mitigating factors</label><div class="chks">${box('mit',CRR_MIT,fac.mit)}</div></div>
+      <div class="field full"><label>Aggravating factors</label><div class="chks">${box('agg',CRR_AGG,fac.agg)}</div></div>
+    </div></fieldset>
+    <div class="fg" style="margin-top:12px">
+    ${field({id:'mf-subj',name:'subject',label:'Subject',req:1,full:1,value:m.subject})}
+    ${field({id:'mf-body',name:'body',label:'Message',type:'textarea',req:1,full:1,value:m.body,attrs:'style="min-height:240px"'})}
+    </div>
+    <button type="button" class="btn sm ghost" id="df-fill">${ic('edit')}Fill subject and message from the Company Rules</button>
+    <section class="sect"><h4>Preview</h4><div id="mf-prev"></div></section>`,submitLabel:id?'Save changes':'Issue memo',
+    onOpen:f=>{
+      let auto=!m.body;
+      const T=()=>f.type.value,emp=()=>f.toValue.value;
+      const offOf=()=>{const[lvl,code]=(f.offense.value||'').split(':');const c=CRR[lvl];const it=c&&c.items.find(x=>x[0]===code);return it?{lvl,code,text:it[1]}:null};
+      const count=()=>{const x=offOf();return x?priorOffenses(emp(),offKey(x),m.id,f.issuedOn.value).length+1:1};
+      const penalty=()=>{const label=f.penalty.value,days=susDays(label);const from=f.penFrom.value||nextWorkday(f.issuedOn.value);
+        return!label?null:days?{label,days,...susEnd(from,days)}:{label,days:0,from:label==='Dismissal'?from:'',to:'',resume:''}};
+      const read=()=>{const x=offOf();const v={...m,cat:'disc',type:T(),issuedOn:f.issuedOn.value,toType:'employee',toValue:emp(),from:f.from.value,subject:f.subject.value,body:f.body.value,
+        responseDue:f.responseDue.value,nteId:T()==='Notice of Decision'&&f.nteId?f.nteId.value:'',
+        offense:x?{...x,count:count(),incidentOn:f.incidentOn.value,details:f.details.value.trim()}:null,
+        explained:f.explained.value,explainedOn:f.explainedOn.value,penalty:T()==='Notice of Decision'?penalty():null,
+        factors:{mit:[...f.querySelectorAll('[name=mit]:checked')].map(c=>c.value),agg:[...f.querySelectorAll('[name=agg]:checked')].map(c=>c.value)}};v.no=previewNo(v,m);return v};
+      const drawNte=()=>{const w=f.querySelector('#df-nte-wrap');if(T()!=='Notice of Decision'){w.hidden=true;w.innerHTML='';return}
+        const list=S.memos.filter(x=>x.type==='Notice to Explain'&&x.toValue===emp()&&x.status!=='Draft').sort(memoSort);const cur=f.nteId?f.nteId.value:m.nteId;w.hidden=false;
+        w.innerHTML=`<label for="df-nte">Notice to Explain being decided</label><select id="df-nte" name="nteId"><option value="">None (no Notice to Explain)</option>${list.map(x=>`<option value="${x.id}" ${x.id===cur?'selected':''}>${esc(x.no)} · ${fmt(x.issuedOn)} · ${esc(x.subject)}</option>`).join('')}</select>${list.length?'':'<p class="help" style="margin:4px 0 0">This employee has no Notice to Explain yet. Due process requires one before a decision.</p>'}`;
+        f.nteId.onchange=()=>{const n=S.memos.find(x=>x.id===f.nteId.value);if(n&&n.offense){f.offense.value=offKey(n.offense);f.incidentOn.value=n.offense.incidentOn||'';f.details.value=n.offense.details||''}drawRec();drawPen();autofill()}};
+      const drawPen=()=>{const x=offOf();const sel=f.penalty,cur=sel.value||pen.label;
+        const opts=x?CRR[x.lvl].ladder.slice():[];if(!x)opts.push(...new Set(Object.values(CRR).flatMap(c=>c.ladder)));opts.push(NOT_LIABLE);
+        const want=x?crrPenalty(x.lvl,count()):'';
+        sel.innerHTML=`<option value="">Select</option>`+opts.map(t=>`<option ${t===(cur&&opts.includes(cur)&&!sel.dataset.auto?cur:want)?'selected':''}>${esc(t)}</option>`).join('');sel.dataset.auto='';
+        const p=penalty();f.penFrom.closest('.field').hidden=!(p&&(p.days||p.label==='Dismissal'));
+        f.penFrom.previousElementSibling.textContent=p&&p.label==='Dismissal'?'Effective on':'Suspension starts';
+        f.querySelector('#df-peninfo').innerHTML=!p?'':p.days?`<p class="help" style="margin:0">${p.days} working days, Sundays not counted: <b>${fmt(p.from)} – ${fmt(p.to)}</b>. Reports back on <b>${fmt(p.resume)}</b>.</p>`:'';
+        if(x&&p&&p.label!==want&&p.label!==NOT_LIABLE)f.querySelector('#df-peninfo').innerHTML+=`<p class="calc-note" style="margin:6px 0 0">${ic('alert')}The Company Rules penalty for a ${ord(count())} offense is <b>${esc(want)}</b>. Check the mitigating or aggravating factors that support this change.</p>`};
+      const drawRec=()=>{const x=offOf(),w=f.querySelector('#df-rec');if(!x||!emp()){w.innerHTML='';return}
+        const prior=priorOffenses(emp(),offKey(x),m.id,f.issuedOn.value),n=prior.length+1,e=EMP[emp()];
+        w.innerHTML=`<div class="silline ${n>1?'warn':''}">${ic(n>1?'alert':'info')}<span>${prior.length?`${esc(e?e.firstName:'The employee')} was found liable for this offense ${prior.length} time${prior.length===1?'':'s'} before (${prior.map(p=>`${esc(p.no)}, ${fmt(p.issuedOn)}: ${esc(p.penalty.label)}`).join('; ')}). This is the <b>${ord(n)} offense</b>.`:`No earlier decision for this offense. This is the <b>1st offense</b>.`} Company Rules penalty: <b>${esc(crrPenalty(x.lvl,n))}</b>.</span></div>`};
+      const drawType=()=>{const t=T(),dec=t==='Notice of Decision';f.querySelector('#mf-due-wrap').hidden=t!=='Notice to Explain';f.querySelector('#df-dec').hidden=!dec;
+        f.offense.required=t!=='Other Disciplinary Action';f.querySelector('.df-oreq').hidden=!f.offense.required;f.incidentOn.required=f.details.required=f.offense.required;f.penalty.required=dec;
+        f.explainedOn.closest('.field').hidden=f.explained.value!=='yes';drawNte()};
+      const fill=()=>{const v=read();if(!v.offense)return;const t=T();
+        f.subject.value=t==='Notice to Explain'?`Notice to Explain — ${v.offense.text}`:t==='Notice of Decision'?`Notice of Decision — ${v.penalty?v.penalty.label:'[penalty]'}`:f.subject.value;
+        f.body.value=t==='Notice to Explain'?nteBody(v):t==='Notice of Decision'?nodBody(v):f.body.value;auto=true;pv()};
+      const autofill=()=>{if(auto||!f.body.value.trim())fill()};
+      const pv=()=>{f.querySelector('#mf-prev').innerHTML=memoDoc(read())};
+      f.type.addEventListener('change',()=>{drawType();drawPen();autofill()});
+      f.toValue.addEventListener('change',()=>{drawNte();drawRec();drawPen();autofill()});
+      f.offense.addEventListener('change',()=>{f.penalty.dataset.auto='1';drawRec();drawPen();autofill()});
+      f.issuedOn.addEventListener('change',()=>{if(f.issuedOn.value)f.responseDue.value=addDays(f.issuedOn.value,5);drawRec();autofill()});
+      f.explained.addEventListener('change',()=>{drawType();autofill()});
+      f.penalty.addEventListener('change',()=>{drawPen();autofill()});
+      ['incidentOn','details','explainedOn','penFrom'].forEach(n=>f[n].addEventListener('change',()=>{drawPen();autofill()}));
+      f.querySelectorAll('[name=mit],[name=agg]').forEach(c=>c.addEventListener('change',autofill));
+      f.body.addEventListener('input',()=>{auto=false});f.subject.addEventListener('input',()=>{auto=false});
+      f.querySelector('#df-fill').onclick=fill;
+      f.addEventListener('input',pv);f.addEventListener('change',pv);
+      drawType();drawRec();drawPen();if(!m.body&&offOf())fill();if(!f.body.value.trim()&&T()==='Notice to Explain')f.body.value=NTE_TEMPLATE;pv();
+    },
+    onSubmit:async(fd,f)=>{
+      const t=String(fd.get('type'));
+      if(t==='Notice to Explain'){const due=String(fd.get('responseDue')||'');if(due&&diff(String(fd.get('issuedOn')),due)<5){setErr(f.querySelector('#mf-due'),'Give the employee at least 5 calendar days to explain.');return false}}
+      if(t==='Notice of Decision'&&f.nteId&&f.nteId.value){const n=S.memos.find(x=>x.id===f.nteId.value);if(n&&n.responseDue&&f.issuedOn.value<n.responseDue&&f.explained.value!=='yes'){setErr(f.querySelector('#df-exp'),`The employee has until ${fmt(n.responseDue)} to explain. Wait for that date, or record the explanation as received.`);return false}}
+      const x=f.offense.value?(()=>{const[lvl,code]=f.offense.value.split(':');return{lvl,code,text:CRR[lvl].items.find(i=>i[0]===code)[1]}})():null;
+      const o=id?clone(m):{id:uid(),no:'',status:'Open'};
+      ['type','issuedOn','from','subject','body'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      o.cat='disc';o.toType='employee';o.toValue=String(fd.get('toValue')||'');
+      o.responseDue=t==='Notice to Explain'?String(fd.get('responseDue')||''):'';
+      o.offense=x?{...x,count:priorOffenses(o.toValue,offKey(x),o.id,o.issuedOn).length+1,incidentOn:String(fd.get('incidentOn')||''),details:String(fd.get('details')||'').trim()}:null;
+      if(t==='Notice of Decision'){const label=String(fd.get('penalty')),days=susDays(label),from=String(fd.get('penFrom')||'')||nextWorkday(o.issuedOn);
+        o.penalty=days?{label,days,...susEnd(from,days)}:{label,days:0,from:label==='Dismissal'?from:'',to:'',resume:''};
+        o.nteId=String(fd.get('nteId')||'');o.explained=String(fd.get('explained'));o.explainedOn=o.explained==='yes'?String(fd.get('explainedOn')||''):'';
+        o.factors={mit:fd.getAll('mit').map(String),agg:fd.getAll('agg').map(String)}}
+      else{delete o.penalty;delete o.nteId;delete o.explained;delete o.explainedOn;delete o.factors}
+      assignNo(o,m);await save('memos',o);
+      // the decision closes the Notice to Explain it answers
+      const n=o.nteId&&S.memos.find(y=>y.id===o.nteId);if(n&&n.status!=='Closed')await save('memos',{...clone(n),status:'Closed',statusAt:new Date().toISOString(),statusBy:MEID,decidedBy:o.id});
+      toast(id?`${o.no} updated.`:`${o.no} issued to ${memoTo(o)}.`);
+      if(!id){MD.close();whenReady('memos',o.id,()=>viewMemo(o.id));return false}
+    }});
+}
+/* Each 201 file lists the decisions on the employee's offenses */
+function discRecord(e){
+  const list=S.memos.filter(m=>m.type==='Notice of Decision'&&m.toValue===e.id&&m.status!=='Draft').sort(memoSort);
+  return`<section class="sect"><h4>Disciplinary record</h4>${list.length?`<div class="rows">${list.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${m.penalty?esc(m.penalty.label):'Decision'}</span><div class="meta">${m.offense&&m.offense.lvl?`${esc(CRR[m.offense.lvl].name)} offense ${CRR[m.offense.lvl].sec}-${esc(m.offense.code)} · ${ord(m.offense.count||1)} offense · `:''}${esc(m.no)} · ${fmt(m.issuedOn)}${m.penalty&&m.penalty.days?` · suspended ${fmt(m.penalty.from)} – ${fmt(m.penalty.to)}`:''}</div></div></button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No disciplinary decisions.</p>'}</section>`;
+}
+
 /* ---------------- memo form (all three kinds) ---------------- */
 const MEMO_TO={co:[['all','All employees'],['office','All GBMA office staff'],['department','A GBMA department'],['deployed','All deployed employees'],['client','Deployed employees at a client'],['solo','Solo parent employees'],['employee','A specific employee']],
   hol:[['all','All employees'],['office','All GBMA office staff'],['deployed','All deployed employees'],['client','Deployed employees at a client']]};
 function memoForm(cat,id,presetType,empId){
+  if(cat==='disc')return discForm(id,presetType,empId);
   const C=MEMO_CATS[cat],types=cat==='disc'?DISC_TYPES:cat==='co'?CO_TYPES:HOL_TYPES;
   const type0=types.includes(presetType)?presetType:types[0];
   const m=id?clone(S.memos.find(x=>x.id===id)):{cat,type:type0,toType:cat==='disc'||empId?'employee':'all',toValue:empId||'',from:SIGN.hrTitle,issuedOn:today(),event:{},body:type0==='Notice to Explain'?NTE_TEMPLATE:''};
@@ -2457,11 +2668,12 @@ function viewMemo(id){
     ${memoDoc(m)}`,
     foot:m.status==='Draft'
       ?`<button type="button" class="btn ghost left" data-close>Close</button>${btn('vm-del',ic('trash')+'Delete','bad-ghost')}${btn('vm-edit',ic('edit')+'Review & edit')}${btn('vm-send','Send to employee','ok')}`
-      :`<button type="button" class="btn ghost left" id="vm-copy">${ic('copy')}Copy text</button>${btn('vm-del',ic('trash')+'Delete','bad-ghost')}${btn('vm-edit',ic('edit')+'Edit')}${hol?'':(m.status==='Open'?btn('vm-ack','Mark acknowledged'):'')+(m.status!=='Closed'?btn('vm-close',cat==='disc'?'Close case':'Close',''):btn('vm-reopen',cat==='disc'?'Reopen case':'Reopen'))}`,
+      :`<button type="button" class="btn ghost left" id="vm-copy">${ic('copy')}Copy text</button>${btn('vm-del',ic('trash')+'Delete','bad-ghost')}${btn('vm-edit',ic('edit')+'Edit')}${m.type==='Notice to Explain'&&m.status!=='Closed'?btn('vm-decide','Issue Notice of Decision',''):''}${hol?'':(m.status==='Open'?btn('vm-ack','Mark acknowledged'):'')+(m.status!=='Closed'?btn('vm-close',cat==='disc'?'Close case':'Close',''):btn('vm-reopen',cat==='disc'?'Reopen case':'Reopen'))}`,
     onOpen:f=>{
       const on=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};
       on('#vm-copy',async()=>{const txt=memoText(m);try{await navigator.clipboard.writeText(txt);toast('Memo text copied.')}catch(e){const b=f.querySelector('.memo-doc');const r=document.createRange();r.selectNodeContents(b);const s=getSelection();s.removeAllRanges();s.addRange(r);toast('Text selected. Press Ctrl+C to copy.')}});
       const setS=st=>async()=>{const prev=clone(m);await save('memos',{...clone(m),status:st,statusAt:new Date().toISOString(),statusBy:MEID});MD.close();toast(`${m.no} marked ${st.toLowerCase()}.`,{undo:()=>save('memos',prev)})};
+      on('#vm-decide',()=>discForm(null,'Notice of Decision',m.toValue,m.id));
       on('#vm-ack',setS('Acknowledged'));on('#vm-close',setS('Closed'));on('#vm-reopen',setS('Open'));
       on('#vm-edit',()=>m.type===EOP_TYPE?eopForm(m.toValue,id):memoForm(cat,id));
       on('#vm-send',async()=>{await save('memos',{...clone(m),status:'Open',sentAt:new Date().toISOString(),sentBy:MEID});MD.close();toast(`${m.no} sent to ${memoTo(m)}.`)});
@@ -2570,7 +2782,7 @@ function renderDrawer(){
   const e=EMP[drawerEmp];if(!e){if(DR.open)DR.close();return}
   const sc=DR.querySelector('.dbody');const st=sc?sc.scrollTop:0;
   const ms=milestones(e);
-  const tabs=[['overview','Overview'],['evals','Evaluations'],['docs','201 Checklist'],['history','Leaves & Memos']];
+  const tabs=[['overview','Overview'],['evals','Evaluations'],['docs','201 Checklist'],['history','Leaves, Memos & Discipline']];
   const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;
   let body='';
   if(drawerTab==='overview'){
@@ -2619,7 +2831,7 @@ function renderDrawer(){
     const attLine=(m,s)=>`<button class="row" data-act="att-edit" data-id="${e.id}" data-k="${m}"><div class="grow"><span class="nm">${fmtMonth(m)}</span><div class="meta">${s.present} present · ${s.late} late (${hm(s.lateMin)}) · ${s.ut} undertime · ${s.absent} absent · ${s.leave} leave${s.norecord?` · ${s.norecord} no record`:''}</div></div>${s.perfect?`<span class="chip ok">${ic('award')}Perfect</span>`:s.late>3?`<span class="chip bad">${s.late} lates</span>`:s.ut>3?`<span class="chip warn">${s.ut} undertime</span>`:''}</button>`;
     body=`${silCard(e)}<section class="sect"><h4>Attendance</h4><div class="rows">${attLine(attM,attSummary(e,attM))}${attLine(attPrev,attSummary(e,attPrev))}</div></section><section class="sect"><h4>Leaves ·${used} approved day${used===1?'':'s'} this year</h4>${lv.length?`<div class="rows">${lv.map(l=>`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(l.type)}</span><div class="meta">${fmt(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}${l.status==='Approved'&&usesCredits(l)?` · SIL −${f4(creditUsed(l))}${l.unpaidDays?`, ${l.unpaidDays} unpaid`:''}`:''}</div></div>${statusChip(l.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No leave records.</p>'}</section>
     <section class="sect"><h4>Permits to work</h4>${pm.length?`<div class="rows">${pm.map(p=>`<button class="row" data-act="view-permit" data-id="${p.id}"><div class="grow"><span class="nm">Return on ${fmt(p.returnDate)}</span><div class="meta">${esc(p.no)} · after ${esc((p.leaveType||'').toLowerCase())} leave ${fmtS(p.leaveFrom)} – ${fmtS(p.leaveTo)}</div></div>${statusChip(p.status==='Approved'?'Issued':p.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No permits.</p>'}</section>
-    <section class="sect"><h4>Memos to this employee or their client</h4>${mm.length?`<div class="rows">${mm.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${esc(m.subject)}</span><div class="meta">${esc(m.no)} · ${esc(m.type)} · ${fmt(m.issuedOn)}</div></div>${statusChip(m.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No memos.</p>'}</section>`;
+    ${discRecord(e)}<section class="sect"><h4>Memos to this employee or their client</h4>${mm.length?`<div class="rows">${mm.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${esc(m.subject)}</span><div class="meta">${esc(m.no)} · ${esc(m.type)} · ${fmt(m.issuedOn)}</div></div>${statusChip(m.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No memos.</p>'}</section>`;
   }
   DR.innerHTML=`<div class="dwrap"><header class="dhead">
     <div class="dtop"><div class="avatar" aria-hidden="true">${esc(initials(e))}</div><div style="flex:1;min-width:0"><h2>${esc(fullName(e))}</h2><p>${esc(e.position)} · ${esc(e.empNo)}</p><p style="color:var(--ink);font-weight:600">${esc(e.client||'No client assigned')}${e.site?` <span style="color:var(--muted);font-weight:400">· ${esc(e.site)}</span>`:''}</p><div class="dchips">${empStatusChip(e)}${typeChip(e.employmentType)}${soloChip(e)}${pwdChip(e)}${sampleChip(e)}</div></div><button class="icon-btn" id="dr-x" aria-label="Close 201 file">${ic('x')}</button></div>
