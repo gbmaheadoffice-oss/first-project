@@ -615,7 +615,10 @@ const isActive=e=>empStatus(e)==='Active';
 function msState(due,done,soon){if(done)return'done';const d=diff(today(),due);if(d<0)return'overdue';if(d<=soon)return'soon';return'upcoming'}
 function milestones(e){
   if(!e.hireDate)return null;const prob=isProb(e);
-  const items=MS.map(m=>{const due=addMonths(e.hireDate,m.n);const rec=e.evals&&e.evals[m.k];const done=!!(rec&&rec.date);return{...m,due,rec,state:done?'done':(prob?msState(due,false,14):'na')}});
+  let stop=null;
+  const items=MS.map(m=>{const due=addMonths(e.hireDate,m.n);const rec=e.evals&&e.evals[m.k];const done=!!(rec&&rec.date);
+    const it={...m,due,rec,state:done?'done':stop?'stopped':(prob?msState(due,false,14):'na'),stopBy:done?null:stop};
+    if(done&&rec.recommendation==='Not recommended'&&!stop)stop=m;return it});
   const regDue=addMonths(e.hireDate,6);
   const regDone=!!e.regularizedOn||e.employmentType==='Regular';
   return{items,reg:{due:regDue,done:regDone,on:e.regularizedOn,state:regDone?'done':(prob?msState(regDue,false,30):'na')}};
@@ -625,6 +628,7 @@ function stateChip(state,due){
   if(state==='overdue'){const d=-diff(today(),due);return`<span class="chip bad">${ic('alert')}Overdue ${d}d</span>`}
   if(state==='soon'){const d=diff(today(),due);return`<span class="chip warn">${ic('clock')}${d===0?'Due today':'Due in '+d+'d'}</span>`}
   if(state==='na')return`<span class="chip">Not recorded</span>`;
+  if(state==='stopped')return`<span class="chip bad" title="An earlier evaluation is Not recommended">${ic('x2')}Stopped</span>`;
   return`<span class="chip">Upcoming</span>`;
 }
 const statusChip=s=>{const m={Pending:'warn',Approved:'ok',Declined:'bad',Closed:'',Open:'warn',Acknowledged:'info',Draft:''}[s];const i={Pending:'clock',Approved:'check',Declined:'x2',Open:'clock',Acknowledged:'check',Draft:'edit'}[s];if(s==='Draft')return`<span class="chip">${ic('edit')}Draft · not sent</span>`;if(s==='Sent')return`<span class="chip info">${ic('send')}Sent</span>`;if(s==='Issued')return`<span class="chip ok">${ic('check')}Issued</span>`;return`<span class="chip ${m||''}">${i?ic(i):''}${esc(s)}</span>`};
@@ -667,7 +671,7 @@ function memoTo(m){if(isLetter(m))return[m.toName,m.toCompany].filter(Boolean).j
 function evalQueue(days){
   const t=today(),out=[];
   S.employees.filter(isProb).forEach(e=>{const ms=milestones(e);if(!ms)return;
-    ms.items.forEach(m=>{if(m.state!=='done'&&diff(t,m.due)<=days)out.push({e,label:m.label+' evaluation',due:m.due,state:m.state,k:m.k})});
+    ms.items.forEach(m=>{if(m.state!=='done'&&m.state!=='stopped'&&diff(t,m.due)<=days)out.push({e,label:m.label+' evaluation',due:m.due,state:m.state,k:m.k})});
     if(!ms.reg.done&&diff(t,ms.reg.due)<=days)out.push({e,label:'Regularization',due:ms.reg.due,state:ms.reg.state,k:'reg'});
   });
   return out.sort((a,b)=>a.due<b.due?-1:1);
@@ -1219,7 +1223,7 @@ VIEWS.evaluations=function(){
   if(!list.length)h+=emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th>Date Hired</th>${MS.map(m=>`<th>${m.label}</th>`).join('')}<th>Regularization</th></tr></thead><tbody>
     ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div></td><td class="num">${fmt(e.hireDate)}</td>
-      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}">Record</button>`}</div></td>`).join('')}
+      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
       <td><div class="ms"><span class="d">${fmt(m.reg.on||m.reg.due)}</span>${m.reg.done?`<span class="chip ok">${ic('award')}Regular</span>`:stateChip(m.reg.state,m.reg.due)}${!m.reg.done&&isProb(e)?(notRecommended(e)?(()=>{const n=eopNotice(e);return!n?`<button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">End of probation notice</button>`:n.status==='Draft'?`<button class="link" style="padding:0" data-act="view-memo" data-id="${n.id}">Notice draft · review</button>`:`<span class="sub">${esc(n.no)} sent</span>`})():`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}">Set as Regular</button>`):''}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -2198,7 +2202,8 @@ function evalSummary(rec){
   return rec.rating?`Rating <b>${esc(rec.rating)}/5</b>`:'Done';
 }
 function evalForm(id,k){
-  const e=EMP[id];const m=MS.find(x=>x.k===k);const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
+  const e=EMP[id];const m=MS.find(x=>x.k===k);
+  const st=((milestones(e)||{}).items||[]).find(x=>x.k===k);if(st&&st.state==='stopped')return toast(`The ${st.stopBy.label.toLowerCase()} evaluation is Not recommended, so the ${m.label.toLowerCase()} evaluation is not needed. Change that recommendation to open this one.`,{kind:'bad'});const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
   const cl=rec.client||{},hr=rec.hr||{};const haveScan=(cl.files||[]).length;let staged=[];
   const factor=([key,title,desc],i)=>`<fieldset class="factor"><legend><b>${i+1}. ${title.toUpperCase()}</b></legend><p class="help" style="margin:0 0 10px">${desc}</p>
     <div class="rate" role="radiogroup" aria-label="${title} score">${SCALE.map(([v,l])=>`<label><input type="radio" name="hr_${key}" value="${v}" ${String(hr[key])===String(v)?'checked':''}><span><b>${v}</b>${l}</span></label>`).join('')}</div><p class="ferr2" id="err-hr_${key}" role="alert" hidden></p></fieldset>`;
@@ -2687,7 +2692,7 @@ function renderDrawer(){
   }else if(drawerTab==='evals'){
     if(!ms)body=emptyBlock('No hire date','Add a hire date to build the evaluation schedule.');
     else body=`<div class="tl">${ms.items.map((x,i)=>{const cls=x.state==='done'?'ok':x.state==='overdue'?'bad':x.state==='soon'?'warn':'';return`<div class="st"><div class="bub ${cls}">${x.state==='done'?ic('check'):x.short}</div><div><h5>${x.label} Evaluation ${stateChip(x.state,x.due)}</h5><p>Due ${fmt(x.due)}</p>
-      ${x.rec&&x.rec.date?`<p>Evaluated ${fmt(x.rec.date)} by ${esc(x.rec.evaluator)} · ${esc(x.rec.recommendation)}</p><p>${evalSummary(x.rec)}</p>${x.rec.hr?`<p>HR Section I: ${HR_FACTORS.map(([key,t])=>`${t} ${x.rec.hr[key]}`).join(' · ')}${x.rec.client&&x.rec.client.evaluator?` · Client evaluator: ${esc(x.rec.client.evaluator)}`:''}</p>`:''}${x.rec.client&&(x.rec.client.files||[]).length?`<p>${x.rec.client.files.map(f=>`<a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener">${ic('pclip','i sm')} ${esc(f.name)}</a>`).join(' ')}</p>`:''}${x.rec.remarks?`<p style="white-space:pre-wrap">“${esc(x.rec.remarks)}”</p>`:''}<button class="link" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="padding-left:0">Edit evaluation</button>`:`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="margin-top:6px">Record evaluation</button>`}</div></div>`}).join('')}
+      ${x.rec&&x.rec.date?`<p>Evaluated ${fmt(x.rec.date)} by ${esc(x.rec.evaluator)} · ${esc(x.rec.recommendation)}</p><p>${evalSummary(x.rec)}</p>${x.rec.hr?`<p>HR Section I: ${HR_FACTORS.map(([key,t])=>`${t} ${x.rec.hr[key]}`).join(' · ')}${x.rec.client&&x.rec.client.evaluator?` · Client evaluator: ${esc(x.rec.client.evaluator)}`:''}</p>`:''}${x.rec.client&&(x.rec.client.files||[]).length?`<p>${x.rec.client.files.map(f=>`<a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener">${ic('pclip','i sm')} ${esc(f.name)}</a>`).join(' ')}</p>`:''}${x.rec.remarks?`<p style="white-space:pre-wrap">“${esc(x.rec.remarks)}”</p>`:''}<button class="link" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="padding-left:0">Edit evaluation</button>`:`${x.state==='stopped'?`<p>Not needed: the ${x.stopBy.label.toLowerCase()} evaluation is Not recommended. If you change that recommendation, this evaluation opens again.</p>`:''}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="margin-top:6px" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record evaluation</button>`}</div></div>`}).join('')}
       <div class="st"><div class="bub ${ms.reg.done?'ok':ms.reg.state==='overdue'?'bad':ms.reg.state==='soon'?'warn':''}">${ic('award')}</div><div><h5>Regularization ${ms.reg.done?`<span class="chip ok">${ic('check')}Regular</span>`:stateChip(ms.reg.state,ms.reg.due)}</h5><p>${e.regularizedOn?`Regularized ${fmt(e.regularizedOn)}`:`6th month: ${fmt(ms.reg.due)}`}</p>${!ms.reg.done&&isProb(e)&&!notRecommended(e)?`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}" style="margin-top:6px">Set as Regular</button>`:''}${regContractStep(e)}${eopStep(e)}</div></div></div>`;
   }else if(drawerTab==='docs'){
     const n=docCount(e),fc=fileCount(e),ro=document.body.classList.contains('ro');
