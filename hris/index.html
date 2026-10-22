@@ -2229,8 +2229,9 @@ function evalForm(id,k){
     onOpen:f=>{
       const calc=()=>{const c=parseFloat(f.clientAvg.value);const vals=HR_FACTORS.map(([key])=>{const r=f.querySelector(`[name="hr_${key}"]:checked`);return r?+r.value:null});
         const hrOk=vals.every(v=>v!=null);const h=hrOk?r2(vals.reduce((s,v)=>s+v,0)/vals.length):null;const cOk=c>=1&&c<=5;const fin=hrOk&&cOk?r2((c+h)/2):null;
-        f.querySelector('#ev-calc').innerHTML=`<div><span>Client average</span><b>${cOk?c.toFixed(2):'—'}</b></div><div class="op">+</div><div><span>HR average (Section I)</span><b>${hrOk?h.toFixed(2):'—'}</b>${hrOk?`<small>${HR_FACTORS.map(([,t],i)=>`${t} ${vals[i]}`).join(' · ')}</small>`:''}</div><div class="op">÷ 2 =</div><div class="fin ${fin!=null&&fin<3?'low':''}"><span>Final score</span><b>${fin!=null?fin.toFixed(2):'—'}</b><small>${fin!=null?scoreLabel(fin):'Complete Part A and Part B'}</small></div>${fin!=null&&fin<3?`<p class="calc-note">${ic('alert')}Final score is below 3.00, so the recommendation is <b>Not recommended</b>. After saving, you will review the Notice of End of Probationary Employment.</p>`:''}`;
-        const sel=f.recommendation;if(sel){const lowNow=fin!=null&&fin<3;if(lowNow){sel.value='Not recommended'}[...sel.options].forEach(o=>o.disabled=lowNow&&o.value!=='Not recommended')}};
+        f.querySelector('#ev-calc').innerHTML=`<div><span>Client average</span><b>${cOk?c.toFixed(2):'—'}</b></div><div class="op">+</div><div><span>HR average (Section I)</span><b>${hrOk?h.toFixed(2):'—'}</b>${hrOk?`<small>${HR_FACTORS.map(([,t],i)=>`${t} ${vals[i]}`).join(' · ')}</small>`:''}</div><div class="op">÷ 2 =</div><div class="fin ${fin!=null&&fin<3?'low':''}"><span>Final score</span><b>${fin!=null?fin.toFixed(2):'—'}</b><small>${fin!=null?scoreLabel(fin):'Complete Part A and Part B'}</small></div>${fin!=null&&fin<3?`<p class="calc-note">${ic('alert')}Final score is below 3.00. <b>Not recommended</b> is suggested, but you can choose any recommendation. If you save it as Not recommended, you will review the Notice of End of Probationary Employment next.</p>`:''}`;
+        const sel=f.recommendation;const lowNow=fin!=null&&fin<3;if(sel&&lowNow&&!wasLow&&!picked)sel.value='Not recommended';wasLow=lowNow};
+      let wasLow=false,picked=!!rec.recommendation;f.recommendation&&f.recommendation.addEventListener('change',()=>{picked=true});
       f.addEventListener('input',calc);f.addEventListener('change',calc);calc();
       const b=f.querySelector('#ev-scan'),inp=f.querySelector('#ev-scan-in');
       const draw=()=>{f.querySelector('#ev-scan-st').innerHTML=staged.map((x,i)=>`<div class="file"><span class="fic" style="color:var(--info)">${ic('pdf')}</span><div class="fn"><b style="font-weight:600;overflow-wrap:anywhere">${esc(x.name)}</b><span>${fsize(x.size)} · uploads when you save</span></div><button type="button" class="icon-btn" data-unscan="${i}" aria-label="Remove ${esc(x.name)}">${ic('x')}</button></div>`).join('')};
@@ -2249,11 +2250,11 @@ function evalForm(id,k){
       const scores={};HR_FACTORS.forEach(([key])=>scores[key]=+fd.get('hr_'+key));
       const h=r2(HR_FACTORS.reduce((s,[key])=>s+scores[key],0)/HR_FACTORS.length);const fin=r2((c+h)/2);
       const o=clone(EMP[id]);o.evals=o.evals||{};
-      o.evals[k]={date:fd.get('date'),evaluator:String(fd.get('evaluator')).trim(),recommendation:fin<3?'Not recommended':fd.get('recommendation'),remarks:String(fd.get('remarks')||'').trim(),recordedBy:MEID,
+      o.evals[k]={date:fd.get('date'),evaluator:String(fd.get('evaluator')).trim(),recommendation:fd.get('recommendation'),remarks:String(fd.get('remarks')||'').trim(),recordedBy:MEID,
         client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),files:(cl.files||[]).concat(files)},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
-      await save('employees',o);toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)})${fin<3?' · Not recommended':''}.`);
+      await save('employees',o);const notRec=fd.get('recommendation')==='Not recommended';toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)}) · ${fd.get('recommendation')}.`);
       if(errs.length)toast('Not uploaded: '+errs.join(' · '),{kind:'bad'});
-      if(fin<3){const ex=eopNotice(e);MD.close();waitFor(()=>{const x=EMP[id];return x&&x.evals&&x.evals[k]&&x.evals[k].final===fin},()=>ex?viewMemo(ex.id):eopForm(id));return false}
+      if(notRec){const ex=eopNotice(e);MD.close();waitFor(()=>{const x=EMP[id];return x&&x.evals&&x.evals[k]&&x.evals[k].final===fin},()=>ex?viewMemo(ex.id):eopForm(id));return false}
     }});
 }
 function regularizeForm(id){
@@ -2270,7 +2271,7 @@ function regularizeForm(id){
 }
 function waitFor(cond,fn,n=0){if(cond())return fn();if(n<40)setTimeout(()=>waitFor(cond,fn,n+1),100)}
 /* ---- Notice of End of Probationary Employment (from the GBMA template) ---- */
-const notRecommended=e=>MS.some(m=>{const r=e.evals&&e.evals[m.k];return r&&r.date&&((r.final!=null&&r.final<3)||r.recommendation==='Not recommended')});
+const notRecommended=e=>MS.some(m=>{const r=e.evals&&e.evals[m.k];return r&&r.date&&(r.recommendation?r.recommendation==='Not recommended':r.final!=null&&r.final<3)});
 function eopNotice(e){return S.memos.filter(m=>m.type===EOP_TYPE&&m.toType==='employee'&&m.toValue===e.id).sort((a,b)=>(b.createdAt||'')<(a.createdAt||'')?-1:1)[0]}
 /* Memo numbers: type code + year + "-" + month + "-" + 4-digit series per type per year, e.g. NTE2026-10-0001 */
 const MEMO_CODES={'Notice to Explain':'NTE','Written Warning':'WW','Notice of Decision':'NOD','Disciplinary':'DA','Policy & Procedures':'PP','General Announcement':'GA','Reminder':'REM','Commendation':'COM','Notice of End of Probationary Employment':'NEPE','Holiday Work Arrangement':'HWA','No Work Arrangement':'NWA','Advisory':'ADV','Announcement':'ANN','Endorsement':'END','Request':'REQ','Reply':'REP','Letter':'LTR','Billing / Statement':'BS','Other':'MEMO'};
@@ -2315,7 +2316,7 @@ function eopForm(empId,memoId){
   if(!m)return;
   const low=MS.map(x=>({x,r:e.evals&&e.evals[x.k]})).filter(o=>o.r&&o.r.final!=null&&o.r.final<3);
   openModal({title:'Review Notice of End of Probationary Employment',wide:1,
-    body:`<div class="banner" style="background:var(--bad-bg)">${ic('alert')}<span class="grow">${low.length?`${esc(fullName(e))}'s ${low.map(o=>`${o.x.label.toLowerCase()} final score is <b>${o.r.final.toFixed(2)}</b>`).join(' and ')}, below 3.00, so the recommendation is <b>Not recommended</b>.`:`${esc(fullName(e))} is marked <b>Not recommended</b>.`} Review the notice below. It goes to the employee only when you click <b>Send to employee</b>.</span></div>
+    body:`<div class="banner" style="background:var(--bad-bg)">${ic('alert')}<span class="grow">${low.length?`${esc(fullName(e))}'s ${low.map(o=>`${o.x.label.toLowerCase()} final score is <b>${o.r.final.toFixed(2)}</b>`).join(' and ')}, below 3.00, and the recommendation is <b>Not recommended</b>.`:`${esc(fullName(e))} is marked <b>Not recommended</b>.`} Review the notice below. It goes to the employee only when you click <b>Send to employee</b>.</span></div>
     <div class="fg">
       ${field({id:'ep-date',name:'issuedOn',label:'Date of notice',type:'date',req:1,value:m.issuedOn})}
       ${field({id:'ep-eff',name:'effectiveOn',label:'Probationary contract ends on',type:'date',req:1,value:m.effectiveOn,help:ms?`Probation started ${fmt(e.hireDate)}; six months ends ${fmt(endDefault)}.`:''})}
