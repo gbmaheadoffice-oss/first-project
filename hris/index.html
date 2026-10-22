@@ -560,7 +560,7 @@ const probEnd=e=>e.hireDate?addDays(addMonths(e.hireDate,6),-1):'';
 function overallRec(e){const s=empStatus(e);if(s==='Separated')return`Separated · ${sepReason(e)}`;if(s==='Blocklisted')return'Blocklisted';if(e.employmentType==='Regular')return'Regularized';
   const last=[...MS].reverse().map(m=>e.evals&&e.evals[m.k]).find(r=>r&&r.date);return last?last.recommendation||'':'For evaluation'}
 const with201=e=>docCount(e)>=docTotal(e)?'With 201 file':'Without 201 file (incomplete)';
-const LEAVE_TYPES=['Vacation','Sick','Emergency','Bereavement','Maternity','Paternity','Solo Parent','Leave Without Pay'];
+const LEAVE_TYPES=['Vacation','Sick','Emergency','Personal','Half Day','Undertime','Bereavement','Maternity','Paternity','Solo Parent','Leave Without Pay'];
 const WORK_TYPES=['Hot Work','Work at Height','Confined Space Entry','Electrical Work','Excavation','Lifting Operations','General Work'];
 const PPE=['Hard hat','Safety shoes','Full-body harness','Gloves','Eye protection','Hearing protection','Fire extinguisher on standby','Lockout / Tagout','Gas test done','Barricades and signage'];
 const EOP_TYPE='Notice of End of Probationary Employment';
@@ -774,13 +774,13 @@ VIEWS.dashboard=function(){
     ${q.length?`<div class="rows">${q.map(x=>`<button class="row" data-act="open-emp" data-id="${x.e.id}"><div class="grow"><span class="nm">${esc(fullName(x.e))}</span> <span class="meta">· ${x.label}</span></div>${stateChip(x.state,x.due)}<span class="dt">${fmtS(x.due)}</span></button>`).join('')}</div>`:emptyBlock('Nothing due','No evaluations or regularizations fall due in the next 30 days.')}</section>`;
   const pl=S.leaves.filter(l=>l.status==='Pending').sort((a,b)=>a.from<b.from?-1:1).slice(0,5);
   const leaveCard=`<section class="card"><div class="card-h"><h3>Pending Leave Requests — Next 5</h3><button class="link" data-act="nav" data-id="leaves">All requests${ic('arrow')}</button></div>
-    ${pl.length?`<div class="rows">${pl.map(l=>`<div class="row"><div class="grow"><span class="nm">${esc(fullName(EMP[l.employeeId]))}</span> <span class="meta">· ${esc(l.type)}</span><div class="dt">${fmtS(l.from)} – ${fmtS(l.to)} · ${l.days} day${l.days===1?'':'s'}${siteClient(l)?' · '+esc(siteClient(l)):''}${(l.attachments||[]).length?' · '+ic('pclip','i sm'):''}</div></div><div class="acts" data-write style="display:flex;gap:6px"><button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved" aria-label="Approve leave of ${esc(fullName(EMP[l.employeeId]))}">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined" aria-label="Decline leave of ${esc(fullName(EMP[l.employeeId]))}">Decline</button></div></div>`).join('')}</div>`:emptyBlock('All caught up','No leave requests are waiting for approval.')}</section>`;
+    ${pl.length?`<div class="rows">${pl.map(l=>`<div class="row"><div class="grow"><span class="nm">${esc(reqName(l))}</span> <span class="meta">· ${esc(l.type)}</span><div class="dt">${fmtS(l.from)} – ${fmtS(l.to)} · ${l.days} day${l.days===1?'':'s'}${siteClient(l)?' · '+esc(siteClient(l)):''}${(l.attachments||[]).length?' · '+ic('pclip','i sm'):''}</div></div><div class="acts" data-write style="display:flex;gap:6px"><button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved" aria-label="Approve leave of ${esc(reqName(l))}">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined" aria-label="Decline leave of ${esc(reqName(l))}">Decline</button></div></div>`).join('')}</div>`:emptyBlock('All caught up','No leave requests are waiting for approval.')}</section>`;
   const byCl={};active.forEach(e=>{byCl[e.client||'Unassigned']=(byCl[e.client||'Unassigned']||0)+1});
   const cls=Object.entries(byCl).sort((a,b)=>b[1]-a[1]);const mx=Math.max(1,...cls.map(d=>d[1]));
   const deptCard=`<section class="card"><div class="card-h"><h3>Deployed Headcount by Client</h3><span class="help" style="color:var(--muted)">${cls.length} of ${CLIENTS.length} clients staffed</span></div>${cls.length?`<div class="bars" role="list">${cls.map(([d,n])=>`<button class="bl link" style="text-align:left;padding:0;color:var(--muted);font-weight:500" data-act="client-filter" data-id="${esc(d)}" role="listitem">${esc(d)}</button><div class="bt" aria-hidden="true"><div class="bf" style="width:${(n/mx*100).toFixed(1)}%"></div></div><span class="bv">${n}</span>`).join('')}</div>`:emptyBlock('No active employees','')}</section>`;
   const pp=S.permits.filter(p=>p.status==='Pending').sort((a,b)=>(a.returnDate||'')<(b.returnDate||'')?-1:1).slice(0,5);
   const permitCard=`<section class="card"><div class="card-h"><h3>Pending Permit to Work</h3><button class="link" data-act="nav" data-id="permits">All permits${ic('arrow')}</button></div>
-    ${pp.length?`<div class="rows">${pp.map(p=>`<button class="row" data-act="view-permit" data-id="${p.id}"><div class="grow"><span class="nm">${esc(fullName(EMP[p.employeeId]))}</span> <span class="meta">· back from ${esc((p.leaveType||'').toLowerCase())} leave</span><div class="dt">${esc(p.no)} · ${esc(siteClient(p))}</div></div><span class="dt">Returns ${fmtS(p.returnDate)}</span></button>`).join('')}</div>`:emptyBlock('No pending permits','Return-to-work permits waiting for approval show here.')}</section>`;
+    ${pp.length?`<div class="rows">${pp.map(p=>`<button class="row" data-act="view-permit" data-id="${p.id}"><div class="grow"><span class="nm">${esc(reqName(p))}</span> <span class="meta">· back from ${esc((p.leaveType||'').toLowerCase())} leave</span><div class="dt">${esc(p.no)} · ${esc(siteClient(p))}</div></div><span class="dt">Returns ${fmtS(p.returnDate)}</span></button>`).join('')}</div>`:emptyBlock('No pending permits','Return-to-work permits waiting for approval show here.')}</section>`;
   const inc=S.employees.filter(isActive).map(e=>({e,n:docCount(e)})).filter(x=>x.n<docTotal(x.e)).sort((a,b)=>a.n-b.n).slice(0,5);
   const docCard=`<section class="card"><div class="card-h"><h3>Incomplete 201 Files</h3><button class="link" data-act="nav" data-id="employees">201 Files${ic('arrow')}</button></div>
     ${inc.length?`<div class="rows">${inc.map(x=>`<button class="row" data-act="open-emp" data-id="${x.e.id}" data-k="docs"><div class="grow"><span class="nm">${esc(fullName(x.e))}</span><div class="meta">${esc(x.e.position||'')}</div></div><div class="prog"><div class="t"><div class="f" style="width:${x.n/docTotal(x.e)*100}%"></div></div><span class="num dt">${x.n}/${docTotal(x.e)}</span></div></button>`).join('')}</div>`:emptyBlock('All complete','Every active employee has a complete 201 file.')}</section>`;
@@ -817,14 +817,17 @@ VIEWS.employees=function(){
 
 /* ---- Leaves ---- */
 /* request helpers: site location snapshot from the request, falling back to the employee's 201 file */
-const siteClient=r=>r.client||(EMP[r.employeeId]||{}).client||'';
+const siteClient=r=>r.client||(EMP[r.employeeId]||{}).client||(r.jotform&&r.jotform.site)||'';
+/* Requests from Jotform keep what the employee typed (r.jotform); that name shows until HR links a 201 file */
+const reqName=r=>EMP[r.employeeId]?fullName(EMP[r.employeeId]):(r.jotform&&r.jotform.name)||'Unknown employee';
+const reqChips=r=>(r&&r.source==='jotform'?` <span class="chip info" title="Filed on Jotform">Jotform</span>`:'')+(r&&!EMP[r.employeeId]?` <span class="chip warn" title="Link this request to the employee's 201 file">${ic('alert')}No 201 match</span>`:'');
 const siteLoc=r=>r.site||(EMP[r.employeeId]||{}).site||'';
 const siteCell=r=>`<div style="max-width:220px">${esc(siteClient(r)||'—')}</div>${siteLoc(r)?`<div class="sub">${esc(siteLoc(r))}</div>`:''}`;
 const attCell=r=>{const n=(r.attachments||[]).length;return n?`<span class="chip info">${ic('pclip')}${n} file${n===1?'':'s'}</span>`:`<span class="sub">None</span>`};
 function attList(col,r){
   const a=r.attachments||[];
   if(!a.length)return`<p class="help" style="margin:0;color:var(--muted)">No file attached. Attachments are optional for employees.</p>`;
-  return`<div class="files" style="padding-left:0">${a.map(f=>{const img=/^image\//.test(f.type);return`<div class="file">${img?`<img src="/_blob/${esc(f.id)}" alt="" loading="lazy" width="44" height="44">`:`<span class="fic">${ic('pdf')}<b>PDF</b></span>`}<div class="fn"><button type="button" class="link" data-act="view-att" data-id="${col}:${esc(r.id)}" data-k="${esc(f.id)}">${esc(f.name)}</button><span>${fsize(f.size||0)}${f.at?' · uploaded '+fmtTs(f.at):''}</span></div><a class="icon-btn" href="/_blob/${esc(f.id)}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)} in a new tab">${ic('ext')}</a></div>`}).join('')}</div>`;
+  return`<div class="files" style="padding-left:0">${a.map(f=>{if(!f.id)return`<div class="file"><span class="fic">${ic('pclip')}</span><div class="fn"><a class="link" href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.name)}</a><span>${f.error==='later'?'Still being copied from Jotform. Check again in a few minutes.':f.error==='type'?'This file type opens in Jotform only.':'Opens in Jotform (sign in to Jotform).'}</span></div></div>`;const img=/^image\//.test(f.type);return`<div class="file">${img?`<img src="/_blob/${esc(f.id)}" alt="" loading="lazy" width="44" height="44">`:`<span class="fic">${ic('pdf')}<b>PDF</b></span>`}<div class="fn"><button type="button" class="link" data-act="view-att" data-id="${col}:${esc(r.id)}" data-k="${esc(f.id)}">${esc(f.name)}</button><span>${fsize(f.size||0)}${f.at?' · uploaded '+fmtTs(f.at):''}</span></div><a class="icon-btn" href="/_blob/${esc(f.id)}" target="_blank" rel="noopener" aria-label="Open ${esc(f.name)} in a new tab">${ic('ext')}</a></div>`}).join('')}</div>`;
 }
 const siteKv=r=>`<div><dt>Client company</dt><dd>${esc(siteClient(r)||'—')}</dd></div><div><dt>Site location</dt><dd>${esc(siteLoc(r)||'—')}</dd></div>`;
 
@@ -832,13 +835,13 @@ VIEWS.leaves=function(){
   const f=UI.leave;const q=f.q.trim().toLowerCase();
   const cnt=s=>s==='All'?S.leaves.length:S.leaves.filter(l=>l.status===s).length;
   let list=S.leaves.filter(l=>f.tab==='All'||l.status===f.tab);
-  if(q)list=list.filter(l=>[fullName(EMP[l.employeeId]),l.type,l.reason,siteClient(l),siteLoc(l)].join(' ').toLowerCase().includes(q));
+  if(q)list=list.filter(l=>[reqName(l),l.type,l.reason,siteClient(l),siteLoc(l)].join(' ').toLowerCase().includes(q));
   list.sort(f.tab==='Pending'?(a,b)=>a.from<b.from?-1:1:(a,b)=>(b.filedAt||'')<(a.filedAt||'')?-1:1);
-  let h=ph('Leave Approvals','Leave requests filed by employees. Review each one, then approve or decline it. Day count excludes Sundays.');
+  let h=ph('Leave Approvals','Leave requests from the GBMA Leave Form on Jotform, which appear here within 5 minutes, and requests filed here. Review each one, then approve or decline it. Day count excludes Sundays.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
   h+=`<section class="card">${tabsHtml('leave',['Pending','Approved','Declined','All'].map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox('f-leave-q','leave.q',f.q,'Search employee, leave type, site, reason')}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending requests':'No leave records here',f.tab==='Pending'?'Leave requests filed by employees appear here for your approval.':'Try another tab or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:1080px"><thead><tr><th>Employee</th><th>Site Location</th><th>Leave</th><th>Dates</th><th class="r">Days</th><th>Attachment</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
-    ${list.map(l=>{const e=EMP[l.employeeId];return`<tr class="click" data-act="view-leave" data-id="${l.id}" tabindex="0"><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${l.employeeId}"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(l)}<div class="sub">Filed ${fmtTs(l.filedAt)}</div></td><td>${siteCell(l)}</td><td style="max-width:240px"><div class="nm">${esc(l.type)}</div><div class="sub" style="overflow-wrap:anywhere">${esc((l.reason||'').length>70?l.reason.slice(0,70)+'…':(l.reason||''))}</div></td><td class="num" style="white-space:nowrap">${fmtS(l.from)} – ${fmt(l.to)}</td><td class="r num">${l.days}${usesCredits(l)?(l.status==='Approved'&&l.creditDays!=null?`<div class="sub">SIL −${f4(l.creditDays)}${l.unpaidDays?` · ${l.unpaidDays} unpaid`:''}</div>`:l.status==='Pending'?(()=>{const s=silInfo(EMP[l.employeeId]);return`<div class="sub ${s&&s.eligible&&s.available>=l.days?'':'lowc'}">${s&&s.eligible?`${f4(s.available)} SIL left`:'No SIL yet'}</div>`})():''):''}</td><td>${attCell(l)}</td><td>${statusChip(l.status)}${l.decidedAt?`<div class="sub">by ${uname(l.decidedBy)} · ${fmtTs(l.decidedAt)}</div>`:''}${l.status==='Approved'?`<div style="margin-top:4px">${ptwChip(l)}</div>`:''}</td>
+    ${list.map(l=>{const e=EMP[l.employeeId];return`<tr class="click" data-act="view-leave" data-id="${l.id}" tabindex="0"><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${l.employeeId}"><span class="nm">${esc(reqName(l))}</span></button>${sampleChip(l)}${reqChips(l)}<div class="sub">Filed ${fmtTs(l.filedAt)}</div></td><td>${siteCell(l)}</td><td style="max-width:240px"><div class="nm">${esc(l.type)}</div><div class="sub" style="overflow-wrap:anywhere">${esc((l.reason||'').length>70?l.reason.slice(0,70)+'…':(l.reason||''))}</div></td><td class="num" style="white-space:nowrap">${fmtS(l.from)} – ${fmt(l.to)}</td><td class="r num">${l.days}${usesCredits(l)?(l.status==='Approved'&&l.creditDays!=null?`<div class="sub">SIL −${f4(l.creditDays)}${l.unpaidDays?` · ${l.unpaidDays} unpaid`:''}</div>`:l.status==='Pending'?(()=>{const s=silInfo(EMP[l.employeeId]);return`<div class="sub ${s&&s.eligible&&s.available>=l.days?'':'lowc'}">${s&&s.eligible?`${f4(s.available)} SIL left`:'No SIL yet'}</div>`})():''):''}</td><td>${attCell(l)}</td><td>${statusChip(l.status)}${l.decidedAt?`<div class="sub">by ${uname(l.decidedBy)} · ${fmtTs(l.decidedAt)}</div>`:''}${l.status==='Approved'?`<div style="margin-top:4px">${ptwChip(l)}</div>`:''}</td>
       <td><div class="acts" data-write>${l.status==='Pending'?`<button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined">Decline</button>`:''}<button class="icon-btn" data-act="del" data-id="${l.id}" data-k="leaves" aria-label="Delete leave record">${ic('trash')}</button></div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -861,15 +864,15 @@ VIEWS.permits=function(){
   const f=UI.permit;const q=f.q.trim().toLowerCase();
   const cnt=s=>s==='All'?S.permits.length:S.permits.filter(p=>p.status===s).length;
   let list=S.permits.filter(p=>f.tab==='All'||p.status===f.tab);
-  if(q)list=list.filter(p=>[p.no,fullName(EMP[p.employeeId]),p.leaveType,siteClient(p),siteLoc(p),p.note].join(' ').toLowerCase().includes(q));
+  if(q)list=list.filter(p=>[p.no,reqName(p),p.leaveType,siteClient(p),siteLoc(p),p.note].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>f.tab==='Pending'?((a.returnDate||'')<(b.returnDate||'')?-1:1):((b.returnDate||'')<(a.returnDate||'')?-1:1));
   const waiting=S.leaves.filter(l=>l.status==='Approved'&&!permitFor(l)&&diff(today(),l.to)<=7&&diff(l.to,today())<=30).sort((a,b)=>a.to<b.to?-1:1);
-  let h=ph('Permit to Work','Return-to-work clearance. An employee who filed a leave must secure a Permit to Work before reporting back. Review each request and issue the permit.');
-  if(waiting.length)h+=`<section class="card"><div class="card-h"><h3>Approved leaves awaiting a permit</h3><span class="help" style="color:var(--muted)">These employees have not yet requested their Permit to Work.</span></div><div class="rows">${waiting.map(l=>{const back=nextWorkday(l.to);const late=diff(today(),back)<0;return`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(fullName(EMP[l.employeeId]))}</span> <span class="meta">· ${esc(l.type)} leave ${fmtS(l.from)} – ${fmtS(l.to)} · ${esc(siteClient(l))}</span></div>${late?`<span class="chip bad">${ic('alert')}Was due back ${fmtS(back)}</span>`:`<span class="chip warn">Back ${fmtS(back)}</span>`}</button>`}).join('')}</div></section>`;
+  let h=ph('Permit to Work','Return-to-work clearance. An employee who filed a leave must secure a Permit to Work before reporting back. Requests from the GBMA Permit to Work form on Jotform appear here within 5 minutes. Review each request and issue the permit.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  if(waiting.length)h+=`<section class="card"><div class="card-h"><h3>Approved leaves awaiting a permit</h3><span class="help" style="color:var(--muted)">These employees have not yet requested their Permit to Work.</span></div><div class="rows">${waiting.map(l=>{const back=nextWorkday(l.to);const late=diff(today(),back)<0;return`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(reqName(l))}</span> <span class="meta">· ${esc(l.type)} leave ${fmtS(l.from)} – ${fmtS(l.to)} · ${esc(siteClient(l))}</span></div>${late?`<span class="chip bad">${ic('alert')}Was due back ${fmtS(back)}</span>`:`<span class="chip warn">Back ${fmtS(back)}</span>`}</button>`}).join('')}</div></section>`;
   h+=`<section class="card">${tabsHtml('permit',['Pending','Approved','Declined','All'].map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox('f-permit-q','permit.q',f.q,'Search permit no., employee, leave, site')}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending permits':'No permits here',f.tab==='Pending'?'Permit to Work requests from employees returning from leave appear here for approval.':'Try another tab or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:1100px"><thead><tr><th>Permit No.</th><th>Employee</th><th>Site Location</th><th>Leave</th><th>Return to Work</th><th>Attachment</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
-    ${list.map(p=>`<tr class="click" data-act="view-permit" data-id="${p.id}" tabindex="0"><td class="num nm" style="white-space:nowrap">${esc(p.no)}${sampleChip(p)}</td><td><div class="nm">${esc(fullName(EMP[p.employeeId]))}</div><div class="sub">Filed ${fmtTs(p.filedAt)}</div></td><td>${siteCell(p)}</td><td style="max-width:230px"><div class="nm">${esc(p.leaveType||'—')}</div><div class="sub">${fmtS(p.leaveFrom)} – ${fmt(p.leaveTo)}</div></td><td class="num" style="white-space:nowrap"><b>${fmt(p.returnDate)}</b></td><td>${attCell(p)}${needsFit(p)?`<div class="sub lowc">No fit-to-work cert.</div>`:''}</td><td>${statusChip(p.status==='Approved'?'Issued':p.status)}${p.decidedAt?`<div class="sub">by ${uname(p.decidedBy)}</div>`:''}</td>
+    ${list.map(p=>`<tr class="click" data-act="view-permit" data-id="${p.id}" tabindex="0"><td class="num nm" style="white-space:nowrap">${esc(p.no)}${sampleChip(p)}${reqChips(p)}</td><td><div class="nm">${esc(reqName(p))}</div><div class="sub">Filed ${fmtTs(p.filedAt)}</div></td><td>${siteCell(p)}</td><td style="max-width:230px"><div class="nm">${esc(p.leaveType||'—')}</div><div class="sub">${fmtS(p.leaveFrom)} – ${fmt(p.leaveTo)}</div></td><td class="num" style="white-space:nowrap"><b>${fmt(p.returnDate)}</b></td><td>${attCell(p)}${needsFit(p)?`<div class="sub lowc">No fit-to-work cert.</div>`:''}</td><td>${statusChip(p.status==='Approved'?'Issued':p.status)}${p.decidedAt?`<div class="sub">by ${uname(p.decidedBy)}</div>`:''}</td>
       <td><div class="acts" data-write>${p.status==='Pending'?`<button class="btn sm ok" data-act="decide" data-id="${p.id}" data-k="permits:Approved">Issue permit</button><button class="btn sm bad-ghost" data-act="decide" data-id="${p.id}" data-k="permits:Declined">Decline</button>`:''}</div></td></tr>`).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -2076,9 +2079,10 @@ function creditPanel(l){
 function decide(id,k){
   const[col,status]=k.split(':');const rec=S[col].find(x=>x.id===id);if(!rec)return;
   const dec=status==='Declined';const e=EMP[rec.employeeId];
+  if(!e&&!dec)return toast('Link this request to the employee’s 201 file first: open it and use Link to employee.',{kind:'bad'});
   const sum=col==='leaves'
-    ?`<dl class="summary"><dt>Employee</dt><dd>${esc(fullName(e))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${esc(rec.type)}</dd><dt>Dates</dt><dd>${fmt(rec.from)} – ${fmt(rec.to)} (${rec.days} day${rec.days===1?'':'s'})</dd><dt>Reason</dt><dd>${esc(rec.reason)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>`
-    :`<dl class="summary"><dt>Permit</dt><dd>${esc(rec.no)}</dd><dt>Employee</dt><dd>${esc(fullName(e))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${ptwLeaveText(rec)}</dd><dt>Return to work</dt><dd>${fmt(rec.returnDate)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>${!dec&&needsFit(rec)?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached. Check that the employee is fit to work before issuing the permit.</span></div>`:''}`;
+    ?`<dl class="summary"><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${esc(rec.type)}</dd><dt>Dates</dt><dd>${fmt(rec.from)} – ${fmt(rec.to)} (${rec.days} day${rec.days===1?'':'s'})</dd><dt>Reason</dt><dd>${esc(rec.reason)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>`
+    :`<dl class="summary"><dt>Permit</dt><dd>${esc(rec.no)}</dd><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${ptwLeaveText(rec)}</dd><dt>Return to work</dt><dd>${fmt(rec.returnDate)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>${!dec&&needsFit(rec)?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached. Check that the employee is fit to work before issuing the permit.</span></div>`:''}`;
   const what=col==='leaves'?'leave request':'permit to work';const isPtwIssue=col==='permits'&&!dec;
   openModal({title:isPtwIssue?'Issue Permit to Work':`${dec?'Decline':'Approve'} ${what}`,body:sum+(col==='leaves'&&!dec?creditPanel(rec):'')+field({id:'dc-rem',name:'remarks',label:dec?'Reason for declining':'Remarks (optional)',type:'textarea',req:dec,attrs:'style="min-height:80px"',help:dec?'The employee sees this reason.':''}),
     submitLabel:dec?'Decline':isPtwIssue?'Issue permit':'Approve',submitClass:dec?'bad':'ok',
@@ -2108,42 +2112,62 @@ function viewPermit(id){
   const p=S.permits.find(x=>x.id===id);if(!p)return;const e=EMP[p.employeeId];const l=leaveOf(p);
   const acts=p.status==='Pending'?`<button type="button" class="btn bad-ghost" data-write id="vp-dec">Decline</button><button type="button" class="btn ok" data-write id="vp-app">Issue permit</button>`:p.status==='Approved'?`<button type="button" class="btn ghost" id="vp-copy">${ic('copy')}Copy text</button>`:'';
   openModal({title:`${esc(p.no)} · Permit to Work`,wide:1,
-    body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(p.status==='Approved'?'Issued':p.status)}${sampleChip(p)}</div>
-    <dl class="kv"><div><dt>Employee</dt><dd>${esc(fullName(e))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(p)}
+    body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(p.status==='Approved'?'Issued':p.status)}${sampleChip(p)}${reqChips(p)}</div>
+    <dl class="kv"><div><dt>Employee</dt><dd>${esc(reqName(p))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(p)}
     <div><dt>Leave</dt><dd>${ptwLeaveText(p)}${l?` <button type="button" class="link" data-act="view-leave" data-id="${l.id}" style="padding:0 4px">View leave</button>`:''}</dd></div><div><dt>Returning to work on</dt><dd><b>${fmt(p.returnDate)}</b></dd></div>
     <div><dt>Filed on</dt><dd>${fmtTs(p.filedAt)}</dd></div><div><dt>Status</dt><dd>${esc(p.status==='Approved'?'Issued':p.status)}${p.decidedAt?` by ${uname(p.decidedBy)} · ${fmtTs(p.decidedAt)}`:''}</dd></div>
     ${p.note?`<div style="grid-column:1/-1"><dt>Employee's note</dt><dd style="white-space:pre-wrap">${esc(p.note)}</dd></div>`:''}
     ${p.remarks?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(p.remarks)}</dd></div>`:''}</dl>
     ${needsFit(p)&&p.status==='Pending'?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached.</span></div>`:''}
-    <section class="sect"><h4>Attachments from employee</h4>${attList('permits',p)}</section>
+    ${jfSection('permits',p)}<section class="sect"><h4>Attachments from employee</h4>${attList('permits',p)}</section>
     ${p.status==='Approved'?`<section class="sect"><h4>Issued permit</h4>${ptwDoc(p)}</section>`:''}`,
     foot:`<button type="button" class="btn ghost left" data-close>Close</button>${acts}`,
-    onOpen:f=>{const b=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};b('#vp-app',()=>decide(id,'permits:Approved'));b('#vp-dec',()=>decide(id,'permits:Declined'));
+    onOpen:f=>{const b=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};b('#vp-app',()=>decide(id,'permits:Approved'));b('#vp-dec',()=>decide(id,'permits:Declined'));b('#jf-link-btn',()=>linkReq('permits',id,f.querySelector('#jf-link').value));
       b('#vp-copy',async()=>{try{await navigator.clipboard.writeText(ptwText(p));toast('Permit text copied.')}catch(err){const r=document.createRange();r.selectNodeContents(f.querySelector('.memo-doc'));const s=getSelection();s.removeAllRanges();s.addRange(r);toast('Text selected. Press Ctrl+C to copy.')}})}});
   resolveNames();
+}
+const JF_FORMS={leaves:'261329099923466',permits:'261331432840448'};
+function jfSection(col,r){
+  const j=r.jotform;if(!j)return'';
+  const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;
+  const dt=v=>v?fmt(String(v).slice(0,10))+(/\d{2}:\d{2}/.test(v)&&String(v).slice(11,16)!=='00:00'?' · '+String(v).slice(11,16):''):'';
+  return`<section class="sect"><h4>From Jotform</h4>
+    ${EMP[r.employeeId]?'':`<div class="banner" style="background:var(--warn-bg)">${ic('alert')}<span class="grow">This request did not match a 201 file. The employee typed <b>${esc(j.name||'—')}</b> with ID <b>${esc(j.empNo||'—')}</b>. Link it to the right employee before approving.</span></div>
+    <div data-write style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:10px 0 12px"><div class="field" style="flex:1 1 260px;margin:0"><label for="jf-link">Employee</label><select id="jf-link">${empOpts('',1)}</select></div><button type="button" class="btn" id="jf-link-btn">Link to employee</button></div>`}
+    <dl class="kv">${kv('Name typed',j.name)}${kv('Employee ID typed',j.empNo)}${kv('Email',j.email)}${kv('Site assignment',j.site)}${kv('Regular work schedule',j.schedule)}
+    ${col==='leaves'?kv('Leave type chosen',j.leaveType)+kv('Leave date',dt(j.leaveDate))+kv('Return date',dt(j.returnDate))+kv('No. of days (Jotform)',j.days)
+      :kv('Date filed',j.dateFiled&&fmt(j.dateFiled))+kv('Absence',j.startDate?fmt(j.startDate)+' – '+fmt(j.endDate):'')+kv('Days of absence',j.days)+kv('Leave Submission ID# typed',j.leaveSubmissionId)}</dl>
+    <p style="margin:8px 0 0"><a class="link" href="https://www.jotform.com/inbox/${JF_FORMS[col]}/${esc(j.submissionId)}" target="_blank" rel="noopener">${ic('ext')}Open in Jotform</a></p></section>`;
+}
+async function linkReq(col,id,empId){
+  const r=S[col].find(x=>x.id===id),e=EMP[empId];if(!r)return;
+  if(!e)return toast('Choose the employee first.',{kind:'bad'});
+  await save(col,{...clone(r),employeeId:e.id,client:e.client||'',site:e.site||''});
+  toast(`Linked to ${fullName(e)}.`);
+  waitFor(()=>{const x=S[col].find(y=>y.id===id);return x&&x.employeeId===e.id},()=>col==='leaves'?viewLeave(id):viewPermit(id));
 }
 function viewLeave(id){
   const l=S.leaves.find(x=>x.id===id);if(!l)return;const e=EMP[l.employeeId];
   const acts=l.status==='Pending'?`<button type="button" class="btn bad-ghost" data-write id="vl-dec">Decline</button><button type="button" class="btn ok" data-write id="vl-app">Approve</button>`:'';
-  openModal({title:`${esc(l.type)} Leave · ${esc(fullName(e))}`,wide:1,
-    body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(l.status)}${sampleChip(l)}</div>
-    <dl class="kv"><div><dt>Employee</dt><dd>${esc(fullName(e))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(l)}
+  openModal({title:`${esc(l.type)} Leave · ${esc(reqName(l))}`,wide:1,
+    body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(l.status)}${sampleChip(l)}${reqChips(l)}</div>
+    <dl class="kv"><div><dt>Employee</dt><dd>${esc(reqName(l))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(l)}
     <div><dt>Leave type</dt><dd>${esc(l.type)}</dd></div><div><dt>Dates</dt><dd>${fmt(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}</dd></div>
     <div><dt>Filed on</dt><dd>${fmtTs(l.filedAt)}</dd></div><div><dt>Status</dt><dd>${esc(l.status)}${l.decidedAt?` by ${uname(l.decidedBy)} · ${fmtTs(l.decidedAt)}`:''}</dd></div>
     <div style="grid-column:1/-1"><dt>Reason</dt><dd style="white-space:pre-wrap">${esc(l.reason||'—')}</dd></div>
     ${l.remarks?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(l.remarks)}</dd></div>`:''}</dl>
     <section class="sect"><h4>Leave credits</h4>${creditPanel(l)}</section>
     ${l.status==='Approved'?`<section class="sect"><h4>Permit to Work</h4>${(()=>{const p=permitFor(l);return p?`<div class="silline ${p.status==='Approved'?'':'warn'}">${ic(p.status==='Approved'?'check':'clock')}<span>${p.status==='Approved'?`Permit <b>${esc(p.no)}</b> issued. Cleared to return on <b>${fmt(p.returnDate)}</b>.`:p.status==='Pending'?`Permit <b>${esc(p.no)}</b> requested for return on ${fmt(p.returnDate)}, waiting for HR.`:`Permit ${esc(p.no)} was declined. The employee must request again.`} <button type="button" class="link" data-act="view-permit" data-id="${p.id}" style="padding:0 4px">Open permit</button></span></div>`:`<div class="silline warn">${ic('hat')}<span>No Permit to Work yet. The employee must secure one before returning to work on ${fmt(nextWorkday(l.to))}.</span></div>`})()}</section>`:''}
-    <section class="sect"><h4>Attachments from employee</h4>${attList('leaves',l)}</section>`,
+    ${jfSection('leaves',l)}<section class="sect"><h4>Attachments from employee</h4>${attList('leaves',l)}</section>`,
     foot:`<button type="button" class="btn ghost left" data-close>Close</button>${acts}`,
-    onOpen:f=>{const b=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};b('#vl-app',()=>decide(id,'leaves:Approved'));b('#vl-dec',()=>decide(id,'leaves:Declined'))}});
+    onOpen:f=>{const b=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};b('#vl-app',()=>decide(id,'leaves:Approved'));b('#vl-dec',()=>decide(id,'leaves:Declined'));b('#jf-link-btn',()=>linkReq('leaves',id,f.querySelector('#jf-link').value))}});
   resolveNames();
 }
 function viewAtt(ref,fid){
   const[col,rid]=ref.split(':');const r=S[col].find(x=>x.id===rid);if(!r)return;const f=(r.attachments||[]).find(x=>x.id===fid);if(!f)return;
   const url='/_blob/'+f.id;const back=()=>col==='leaves'?viewLeave(rid):viewPermit(rid);
   openModal({title:`Attachment · ${esc(f.name)}`,wide:1,
-    body:`<dl class="summary"><dt>Employee</dt><dd>${esc(fullName(EMP[r.employeeId]))}</dd><dt>Request</dt><dd>${esc(col==='leaves'?r.type+' leave, '+fmt(r.from)+' – '+fmt(r.to):r.no+' · Permit to Work after '+(r.leaveType||'')+' leave')}</dd><dt>File</dt><dd>${esc(f.name)} · ${fsize(f.size||0)}</dd></dl>
+    body:`<dl class="summary"><dt>Employee</dt><dd>${esc(reqName(r))}</dd><dt>Request</dt><dd>${esc(col==='leaves'?r.type+' leave, '+fmt(r.from)+' – '+fmt(r.to):r.no+' · Permit to Work after '+(r.leaveType||'')+' leave')}</dd><dt>File</dt><dd>${esc(f.name)} · ${fsize(f.size||0)}</dd></dl>
       ${/^image\//.test(f.type)?`<img src="${esc(url)}" alt="Attachment ${esc(f.name)}" style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)">`
       :`<div class="empty" style="border:1px dashed var(--line);border-radius:12px">${ic('pdf')}<strong>PDF document</strong>Open it in a new tab to view or download it.</div>`}`,
     foot:`<button type="button" class="btn ghost left" id="va-back">Back to request</button><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">${ic('ext')}Open in new tab</a>`,
@@ -2925,8 +2949,10 @@ async function markHired(appId,empId){
 }
 async function syncJotform(el){
   if(!window.HRIS_SB)return;el.disabled=true;const t=el.innerHTML;el.textContent='Checking Jotform…';
-  try{const{data,error}=await window.HRIS_SB.functions.invoke('jotform-sync',{body:{}});if(error)throw error;
-    toast(data&&data.written?`${data.written} application${data.written===1?'':'s'} added or updated.`:'No new applications.')}
+  const req=el.dataset.k==='requests';
+  try{const{data,error}=await window.HRIS_SB.functions.invoke('jotform-sync',{body:req?{only:'requests'}:{only:'applicants'}});if(error)throw error;
+    if(req){const n=((data.leaves||{}).written||0)+((data.permits||{}).written||0);toast(n?`${n} leave or permit request${n===1?'':'s'} added or updated.`:'No new leave or permit requests.')}
+    else toast(data&&data.written?`${data.written} application${data.written===1?'':'s'} added or updated.`:'No new applications.')}
   catch(e){toast('Could not reach Jotform. Try again in a minute.',{kind:'bad'})}
   finally{el.disabled=false;el.innerHTML=t}
 }
