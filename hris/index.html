@@ -2297,6 +2297,9 @@ function evalForm(id,k){
   const st=((milestones(e)||{}).items||[]).find(x=>x.k===k);if(st&&st.state==='stopped')return toast(`The ${st.stopBy.label.toLowerCase()} evaluation is Not recommended, so the ${m.label.toLowerCase()} evaluation is not needed. Change that recommendation to open this one.`,{kind:'bad'});const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
   const cl=rec.client||{},hr=rec.hr||{};const haveScan=(cl.files||[]).length;let staged=[];
   const resp=clientResp(e,k),gform=cl.form||(resp?{responseId:resp.responseId,ratings:resp.ratings,avg:resp.avg,remarks:resp.remarks,email:resp.email,at:resp.submittedAt}:null);
+  // a client that used the printed form before is assumed to use it again
+  const prevPaper=MS.some(x=>x.k!==k&&e.evals&&e.evals[x.k]&&e.evals[x.k].client&&(e.evals[x.k].client.method==='paper'||!e.evals[x.k].client.method&&!e.evals[x.k].client.form&&(e.evals[x.k].client.files||[]).length));
+  const method=gform?'gform':cl.method||(haveScan?'paper':prevPaper?'paper':'gform');
   const factor=([key,title,desc],i)=>`<fieldset class="factor"><legend><b>${i+1}. ${title.toUpperCase()}</b></legend><p class="help" style="margin:0 0 10px">${desc}</p>
     <div class="rate" role="radiogroup" aria-label="${title} score">${SCALE.map(([v,l])=>`<label><input type="radio" name="hr_${key}" value="${v}" ${String(hr[key])===String(v)?'checked':''}><span><b>${v}</b>${l}</span></label>`).join('')}</div><p class="ferr2" id="err-hr_${key}" role="alert" hidden></p></fieldset>`;
   openModal({title:`${m.label} Evaluation`,wide:1,
@@ -2307,7 +2310,8 @@ function evalForm(id,k){
       <div class="fg">
         ${field({id:'ev-cavg',name:'clientAvg',label:'Client average score',type:'number',req:1,value:cl.avg!=null?cl.avg:gform&&gform.avg!=null?gform.avg:'',attrs:'min="1" max="5" step="0.01" inputmode="decimal" placeholder="1.00 – 5.00"',help:'Average of all the ratings on the client’s form, from 1 to 5.'})}
         ${field({id:'ev-cby',name:'clientEvaluator',label:'Evaluated by (client)',value:cl.evaluator||(gform&&gform.email)||'',attrs:'placeholder="Client supervisor name"'})}
-        <div class="field full"><span class="flabel">Scanned client evaluation form${haveScan||gform?(gform?' (not needed: answered on the Google Form)':''):' <span class="req" aria-hidden="true">*</span>'}</span>
+        ${gform?'':`<fieldset class="field full" style="border:0;padding:0;margin:0"><legend class="flabel">How did the client evaluate?</legend><div class="rate" role="radiogroup" style="grid-template-columns:repeat(2,minmax(0,1fr))">${[['gform','Google Form','No scan needed'],['paper','Printed form (hard copy)','Upload the scanned form']].map(([v,l,d])=>`<label><input type="radio" name="clientMethod" value="${v}" ${method===v?'checked':''}><span><b>${l}</b>${d}</span></label>`).join('')}</div></fieldset>`}
+        <div class="field full" id="ev-scan-box" ${method==='paper'||haveScan?'':'hidden'}><span class="flabel">Scanned client evaluation form${method==='paper'&&!haveScan?' <span class="req" aria-hidden="true">*</span>':''}</span>
           ${haveScan?`<div class="files" style="padding-left:0">${cl.files.map(f=>`<div class="file">${/^image\//.test(f.type)?`<img src="/_blob/${esc(f.id)}" alt="" width="44" height="44">`:`<span class="fic">${ic('pdf')}<b>PDF</b></span>`}<div class="fn"><a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:600;overflow-wrap:anywhere">${esc(f.name)}</a><span>${fsize(f.size||0)} · on file</span></div></div>`).join('')}</div>`:''}
           ${ASSETS?`<div><button type="button" class="btn sm ghost" id="ev-scan">${ic('upload')}${haveScan?'Add another page':'Attach scanned form'}</button><input type="file" id="ev-scan-in" accept="${ACCEPT}" multiple hidden></div><div class="files staged" id="ev-scan-st" style="padding-left:0"></div>`:`<p class="help" style="margin:0">Uploading is not available in this view.</p>`}
         </div>
@@ -2332,6 +2336,7 @@ function evalForm(id,k){
       let wasLow=false,picked=!!rec.recommendation;f.recommendation&&f.recommendation.addEventListener('change',()=>{picked=true});
       f.addEventListener('input',calc);f.addEventListener('change',calc);calc();
       const gc=f.querySelector('#ev-gcopy');if(gc)gc.onclick=()=>copyText(clientEvalLink(e),'Link copied. Paste it in your message to the client.');
+      f.querySelectorAll('[name=clientMethod]').forEach(r=>r.addEventListener('change',()=>{const p=r.value==='paper'&&r.checked;if(!r.checked)return;const box=f.querySelector('#ev-scan-box');box.hidden=!p&&!haveScan;const lab=box.querySelector('.flabel');lab.innerHTML='Scanned client evaluation form'+(p&&!haveScan?' <span class="req" aria-hidden="true">*</span>':'')}));
       const b=f.querySelector('#ev-scan'),inp=f.querySelector('#ev-scan-in');
       const draw=()=>{f.querySelector('#ev-scan-st').innerHTML=staged.map((x,i)=>`<div class="file"><span class="fic" style="color:var(--info)">${ic('pdf')}</span><div class="fn"><b style="font-weight:600;overflow-wrap:anywhere">${esc(x.name)}</b><span>${fsize(x.size)} · uploads when you save</span></div><button type="button" class="icon-btn" data-unscan="${i}" aria-label="Remove ${esc(x.name)}">${ic('x')}</button></div>`).join('')};
       if(b){b.onclick=()=>inp.click();inp.onchange=()=>{const bad=[];[...inp.files].forEach(x=>{const t=fileType(x);if(!t)bad.push(`${x.name}: use PDF, JPG or PNG`);else if(x.size>20*1048576)bad.push(`${x.name}: larger than 20 MB`);else staged.push(x)});inp.value='';draw();if(bad.length)toast(bad.join(' · '),{kind:'bad'})};
@@ -2342,15 +2347,16 @@ function evalForm(id,k){
       const c=parseFloat(fd.get('clientAvg'));
       if(!(c>=1&&c<=5)){setErr(f.querySelector('#ev-cavg'),'Enter the client’s average score from 1.00 to 5.00.');return false}
       for(const[key,title] of HR_FACTORS){if(!fd.get('hr_'+key)){const p=f.querySelector('#err-hr_'+key);p.textContent=`Select a score for ${title}.`;p.hidden=false;f.querySelector(`[name="hr_${key}"]`).focus();return false}}
-      if(ASSETS&&!haveScan&&!gform&&!staged.length){setErr(f.querySelector('#ev-scan'),'Attach the scanned copy of the client’s evaluation form.');return false}
+      const paper=!gform&&fd.get('clientMethod')==='paper';
+      if(ASSETS&&paper&&!haveScan&&!staged.length){setErr(f.querySelector('#ev-scan'),'Attach the scanned copy of the client’s evaluation form.');return false}
       const sb=f.querySelector('button[type=submit]');const files=[],errs=[];
       for(let i=0;i<staged.length;i++){sb.textContent=`Uploading ${i+1} of ${staged.length}…`;try{const r=await ASSETS.upload(staged[i],{type:fileType(staged[i])});files.push({id:r.id,name:staged[i].name.slice(0,140),type:r.contentType,size:r.sizeBytes,at:new Date().toISOString(),by:MEID})}catch(err){errs.push(`${staged[i].name}: ${upErr(err)}`)}}
-      if(staged.length&&!files.length&&!haveScan&&!gform){sb.textContent='Save evaluation';setErr(f.querySelector('#ev-scan'),'The scanned form did not upload: '+errs.join(' · '));return false}
+      if(paper&&staged.length&&!files.length&&!haveScan){sb.textContent='Save evaluation';setErr(f.querySelector('#ev-scan'),'The scanned form did not upload: '+errs.join(' · '));return false}
       const scores={};HR_FACTORS.forEach(([key])=>scores[key]=+fd.get('hr_'+key));
       const h=r2(HR_FACTORS.reduce((s,[key])=>s+scores[key],0)/HR_FACTORS.length);const fin=r2((c+h)/2);
       const o=clone(EMP[id]);o.evals=o.evals||{};
       o.evals[k]={date:fd.get('date'),evaluator:String(fd.get('evaluator')).trim(),recommendation:fd.get('recommendation'),remarks:String(fd.get('remarks')||'').trim(),recordedBy:MEID,
-        client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),files:(cl.files||[]).concat(files),...(gform?{form:gform}:{})},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
+        client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),method:gform?'gform':paper?'paper':'gform',files:(cl.files||[]).concat(files),...(gform?{form:gform}:{})},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
       await save('employees',o);const notRec=fd.get('recommendation')==='Not recommended';toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)}) · ${fd.get('recommendation')}.`);
       if(errs.length)toast('Not uploaded: '+errs.join(' · '),{kind:'bad'});
       if(notRec){const ex=eopNotice(e);MD.close();waitFor(()=>{const x=EMP[id];return x&&x.evals&&x.evals[k]&&x.evals[k].final===fin},()=>ex?viewMemo(ex.id):eopForm(id));return false}
