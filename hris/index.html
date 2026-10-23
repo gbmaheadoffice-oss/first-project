@@ -741,7 +741,7 @@ const ROUTES={
   employees:{t:'201 Files',nav:'201 Files',icon:'users'},
   leaves:{t:'Request Management',nav:'Leave Approvals',icon:'cal'},
   attendance:{t:'Attendance',nav:'Attendance',icon:'clock'},
-  attpolicy:{t:'Cut-offs & Late Counting',nav:'Cut-offs & Late Counting',icon:'cal'},
+  attpolicy:{t:'Attendance',nav:'Cut-offs & Late Counting',icon:'cal'},
   permits:{t:'Request Management',nav:'Permit to Work Approvals',icon:'hat'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
   memos:{t:'Company Communications',nav:'Disciplinary Actions',icon:'memo'},
@@ -750,7 +750,7 @@ const ROUTES={
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Request Management',icon:'cal',routes:['leaves','permits']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
+const NAV_GROUPS={req:{name:'Request Management',icon:'cal',routes:['leaves','permits']},att:{name:'Attendance',icon:'clock',routes:['attendance','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -773,7 +773,7 @@ function renderNav(){
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${link('attendance')}${link('attpolicy')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
 function render(focus){
   EMP={};S.employees.forEach(e=>EMP[e.id]=e);
@@ -1072,7 +1072,7 @@ VIEWS.attendance=function(){
   const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
   const sp=cutoffSpec(f.client);const opts=monthPeriods(f.client,f.month).map(p=>{const pd=payDate(sp,p);return[p.join('|'),`${fmtS(p[0])} – ${fmtS(p[1])}${pd?` · payday ${fmtS(pd)}`:''}`]});const mr=monthRange(f.month);if(!opts.some(o=>o[0]===mr.join('|')))opts.push([mr.join('|'),`Whole month · ${fmtS(mr[0])} – ${fmtS(mr[1])}`]);
   const curKey=`${a}|${b}`,sel=f.custom?'custom':(opts.some(o=>o[0]===curKey)?curKey:'custom');
-  let h=ph('Attendance',`Attendance per payroll cut-off. Schedule ${fmtTime(ATTSET.start)} – ${fmtTime(ATTSET.end)}${+ATTSET.grace?`, ${ATTSET.grace}-minute grace period`:''}, Sunday rest day.`,
+  let h=groupTabs()+ph('Attendance',`Attendance per payroll cut-off. Schedule ${fmtTime(ATTSET.start)} – ${fmtTime(ATTSET.end)}${+ATTSET.grace?`, ${ATTSET.grace}-minute grace period`:''}, Sunday rest day.`,
     `<button class="btn ghost" data-act="nav" data-id="attpolicy">${ic('cal')}Cut-offs &amp; late counting</button><button class="btn ghost" data-act="att-copy">${ic('copy')}Copy list</button><button class="btn" data-act="att-import" data-write>${ic('upload')}Import attendance</button>`);
   const tone={'All':'','More than 3 lates':'bad','Perfect attendance':'ok','More than 3 undertime':'warn','With absences':'bad'};
   h+=`<div class="fbtns" role="group" aria-label="Show employees">${ATT_TABS.map(x=>{const n=all.filter(r=>attTest[x](r.s)).length;return`<button class="fbtn ${tone[x]}" data-act="tab" data-id="att" data-k="${x}" aria-pressed="${f.tab===x}">${x==='Perfect attendance'?ic('award'):x==='All'?ic('users'):x==='More than 3 lates'?ic('clock'):x==='More than 3 undertime'?ic('arrow'):ic('alert')}<span>${attTabLabel(x)}${x==='Perfect attendance'&&cur?' (so far)':''}</span><b class="num">${n}</b></button>`}).join('')}</div>`;
@@ -1219,7 +1219,7 @@ VIEWS.attpolicy=function(){
   const d=UI.pol||polDraft(),dirty=!!UI.pol;
   const sites=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
   const n=c=>S.employees.filter(e=>e.client===c&&isActive(e)).length;
-  let h=ph('Cut-offs &amp; Late Counting','Payroll cut-off and late counting for each site. These are used on the Attendance page.',
+  let h=groupTabs()+ph('Cut-offs &amp; Late Counting','Payroll cut-off and late counting for each site. These are used on the Attendance page.',
     `<button class="btn ghost" data-act="nav" data-id="attendance">${ic('clock')}Back to Attendance</button>`);
   h+=`<div class="pol-bar" ${dirty?'':'hidden'} id="pol-bar" data-write>${ic('info')}<span class="grow">You have unsaved changes.</span><button class="btn sm ghost" data-act="pol-discard">Discard</button><button class="btn sm" data-act="pol-save">Save changes</button></div>`;
   h+=`<section class="card"><h3>Payroll cut-off and late counting per site</h3>
