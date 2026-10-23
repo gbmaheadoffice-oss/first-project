@@ -43,10 +43,10 @@ $$;
 revoke all on function public.hris_jotform_last_created(text) from public, anon, authenticated;
 grant execute on function public.hris_jotform_last_created(text) to service_role;
 
--- Records jotform-sync needs to match employees, link permits to leaves and keep PTW numbers in series.
+-- Records jotform-sync and gform-eval need: employees, leaves, permits, and client evaluation answers and invitations.
 create or replace function public.hris_jotform_docs(col text)
 returns setof jsonb language sql stable security definer set search_path = public as $$
-  select data from public.hris_docs where collection = col and col in ('employees', 'leaves', 'permits');
+  select data from public.hris_docs where collection = col and col in ('employees', 'leaves', 'permits', 'clientevals', 'evalinvites');
 $$;
 revoke all on function public.hris_jotform_docs(text) from public, anon, authenticated;
 grant execute on function public.hris_jotform_docs(text) to service_role;

@@ -28,4 +28,22 @@ end $$;
 revoke all on function public.hris_upsert_client_evals(jsonb) from public, anon, authenticated;
 grant execute on function public.hris_upsert_client_evals(jsonb) to service_role;
 
+
+-- Evaluation links emailed to client supervisors by the form's Apps Script ('evalinvites', id <employeeId>_<m1|m3|m5>).
+-- Each row's data is merged into the record, so the reminder keeps the first sending time.
+create or replace function public.hris_merge_evalinvites(rows jsonb)
+returns integer language plpgsql security definer set search_path = public as $$
+declare r jsonb; n integer := 0;
+begin
+  for r in select * from jsonb_array_elements(rows) loop
+    insert into public.hris_docs (collection, id, data, updated_at)
+    values ('evalinvites', r->>'id', (r->'data') || jsonb_build_object('id', r->>'id'), now())
+    on conflict (collection, id) do update set data = public.hris_docs.data || excluded.data, updated_at = now();
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.hris_merge_evalinvites(jsonb) from public, anon, authenticated;
+grant execute on function public.hris_merge_evalinvites(jsonb) to service_role;
+
 select 'ok' as result;

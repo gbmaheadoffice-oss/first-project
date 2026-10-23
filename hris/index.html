@@ -640,8 +640,8 @@ const susDays=label=>{const r=/^(\d+) Days/.exec(label||'');return r?+r[1]:0};
 function susEnd(from,days){let d=from,k=1;while(parse(d).getDay()===0)d=addDays(d,1);const start=d;while(k<days){d=addDays(d,1);if(parse(d).getDay()!==0)k++}return{from:start,to:d,resume:nextWorkday(d)}}
 
 /* ---------------- state + storage ---------------- */
-const COLS=['employees','leaves','permits','memos','attendance','applicants','clientevals'];
-const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[],clientevals:[]};
+const COLS=['employees','leaves','permits','memos','attendance','applicants','clientevals','evalinvites'];
+const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 const LS='manpower-hris-v1';
@@ -1281,8 +1281,8 @@ VIEWS.evaluations=function(){
     <label class="sr" for="f-ev-scope">Show</label><select id="f-ev-scope" data-filter="ev.scope"><option value="prob" ${f.scope==='prob'?'selected':''}>Probationary employees</option><option value="all" ${f.scope==='all'?'selected':''}>All active employees</option></select></div>`;
   if(!list.length)h+=emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th>Date Hired</th>${MS.map(m=>`<th>${m.label}</th>`).join('')}<th>Regularization</th></tr></thead><tbody>
-    ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div><button class="link" style="padding:0;font-size:13px" data-act="client-eval" data-id="${e.id}">${ic('send')}Client evaluation form</button></td><td class="num">${fmt(e.hireDate)}</td>
-      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`${(()=>{const r=x.state!=='stopped'&&clientResp(e,x.k);return r?`<span class="chip info" title="Answered on the Google Form by ${esc(r.email||'the client')}">${ic('check')}Client answered${r.avg!=null?' · '+Number(r.avg).toFixed(2):''}</span>`:''})()}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
+    ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div><button class="link" style="padding:0;font-size:13px" data-act="client-eval" data-id="${e.id}">${ic('send')}Client evaluation form</button>${isProb(e)&&!e.supervisorEmail?`<div class="sub" style="color:var(--warn)">No supervisor email, so links are not emailed</div>`:''}</td><td class="num">${fmt(e.hireDate)}</td>
+      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`${(()=>{const r=x.state!=='stopped'&&clientResp(e,x.k);if(r)return`<span class="chip info" title="Answered on the Google Form by ${esc(r.email||'the client')}">${ic('check')}Client answered${r.avg!=null?' · '+Number(r.avg).toFixed(2):''}</span>`;const v=x.state!=='stopped'&&evalInvite(e,x.k);return v&&v.sentAt?`<span class="sub" title="Emailed to ${esc(v.to||'')}">${ic('send')}Link emailed ${fmtS(v.sentAt.slice(0,10))}${v.reminderAt?` · reminded ${fmtS(v.reminderAt.slice(0,10))}`:''}</span>`:''})()}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
       <td><div class="ms"><span class="d">${fmt(m.reg.on||m.reg.due)}</span>${m.reg.done?`<span class="chip ok">${ic('award')}Regular</span>`:stateChip(m.reg.state,m.reg.due)}${!m.reg.done&&isProb(e)?(notRecommended(e)?(()=>{const n=eopNotice(e);return!n?`<button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">End of probation notice</button>`:n.status==='Draft'?`<button class="link" style="padding:0" data-act="view-memo" data-id="${n.id}">Notice draft · review</button>`:`<span class="sub">${esc(n.no)} sent</span>`})():`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}">Set as Regular</button>`):''}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -1338,7 +1338,7 @@ function openModal({title,body,foot,wide,onSubmit,onOpen,submitLabel='Save',subm
     if(!validate(f))return;
     const btns=f.querySelectorAll('button[type=submit]');btns.forEach(b=>b.disabled=true);
     try{const r=await onSubmit(new FormData(f),f,ev.submitter);if(r!==false)MD.close()}
-    catch(e){if(!f.querySelector('.formerr'))f.querySelector('.mbody').insertAdjacentHTML('afterbegin','<div class="formerr" role="alert">This was not saved. Check your connection and try again.</div>')}
+    catch(e){console.error(e);if(!f.querySelector('.formerr'))f.querySelector('.mbody').insertAdjacentHTML('afterbegin','<div class="formerr" role="alert">This was not saved. Check your connection and try again.</div>')}
     finally{btns.forEach(b=>b.disabled=false)}
   });
   f.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>MD.close()));
@@ -1908,6 +1908,8 @@ function empForm(id,pre){
     ${F('position','Position',{req:1})}
     ${F('department','Department / section',{req:1,attrs:'list="dept-list"'})}<datalist id="dept-list">${depts.map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
     ${F('site','Plant / branch / area')}
+    ${F('supervisorName','Immediate supervisor (client)',{attrs:'placeholder="e.g. Mr. Juan Santos"'})}
+    ${F('supervisorEmail','Supervisor email',{type:'email',help:'The client evaluation link is emailed here 7 days before each evaluation is due.'})}
     ${F('employmentType','Employment status',{type:'select',req:1,opts:EMP_TYPES,blank:false})}
     ${F('hireDate','Date hired',{type:'date',req:1,help:'Sets the evaluation dates and the end of the probationary contract.'})}
     <div class="field"><span class="flabel">End of probationary contract</span><div id="ef-probend" class="ro-val">${fmt(probEnd(e))}</div><p class="help" style="margin:0">Six months from the date hired.</p></div>
@@ -1920,9 +1922,9 @@ function empForm(id,pre){
     ${F('clientMrNo','Client MR control no.',{help:'Client’s manpower request control number.'})}${F('endorsementNo','Endorsement no.')}
   </div></fieldset>
   <fieldset><legend>Compensation</legend><div class="fg">
-    ${F('dailySalary','Daily salary (₱)',{type:'number',attrs:'min="0" step="0.01" inputmode="decimal"'})}
-    <div class="field"><label for="ef-monthlySalary">Monthly salary (₱)</label><input id="ef-monthlySalary" name="monthlySalary" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(e.monthlySalary??'')}"><button type="button" class="btn sm ghost" id="ef-calcm" style="margin-top:4px;align-self:flex-start">Compute: daily × 26 days</button></div>
-    ${F('allowance','Other allowance (₱)',{type:'number',attrs:'min="0" step="0.01" inputmode="decimal"'})}${F('allowanceNote','Allowance details',{attrs:'placeholder="e.g. rice, transportation"'})}
+    ${F('dailySalary','Daily salary (₱)',{type:'number',attrs:'min="0" step="any" inputmode="decimal"'})}
+    <div class="field"><label for="ef-monthlySalary">Monthly salary (₱)</label><input id="ef-monthlySalary" name="monthlySalary" type="number" min="0" step="any" inputmode="decimal" value="${esc(e.monthlySalary??'')}"><button type="button" class="btn sm ghost" id="ef-calcm" style="margin-top:4px;align-self:flex-start">Compute: daily × 26 days</button></div>
+    ${F('allowance','Other allowance (₱)',{type:'number',attrs:'min="0" step="any" inputmode="decimal"'})}${F('allowanceNote','Allowance details',{attrs:'placeholder="e.g. rice, transportation"'})}
   </div></fieldset>
   <fieldset><legend>Pre-employment medical</legend><div class="fg">
     ${F('medicalDate','Date of medical',{type:'date'})}${F('medicalClinic','Accredited clinic / hospital')}
@@ -1980,7 +1982,7 @@ function empForm(id,pre){
       if(ASSETS)f.querySelectorAll('li.doc[data-sk]').forEach(li=>{li.addEventListener('dragover',ev=>{ev.preventDefault();li.classList.add('drop')});li.addEventListener('dragleave',()=>li.classList.remove('drop'));li.addEventListener('drop',ev=>{ev.preventDefault();li.classList.remove('drop');const fl=[...(ev.dataTransfer&&ev.dataTransfer.files||[])];if(fl.length)add(li.dataset.sk,fl)})});
     },
     onSubmit:async(fd,f)=>{
-      const dup=S.employees.find(x=>x.empNo.trim().toLowerCase()===String(fd.get('empNo')).trim().toLowerCase()&&x.id!==id);
+      const dup=S.employees.find(x=>String(x.empNo||'').trim().toLowerCase()===String(fd.get('empNo')).trim().toLowerCase()&&x.id!==id);
       if(dup){setErr(f.querySelector('#ef-empNo'),`Employee no. is already used by ${fullName(dup)}.`);return false}
       if(fd.get('status')==='Separated'&&fd.get('separationReason')==='Other'&&!String(fd.get('separationDetails')||'').trim()){setErr(f.querySelector('#es-sx'),'Describe the reason for separation.');return false}
       const bl=blocklistMatch(fd.get('firstName'),fd.get('lastName'),fd.get('birthDate'),id);
@@ -2002,7 +2004,7 @@ function empForm(id,pre){
         sb.textContent='Saving…'}
       if(acct&&newProof&&!(ups.__bank||[]).length&&!(prevBank.proof||[]).length){sb.textContent=id?'Save changes':'Add employee';setErr(f.querySelector('#ef-bankproof'),'The account photo did not upload: '+errs.join(' · '));return false}
       const o=id?clone(EMP[id]):{id:uid(),evals:{},...(pre&&pre.applicantId?{applicantId:pre.applicantId}:{})};
-      ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','supervisorName','supervisorEmail','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
       {const A=f._addr,pa=A.PA.get(),pm=A.same.checked?pa:A.PM.get();o.addr=pa;o.permAddr=pm;o.address=addrLine(pa);o.permanentAddress=addrLine(pm)}
       if(o.employmentType==='Regular'&&!o.regularizedOn&&EMP[id]&&EMP[id].employmentType==='Probationary')o.regularizedOn=today();
       if(!applyStatus(fd,f,'es',o,id?EMP[id]:null)){sb.textContent=id?'Save changes':'Add employee';return false}
@@ -2262,6 +2264,7 @@ const nextEvalK=e=>{const ms=milestones(e);const x=ms&&ms.items.find(i=>i.state!
 const clientEvalLink=(e,k)=>`${CLIENT_EVAL_FORM}?usp=pp_url&entry.825751300=${encodeURIComponent(MS.find(m=>m.k===(k||nextEvalK(e))).label+' Evaluation')}&entry.171539888=${encodeURIComponent(fullName(e))}&entry.1567188607=${encodeURIComponent(evalSite(e))}${e.hireDate?`&entry.1828040482=${e.hireDate}`:''}`;
 /* Responses come in through the form's Apps Script (supabase/google-form/client-eval.gs) as "clientevals" */
 const GF_FACTORS=[['quality','Quality of Work'],['productivity','Productivity / Efficiency'],['accuracy','Accuracy and Attention to Detail'],['knowledge','Knowledge of Job'],['instructions','Ability to Follow Instructions']];
+const evalInvite=(e,k)=>S.evalinvites.find(x=>x.id===e.id+'_'+k);
 const clientResp=(e,k)=>S.clientevals.filter(x=>x.employeeId===e.id&&x.period===k).sort((a,b)=>(b.submittedAt||'')<(a.submittedAt||'')?-1:1)[0];
 const gfRatings=r=>GF_FACTORS.map(([k,t])=>`${t} <b>${r.ratings&&r.ratings[k]!=null?r.ratings[k]:'—'}</b>`).join(' · ');
 async function linkClientEval(rid,empId,k){const r=S.clientevals.find(x=>x.id===rid);if(!r)return;if(!EMP[empId]||!k)return toast('Choose the employee and the evaluation period.',{kind:'bad'});
@@ -2278,7 +2281,7 @@ function clientEvalShare(id,k0){
       f.querySelector('#ce-per').onchange=ev=>{k=ev.target.value;url=clientEvalLink(e,k);f.querySelector('#ce-url').value=url;f.querySelector('#ce-open').href=url};
       f.querySelector('#ce-copy').onclick=()=>copyText(url,'Link copied. Paste it in your message to the client.');
       f.querySelector('#ce-mail').onclick=()=>{const body=`Good day,\n\nMay we request your ${MS.find(m=>m.k===k).label.toLowerCase()} evaluation of ${fullName(e)}${e.position?`, ${e.position}`:''}, deployed at ${evalSite(e)||'your company'}.\n\nPlease fill out the Client's Feedback & Performance Evaluation Form through this link:\n${url}\n\nThe employee's name, site and date hired are already filled in. Thank you.\n\n${SIGN.hrName}\n${SIGN.hrTitle}`;
-        window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent('Client Evaluation - '+fullName(e))}&body=${encodeURIComponent(body)}`,'_blank','noopener')};
+        window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(e.supervisorEmail||'')}&su=${encodeURIComponent('Client Evaluation - '+fullName(e))}&body=${encodeURIComponent(body)}`,'_blank','noopener')};
     }});
 }
 function evalForm(id,k){
@@ -2811,7 +2814,7 @@ function renderDrawer(){
     const evT=k=>{const r=e.evals&&e.evals[k];return r&&r.date?`${fmt(r.date)} · ${r.final!=null?r.final.toFixed(2)+' '+scoreLabel(r.final):r.rating?'Rating '+r.rating:'Done'}`:(e.hireDate?'Due '+fmt(addMonths(e.hireDate,MS.find(m=>m.k===k).n)):'')};
     const evR=k=>{const r=e.evals&&e.evals[k];return r&&r.date?r.recommendation:''};const sepd=empStatus(e)==='Separated';
     body=`${silCard(e)}<section class="sect"><h4>Employment</h4><dl class="kv">${kv('ID number',e.empNo)}${kv('Biometric ID no.',e.biometricId)}<div><dt>Status</dt><dd>${empStatusChip(e)}</dd></div>${kv('Employment status',e.employmentType)}
-      <div style="grid-column:1/-1"><dt>Site (client company)</dt><dd>${esc(e.client||'Not set. Edit the 201 file to assign a client.')}</dd></div>${kv('Plant / branch / area',e.site)}${kv('Position',e.position)}${kv('Department / section',e.department)}${kv('Year employed',e.hireDate?e.hireDate.slice(0,4):'')}
+      <div style="grid-column:1/-1"><dt>Site (client company)</dt><dd>${esc(e.client||'Not set. Edit the 201 file to assign a client.')}</dd></div>${kv('Plant / branch / area',e.site)}${kv('Immediate supervisor (client)',[e.supervisorName,e.supervisorEmail].filter(Boolean).join(' · '))}${kv('Position',e.position)}${kv('Department / section',e.department)}${kv('Year employed',e.hireDate?e.hireDate.slice(0,4):'')}
       ${dk('Date hired',e.hireDate)}${dk('End of probationary contract',probEnd(e))}<div><dt>Date of regularization</dt><dd>${e.regularizedOn?fmt(e.regularizedOn):isProb(e)&&ms?`Due ${fmt(ms.reg.due)}`:'—'}</dd></div>
       ${kv('1st month evaluation',evT('m1'))}${kv('Result / recommendation',evR('m1'))}${kv('3rd month evaluation',evT('m3'))}${kv('Result / recommendation',evR('m3'))}${kv('5th month evaluation',evT('m5'))}${kv('Result / recommendation',evR('m5'))}
       ${kv('Recommendation',overallRec(e))}<div><dt>201 file</dt><dd>${docCount(e)>=docTotal(e)?'<span class="chip ok">With 201 file</span>':`<span class="chip warn">Without · ${docCount(e)} of ${docTotal(e)}</span>`}</dd></div>
