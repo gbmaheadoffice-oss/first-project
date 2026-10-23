@@ -739,10 +739,10 @@ const ROUTES={
   dashboard:{t:'Head Office Dashboard',nav:'Dashboard',icon:'home'},
   applicants:{t:'Applicants',nav:'Applicants',icon:'clip'},
   employees:{t:'201 Files',nav:'201 Files',icon:'users'},
-  leaves:{t:'Request Management',nav:'Leave Approvals',icon:'cal'},
+  leaves:{t:'Leave Management',nav:'Leave Approvals',icon:'cal'},
   attendance:{t:'Attendance',nav:'Attendance',icon:'clock'},
   attpolicy:{t:'Attendance',nav:'Cut-offs & Late Counting',icon:'cal'},
-  permits:{t:'Request Management',nav:'Permit to Work Approvals',icon:'hat'},
+  permits:{t:'Leave Management',nav:'Permit to Work Approvals',icon:'hat'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
   memos:{t:'Company Communications',nav:'Disciplinary Actions',icon:'memo'},
   cmemos:{t:'Company Communications',nav:'Company Memoranda',icon:'send'},
@@ -750,7 +750,7 @@ const ROUTES={
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Request Management',icon:'cal',routes:['leaves','permits']},att:{name:'Attendance',icon:'clock',routes:['attendance','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits']},att:{name:'Attendance',icon:'clock',routes:['attendance','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -799,7 +799,7 @@ async function resolveNames(){
   const ids=[...new Set(els.map(e=>e.dataset.uid))];
   try{const ps=await USER.profiles(ids);els.forEach(el=>{const p=ps[el.dataset.uid];if(p&&p.name)el.textContent=p.name})}catch(e){}
 }
-// tabs at the top of a page in a menu group (Request Management, Company Communications)
+// tabs at the top of a page in a menu group (Leave Management, Company Communications)
 const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,memos:c.memos};
   return`<div class="tabs" role="tablist" aria-label="${NAV_GROUPS[g].name}" style="margin:-4px 0 18px">${NAV_GROUPS[g].routes.map(r=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(ROUTES[r].icon)}${ROUTES[r].nav}${n[r]!=null?`<span class="n">${n[r]}</span>`:''}</button>`).join('')}</div>`};
 const ph=(title,sub,actions='')=>`<div class="ph"><div><h2>${title}</h2><p>${sub}</p></div>${actions?`<div class="qa">${actions}</div>`:''}</div>`;
