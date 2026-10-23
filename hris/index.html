@@ -640,8 +640,8 @@ const susDays=label=>{const r=/^(\d+) Days/.exec(label||'');return r?+r[1]:0};
 function susEnd(from,days){let d=from,k=1;while(parse(d).getDay()===0)d=addDays(d,1);const start=d;while(k<days){d=addDays(d,1);if(parse(d).getDay()!==0)k++}return{from:start,to:d,resume:nextWorkday(d)}}
 
 /* ---------------- state + storage ---------------- */
-const COLS=['employees','leaves','permits','memos','attendance','applicants'];
-const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[]};
+const COLS=['employees','leaves','permits','memos','attendance','applicants','clientevals'];
+const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[],clientevals:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 const LS='manpower-hris-v1';
@@ -1275,12 +1275,14 @@ VIEWS.evaluations=function(){
   h+=`<div class="stats"><div class="stat bad"><b>${over}</b><span>Overdue evaluations</span></div><div class="stat warn"><b>${soon}</b><span>Due in the next 14 days</span></div><div class="stat"><b>${reg30}</b><span>Regularization due in 30 days</span></div><div class="stat ok"><b>${regY}</b><span>Regularized in ${y}</span></div></div>`;
   const pendE=S.employees.filter(e=>isProb(e)&&notRecommended(e)).map(e=>({e,n:eopNotice(e)})).filter(x=>!x.n||x.n.status==='Draft');
   if(pendE.length)h+=`<section class="card" data-write style="border-color:color-mix(in srgb,var(--bad) 35%,var(--line))"><div class="card-h"><h3>Not recommended · Notices of End of Probationary Employment</h3><span class="help" style="color:var(--muted)">Final score below 3.00. Review each notice before it is sent.</span></div><div class="rows">${pendE.map(({e,n})=>{const lo=MS.map(m=>e.evals&&e.evals[m.k]).filter(r=>r&&r.final!=null&&r.final<3).map(r=>r.final.toFixed(2));return`<div class="row"><div class="grow"><span class="nm">${esc(fullName(e))}</span><div class="meta">${esc(e.client||'')} · hired ${fmt(e.hireDate)}${lo.length?` · final score ${lo.join(', ')}`:''}</div></div>${n?`<span class="chip">${ic('edit')}Draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button>`:`<span class="chip bad">Not prepared</span><button class="btn sm bad" data-act="eop-notice" data-id="${e.id}">Prepare &amp; review</button>`}</div>`}).join('')}</div></section>`;
+  const lost=S.clientevals.filter(r=>!EMP[r.employeeId]||!r.period).sort((a,b)=>(b.submittedAt||'')<(a.submittedAt||'')?-1:1);
+  if(lost.length)h+=`<section class="card" data-write><div class="card-h"><h3>Client evaluations to link</h3><span class="help" style="color:var(--muted)">Google Form answers whose name or evaluation period did not match. Choose the employee and period.</span></div><div class="rows">${lost.map(r=>`<div class="row" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:220px"><span class="nm">${esc(r.name||'No name')}</span><div class="meta">${esc(r.periodText||'No period')} · ${esc(r.site||'')}${r.dateHired?' · hired '+fmt(r.dateHired):''} · ${esc(r.email||'')} · ${fmtTs(r.submittedAt)}${r.avg!=null?' · average '+Number(r.avg).toFixed(2):''}</div></div><select aria-label="Employee" id="cl-e-${esc(r.id)}">${empOpts(r.employeeId)}</select><select aria-label="Evaluation period" id="cl-k-${esc(r.id)}"><option value="">Period</option>${MS.map(m=>`<option value="${m.k}" ${m.k===r.period?'selected':''}>${m.label}</option>`).join('')}</select><button class="btn sm" data-act="link-ceval" data-id="${esc(r.id)}">Link</button></div>`).join('')}</div></section>`;
   h+=`<section class="card"><div class="toolbar" style="margin-bottom:12px">${searchBox('f-ev-q','ev.q',f.q,'Search employee')}
     <label class="sr" for="f-ev-scope">Show</label><select id="f-ev-scope" data-filter="ev.scope"><option value="prob" ${f.scope==='prob'?'selected':''}>Probationary employees</option><option value="all" ${f.scope==='all'?'selected':''}>All active employees</option></select></div>`;
   if(!list.length)h+=emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th>Date Hired</th>${MS.map(m=>`<th>${m.label}</th>`).join('')}<th>Regularization</th></tr></thead><tbody>
     ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div><button class="link" style="padding:0;font-size:13px" data-act="client-eval" data-id="${e.id}">${ic('send')}Client evaluation form</button></td><td class="num">${fmt(e.hireDate)}</td>
-      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
+      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`${(()=>{const r=x.state!=='stopped'&&clientResp(e,x.k);return r?`<span class="chip info" title="Answered on the Google Form by ${esc(r.email||'the client')}">${ic('check')}Client answered${r.avg!=null?' · '+Number(r.avg).toFixed(2):''}</span>`:''})()}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
       <td><div class="ms"><span class="d">${fmt(m.reg.on||m.reg.due)}</span>${m.reg.done?`<span class="chip ok">${ic('award')}Regular</span>`:stateChip(m.reg.state,m.reg.due)}${!m.reg.done&&isProb(e)?(notRecommended(e)?(()=>{const n=eopNotice(e);return!n?`<button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">End of probation notice</button>`:n.status==='Draft'?`<button class="link" style="padding:0" data-act="view-memo" data-id="${n.id}">Notice draft · review</button>`:`<span class="sub">${esc(n.no)} sent</span>`})():`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}">Set as Regular</button>`):''}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -2248,24 +2250,34 @@ const scoreLabel=v=>v>=4.5?'Excellent':v>=3.5?'Above Average':v>=2.5?'Average':v
 const r2=v=>Math.round(v*100)/100;
 function evalSummary(rec){
   if(!rec||!rec.date)return'';
-  if(rec.final!=null)return`Final <b>${rec.final.toFixed(2)}</b> · ${scoreLabel(rec.final)} <span style="color:var(--muted)">(Client ${Number(rec.client.avg).toFixed(2)} + HR ${Number(rec.hr.avg).toFixed(2)})</span>`;
+  const g=rec.client&&rec.client.form;
+  if(rec.final!=null)return`Final <b>${rec.final.toFixed(2)}</b> · ${scoreLabel(rec.final)} <span style="color:var(--muted)">(Client ${Number(rec.client.avg).toFixed(2)} + HR ${Number(rec.hr.avg).toFixed(2)})</span>${g?`<br><span style="color:var(--muted)">Google Form by ${esc(g.email||'the client')}: ${gfRatings(g)}</span>${g.remarks?`<br>Client remarks: “${esc(g.remarks)}”`:''}`:''}`;
   return rec.rating?`Rating <b>${esc(rec.rating)}/5</b>`:'Done';
 }
 /* The client's Google Form (CLIENT'S FEEDBACK & PERFORMANCE EVALUATION FORM): a link with
    Name, Site and Date Hired already answered, so the client only rates and writes remarks */
 const CLIENT_EVAL_FORM='https://docs.google.com/forms/d/e/1FAIpQLSdXduIjXLRV0t_u3TGyi6hXsOjjAXHCSV4mkaxC0NsROcvjPg/viewform';
 const evalSite=e=>[e.client,e.site].filter(Boolean).join(' – ');
-const clientEvalLink=e=>`${CLIENT_EVAL_FORM}?usp=pp_url&entry.171539888=${encodeURIComponent(fullName(e))}&entry.1567188607=${encodeURIComponent(evalSite(e))}${e.hireDate?`&entry.1828040482=${e.hireDate}`:''}`;
+const nextEvalK=e=>{const ms=milestones(e);const x=ms&&ms.items.find(i=>i.state!=='done'&&i.state!=='stopped');return x?x.k:'m1'};
+const clientEvalLink=(e,k)=>`${CLIENT_EVAL_FORM}?usp=pp_url&entry.825751300=${encodeURIComponent(MS.find(m=>m.k===(k||nextEvalK(e))).label+' Evaluation')}&entry.171539888=${encodeURIComponent(fullName(e))}&entry.1567188607=${encodeURIComponent(evalSite(e))}${e.hireDate?`&entry.1828040482=${e.hireDate}`:''}`;
+/* Responses come in through the form's Apps Script (supabase/google-form/client-eval.gs) as "clientevals" */
+const GF_FACTORS=[['quality','Quality of Work'],['productivity','Productivity / Efficiency'],['accuracy','Accuracy and Attention to Detail'],['knowledge','Knowledge of Job'],['instructions','Ability to Follow Instructions']];
+const clientResp=(e,k)=>S.clientevals.filter(x=>x.employeeId===e.id&&x.period===k).sort((a,b)=>(b.submittedAt||'')<(a.submittedAt||'')?-1:1)[0];
+const gfRatings=r=>GF_FACTORS.map(([k,t])=>`${t} <b>${r.ratings&&r.ratings[k]!=null?r.ratings[k]:'—'}</b>`).join(' · ');
+async function linkClientEval(rid,empId,k){const r=S.clientevals.find(x=>x.id===rid);if(!r)return;if(!EMP[empId]||!k)return toast('Choose the employee and the evaluation period.',{kind:'bad'});
+  await save('clientevals',{...clone(r),employeeId:empId,period:k});toast(`Linked to ${fullName(EMP[empId])}'s ${MS.find(m=>m.k===k).label.toLowerCase()} evaluation.`)}
 async function copyText(t,okMsg){try{await navigator.clipboard.writeText(t);toast(okMsg)}catch(err){prompt('Copy this link:',t)}}
-function clientEvalShare(id){
-  const e=EMP[id];if(!e)return;const url=clientEvalLink(e);
+function clientEvalShare(id,k0){
+  const e=EMP[id];if(!e)return;let k=k0||nextEvalK(e),url=clientEvalLink(e,k);
   openModal({title:'Client evaluation form',body:`<p class="help" style="margin:0 0 12px">Send this link to ${esc(fullName(e))}'s client supervisor. The form opens with these answers already filled in, so the client only gives the ratings and remarks.</p>
+    <div class="field" style="margin-bottom:12px"><label for="ce-per">Evaluation period</label><select id="ce-per">${MS.map(m=>`<option value="${m.k}" ${m.k===k?'selected':''}>${m.label} Evaluation (due ${fmt(addMonths(e.hireDate||today(),m.n))})</option>`).join('')}</select></div>
     <dl class="summary"><dt>Name</dt><dd>${esc(fullName(e))}</dd><dt>Site</dt><dd>${esc(evalSite(e)||'—')}</dd><dt>Date Hired</dt><dd>${e.hireDate?fmt(e.hireDate):'— (add a hire date in the 201 file)'}</dd></dl>
     <div class="field" style="margin-top:12px"><label for="ce-url">Pre-filled link</label><input id="ce-url" readonly value="${esc(url)}" onfocus="this.select()"></div>`,
-    foot:`<button type="button" class="btn ghost left" data-close>Close</button><a class="btn ghost" href="${esc(url)}" target="_blank" rel="noopener">${ic('ext')}Open form</a><button type="button" class="btn ghost" id="ce-mail">${ic('send')}Email to client</button><button type="button" class="btn" id="ce-copy">${ic('copy')}Copy link</button>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button><a class="btn ghost" id="ce-open" href="${esc(url)}" target="_blank" rel="noopener">${ic('ext')}Open form</a><button type="button" class="btn ghost" id="ce-mail">${ic('send')}Email to client</button><button type="button" class="btn" id="ce-copy">${ic('copy')}Copy link</button>`,
     onOpen:f=>{
+      f.querySelector('#ce-per').onchange=ev=>{k=ev.target.value;url=clientEvalLink(e,k);f.querySelector('#ce-url').value=url;f.querySelector('#ce-open').href=url};
       f.querySelector('#ce-copy').onclick=()=>copyText(url,'Link copied. Paste it in your message to the client.');
-      f.querySelector('#ce-mail').onclick=()=>{const body=`Good day,\n\nMay we request your evaluation of ${fullName(e)}${e.position?`, ${e.position}`:''}, deployed at ${evalSite(e)||'your company'}.\n\nPlease fill out the Client's Feedback & Performance Evaluation Form through this link:\n${url}\n\nThe employee's name, site and date hired are already filled in. Thank you.\n\n${SIGN.hrName}\n${SIGN.hrTitle}`;
+      f.querySelector('#ce-mail').onclick=()=>{const body=`Good day,\n\nMay we request your ${MS.find(m=>m.k===k).label.toLowerCase()} evaluation of ${fullName(e)}${e.position?`, ${e.position}`:''}, deployed at ${evalSite(e)||'your company'}.\n\nPlease fill out the Client's Feedback & Performance Evaluation Form through this link:\n${url}\n\nThe employee's name, site and date hired are already filled in. Thank you.\n\n${SIGN.hrName}\n${SIGN.hrTitle}`;
         window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent('Client Evaluation - '+fullName(e))}&body=${encodeURIComponent(body)}`,'_blank','noopener')};
     }});
 }
@@ -2273,16 +2285,18 @@ function evalForm(id,k){
   const e=EMP[id];const m=MS.find(x=>x.k===k);
   const st=((milestones(e)||{}).items||[]).find(x=>x.k===k);if(st&&st.state==='stopped')return toast(`The ${st.stopBy.label.toLowerCase()} evaluation is Not recommended, so the ${m.label.toLowerCase()} evaluation is not needed. Change that recommendation to open this one.`,{kind:'bad'});const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
   const cl=rec.client||{},hr=rec.hr||{};const haveScan=(cl.files||[]).length;let staged=[];
+  const resp=clientResp(e,k),gform=cl.form||(resp?{responseId:resp.responseId,ratings:resp.ratings,avg:resp.avg,remarks:resp.remarks,email:resp.email,at:resp.submittedAt}:null);
   const factor=([key,title,desc],i)=>`<fieldset class="factor"><legend><b>${i+1}. ${title.toUpperCase()}</b></legend><p class="help" style="margin:0 0 10px">${desc}</p>
     <div class="rate" role="radiogroup" aria-label="${title} score">${SCALE.map(([v,l])=>`<label><input type="radio" name="hr_${key}" value="${v}" ${String(hr[key])===String(v)?'checked':''}><span><b>${v}</b>${l}</span></label>`).join('')}</div><p class="ferr2" id="err-hr_${key}" role="alert" hidden></p></fieldset>`;
   openModal({title:`${m.label} Evaluation`,wide:1,
     body:`<dl class="summary"><dt>Employee</dt><dd>${esc(fullName(e))} · ${esc(e.empNo)}</dd><dt>Position</dt><dd>${esc(e.position)}</dd><dt>Client</dt><dd>${esc(e.client||'—')}${e.site?' · '+esc(e.site):''}</dd><dt>Due date</dt><dd>${fmt(due)}</dd></dl>
-    <fieldset><legend>Part A · Client evaluation (printed form)</legend>
-      <p class="help" style="margin:0 0 10px">Upload the scanned copy of the evaluation form the client filled out, then enter the client's average score from that form. Clients can also answer online: <a class="link" href="${esc(clientEvalLink(e))}" target="_blank" rel="noopener">open the pre-filled Google Form</a> · <button type="button" class="link" id="ev-gcopy" style="padding:0">copy link</button>.</p>
+    <fieldset><legend>Part A · Client evaluation</legend>
+      ${gform?`<div class="silline" style="margin-bottom:12px">${ic('check')}<span>Answered on the Google Form by <b>${esc(gform.email||'the client')}</b>${gform.at?' on '+fmtTs(gform.at):''}: ${gfRatings(gform)}. Average <b>${gform.avg!=null?Number(gform.avg).toFixed(2):'—'}</b>.${gform.remarks?`<br>Client remarks: “${esc(gform.remarks)}”`:''}</span></div>`
+        :`<p class="help" style="margin:0 0 10px">Send the client the <a class="link" href="${esc(clientEvalLink(e,k))}" target="_blank" rel="noopener">pre-filled Google Form</a> (<button type="button" class="link" id="ev-gcopy" style="padding:0">copy link</button>); their answers fill in here. Or upload the scanned printed form and enter the client's average score.</p>`}
       <div class="fg">
-        ${field({id:'ev-cavg',name:'clientAvg',label:'Client average score',type:'number',req:1,value:cl.avg!=null?cl.avg:'',attrs:'min="1" max="5" step="0.01" inputmode="decimal" placeholder="1.00 – 5.00"',help:'Average of all the ratings on the client’s form, from 1 to 5.'})}
-        ${field({id:'ev-cby',name:'clientEvaluator',label:'Evaluated by (client)',value:cl.evaluator||'',attrs:'placeholder="Client supervisor name"'})}
-        <div class="field full"><span class="flabel">Scanned client evaluation form${haveScan?'':' <span class="req" aria-hidden="true">*</span>'}</span>
+        ${field({id:'ev-cavg',name:'clientAvg',label:'Client average score',type:'number',req:1,value:cl.avg!=null?cl.avg:gform&&gform.avg!=null?gform.avg:'',attrs:'min="1" max="5" step="0.01" inputmode="decimal" placeholder="1.00 – 5.00"',help:'Average of all the ratings on the client’s form, from 1 to 5.'})}
+        ${field({id:'ev-cby',name:'clientEvaluator',label:'Evaluated by (client)',value:cl.evaluator||(gform&&gform.email)||'',attrs:'placeholder="Client supervisor name"'})}
+        <div class="field full"><span class="flabel">Scanned client evaluation form${haveScan||gform?(gform?' (not needed: answered on the Google Form)':''):' <span class="req" aria-hidden="true">*</span>'}</span>
           ${haveScan?`<div class="files" style="padding-left:0">${cl.files.map(f=>`<div class="file">${/^image\//.test(f.type)?`<img src="/_blob/${esc(f.id)}" alt="" width="44" height="44">`:`<span class="fic">${ic('pdf')}<b>PDF</b></span>`}<div class="fn"><a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:600;overflow-wrap:anywhere">${esc(f.name)}</a><span>${fsize(f.size||0)} · on file</span></div></div>`).join('')}</div>`:''}
           ${ASSETS?`<div><button type="button" class="btn sm ghost" id="ev-scan">${ic('upload')}${haveScan?'Add another page':'Attach scanned form'}</button><input type="file" id="ev-scan-in" accept="${ACCEPT}" multiple hidden></div><div class="files staged" id="ev-scan-st" style="padding-left:0"></div>`:`<p class="help" style="margin:0">Uploading is not available in this view.</p>`}
         </div>
@@ -2317,15 +2331,15 @@ function evalForm(id,k){
       const c=parseFloat(fd.get('clientAvg'));
       if(!(c>=1&&c<=5)){setErr(f.querySelector('#ev-cavg'),'Enter the client’s average score from 1.00 to 5.00.');return false}
       for(const[key,title] of HR_FACTORS){if(!fd.get('hr_'+key)){const p=f.querySelector('#err-hr_'+key);p.textContent=`Select a score for ${title}.`;p.hidden=false;f.querySelector(`[name="hr_${key}"]`).focus();return false}}
-      if(ASSETS&&!haveScan&&!staged.length){setErr(f.querySelector('#ev-scan'),'Attach the scanned copy of the client’s evaluation form.');return false}
+      if(ASSETS&&!haveScan&&!gform&&!staged.length){setErr(f.querySelector('#ev-scan'),'Attach the scanned copy of the client’s evaluation form.');return false}
       const sb=f.querySelector('button[type=submit]');const files=[],errs=[];
       for(let i=0;i<staged.length;i++){sb.textContent=`Uploading ${i+1} of ${staged.length}…`;try{const r=await ASSETS.upload(staged[i],{type:fileType(staged[i])});files.push({id:r.id,name:staged[i].name.slice(0,140),type:r.contentType,size:r.sizeBytes,at:new Date().toISOString(),by:MEID})}catch(err){errs.push(`${staged[i].name}: ${upErr(err)}`)}}
-      if(staged.length&&!files.length&&!haveScan){sb.textContent='Save evaluation';setErr(f.querySelector('#ev-scan'),'The scanned form did not upload: '+errs.join(' · '));return false}
+      if(staged.length&&!files.length&&!haveScan&&!gform){sb.textContent='Save evaluation';setErr(f.querySelector('#ev-scan'),'The scanned form did not upload: '+errs.join(' · '));return false}
       const scores={};HR_FACTORS.forEach(([key])=>scores[key]=+fd.get('hr_'+key));
       const h=r2(HR_FACTORS.reduce((s,[key])=>s+scores[key],0)/HR_FACTORS.length);const fin=r2((c+h)/2);
       const o=clone(EMP[id]);o.evals=o.evals||{};
       o.evals[k]={date:fd.get('date'),evaluator:String(fd.get('evaluator')).trim(),recommendation:fd.get('recommendation'),remarks:String(fd.get('remarks')||'').trim(),recordedBy:MEID,
-        client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),files:(cl.files||[]).concat(files)},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
+        client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),files:(cl.files||[]).concat(files),...(gform?{form:gform}:{})},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
       await save('employees',o);const notRec=fd.get('recommendation')==='Not recommended';toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)}) · ${fd.get('recommendation')}.`);
       if(errs.length)toast('Not uploaded: '+errs.join(' · '),{kind:'bad'});
       if(notRec){const ex=eopNotice(e);MD.close();waitFor(()=>{const x=EMP[id];return x&&x.evals&&x.evals[k]&&x.evals[k].final===fin},()=>ex?viewMemo(ex.id):eopForm(id));return false}
@@ -3116,7 +3130,8 @@ const ACT={
   'view-permit':(el,id)=>viewPermit(id),
   'view-memo':(el,id)=>viewMemo(id),
   eval:(el,id,k)=>evalForm(id,k),
-  'client-eval':(el,id)=>clientEvalShare(id),
+  'client-eval':(el,id,k)=>clientEvalShare(id,k),
+  'link-ceval':(el,id)=>linkClientEval(id,($('#cl-e-'+CSS.escape(id))||{}).value,($('#cl-k-'+CSS.escape(id))||{}).value),
   regularize:(el,id)=>regularizeForm(id),
   del:(el,id,k)=>{const r=S[k].find(x=>x.id===id);const n=((r&&r.attachments)||[]).length;confirmBox('Delete this record?',`This permanently deletes the leave record${n?` and its ${n} attachment${n===1?'':'s'}`:''}.`,'Delete',async()=>{await remove(k,id);if(ASSETS&&r)for(const f of r.attachments||[]){try{await ASSETS.delete(f.id)}catch(e){}}toast('Record deleted.')})},
   'clear-sample':clearSample,
