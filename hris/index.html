@@ -744,13 +744,15 @@ const ROUTES={
   attpolicy:{t:'Cut-offs & Late Counting',nav:'Cut-offs & Late Counting',icon:'cal'},
   permits:{t:'Request Management',nav:'Permit to Work Approvals',icon:'hat'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
-  memos:{t:'Disciplinary Action Memo',nav:'Disciplinary Action Memo',icon:'memo'},
-  cmemos:{t:'Company Memorandum',nav:'Company Memorandum',icon:'send'},
-  holidays:{t:'Holiday Advisory',nav:'Holiday Advisory',icon:'cal'}
+  memos:{t:'Company Communications',nav:'Disciplinary Actions',icon:'memo'},
+  cmemos:{t:'Company Communications',nav:'Company Memoranda',icon:'send'},
+  holidays:{t:'Company Communications',nav:'Holiday Advisories',icon:'cal'}
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-let reqRoute=route==='permits'?'permits':'leaves';
+const NAV_GROUPS={req:{name:'Request Management',icon:'cal',routes:['leaves','permits']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
+const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
+const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
 window.addEventListener('popstate',()=>{const r=(location.hash||'').slice(1);route=ROUTES[r]?r:'dashboard';render(true)});
 window.addEventListener('hashchange',()=>{const r=(location.hash||'').slice(1);if(ROUTES[r]&&r!==route){route=r;render(true)}});
@@ -768,14 +770,14 @@ function counts(){
 function renderNav(){
   const c=counts();const tot=c.leaves+c.permits+c.evals+c.memos;
   const link=(r,n)=>`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
-  const reqN=c.leaves+c.permits;const reqLink=`<a href="#${reqRoute}" data-act="nav" data-id="${reqRoute}" ${route==='leaves'||route==='permits'?'aria-current="page"':''}>${ic('cal')}<span>Request Management</span>${reqN?`<span class="cnt num" aria-label="${reqN} pending">${reqN}</span>`:''}</a>`;
+  const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${reqLink}${link('attendance')}${link('attpolicy')}${link('evaluations',c.evals)}${link('memos',c.memos)}${link('cmemos')}${link('holidays')}</div>`;
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${link('attendance')}${link('attpolicy')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
 function render(focus){
   EMP={};S.employees.forEach(e=>EMP[e.id]=e);
-  if(route==='leaves'||route==='permits')reqRoute=route;
+  if(groupOf(route))lastOf[groupOf(route)]=route;
   renderNav();
   $('#toptitle').textContent=ROUTES[route].t;
   document.title='Manpower HRIS';
@@ -797,7 +799,9 @@ async function resolveNames(){
   const ids=[...new Set(els.map(e=>e.dataset.uid))];
   try{const ps=await USER.profiles(ids);els.forEach(el=>{const p=ps[el.dataset.uid];if(p&&p.name)el.textContent=p.name})}catch(e){}
 }
-const reqSwitch=()=>{const n=k=>S[k].filter(x=>x.status==='Pending').length;return`<div class="tabs" role="tablist" aria-label="Request Management" style="margin:-4px 0 18px">${[['leaves','Leave Approvals','cal'],['permits','Permit to Work Approvals','hat']].map(([r,l,i])=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(i)}${l}<span class="n">${n(r)}</span></button>`).join('')}</div>`};
+// tabs at the top of a page in a menu group (Request Management, Company Communications)
+const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,memos:c.memos};
+  return`<div class="tabs" role="tablist" aria-label="${NAV_GROUPS[g].name}" style="margin:-4px 0 18px">${NAV_GROUPS[g].routes.map(r=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(ROUTES[r].icon)}${ROUTES[r].nav}${n[r]!=null?`<span class="n">${n[r]}</span>`:''}</button>`).join('')}</div>`};
 const ph=(title,sub,actions='')=>`<div class="ph"><div><h2>${title}</h2><p>${sub}</p></div>${actions?`<div class="qa">${actions}</div>`:''}</div>`;
 const empOpts=(sel,all)=>{const list=S.employees.filter(e=>all||isActive(e)).sort(sortName);return`<option value="">Select employee</option>`+list.map(e=>`<option value="${e.id}" ${e.id===sel?'selected':''}>${esc(e.lastName)}, ${esc(e.firstName)} · ${esc(e.empNo)}</option>`).join('')};
 const emptyBlock=(title,text,btn)=>`<div class="empty"><strong>${title}</strong>${text}${btn||''}</div>`;
@@ -903,7 +907,7 @@ VIEWS.leaves=function(){
   let list=S.leaves.filter(l=>f.tab==='All'||l.status===f.tab);
   if(q)list=list.filter(l=>[reqName(l),l.type,l.reason,siteClient(l),siteLoc(l)].join(' ').toLowerCase().includes(q));
   list.sort(f.tab==='Pending'?(a,b)=>a.from<b.from?-1:1:(a,b)=>(b.filedAt||'')<(a.filedAt||'')?-1:1);
-  let h=reqSwitch()+ph('Leave Approvals','Leave requests from the GBMA Leave Form on Jotform, which appear here within 5 minutes, and requests filed here. Review each one, then approve or decline it. Day count excludes Sundays.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  let h=groupTabs()+ph('Leave Approvals','Leave requests from the GBMA Leave Form on Jotform, which appear here within 5 minutes, and requests filed here. Review each one, then approve or decline it. Day count excludes Sundays.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
   h+=`<section class="card">${tabsHtml('leave',['Pending','Approved','Declined','All'].map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox('f-leave-q','leave.q',f.q,'Search employee, leave type, site, reason')}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending requests':'No leave records here',f.tab==='Pending'?'Leave requests filed by employees appear here for your approval.':'Try another tab or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:1080px"><thead><tr><th>Employee</th><th>Site Location</th><th>Leave</th><th>Dates</th><th class="r">Days</th><th>Attachment</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
@@ -933,7 +937,7 @@ VIEWS.permits=function(){
   if(q)list=list.filter(p=>[p.no,reqName(p),p.leaveType,siteClient(p),siteLoc(p),p.note].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>f.tab==='Pending'?((a.returnDate||'')<(b.returnDate||'')?-1:1):((b.returnDate||'')<(a.returnDate||'')?-1:1));
   const waiting=S.leaves.filter(l=>l.status==='Approved'&&!permitFor(l)&&diff(today(),l.to)<=7&&diff(l.to,today())<=30).sort((a,b)=>a.to<b.to?-1:1);
-  let h=reqSwitch()+ph('Permit to Work Approvals','Return-to-work clearance. An employee who filed a leave must secure a Permit to Work before reporting back. Requests from the GBMA Permit to Work form on Jotform appear here within 5 minutes. Review each request and issue the permit.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  let h=groupTabs()+ph('Permit to Work Approvals','Return-to-work clearance. An employee who filed a leave must secure a Permit to Work before reporting back. Requests from the GBMA Permit to Work form on Jotform appear here within 5 minutes. Review each request and issue the permit.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
   if(waiting.length)h+=`<section class="card"><div class="card-h"><h3>Approved leaves awaiting a permit</h3><span class="help" style="color:var(--muted)">These employees have not yet requested their Permit to Work.</span></div><div class="rows">${waiting.map(l=>{const back=nextWorkday(l.to);const late=diff(today(),back)<0;return`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(reqName(l))}</span> <span class="meta">· ${esc(l.type)} leave ${fmtS(l.from)} – ${fmtS(l.to)} · ${esc(siteClient(l))}</span></div>${late?`<span class="chip bad">${ic('alert')}Was due back ${fmtS(back)}</span>`:`<span class="chip warn">Back ${fmtS(back)}</span>`}</button>`}).join('')}</div></section>`;
   h+=`<section class="card">${tabsHtml('permit',['Pending','Approved','Declined','All'].map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox('f-permit-q','permit.q',f.q,'Search permit no., employee, leave, site')}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending permits':'No permits here',f.tab==='Pending'?'Permit to Work requests from employees returning from leave appear here for approval.':'Try another tab or search.');
@@ -1311,7 +1315,7 @@ function memoPage(cat){
     co:'Official announcements, company policies and general instructions to employees.',
     hol:'Announcements about regular holidays, special non-working days and holiday work schedules.'}[cat];
   const newBtn=`<button class="btn" data-act="${C.act}" data-write>${ic('plus')}${C.new}</button>`;
-  let h=ph(C.name,sub,(cat==='disc'?`<button class="btn ghost" data-act="issue-memo" data-k="Notice to Explain" data-write>Notice to Explain</button>`:'')+newBtn);
+  let h=groupTabs()+ph(ROUTES[C.route].nav,sub,(cat==='disc'?`<button class="btn ghost" data-act="issue-memo" data-k="Notice to Explain" data-write>Notice to Explain</button>`:'')+newBtn);
   h+=`<section class="card">${tabsHtml(C.ui,tabs.map(t=>[t,all.filter(m=>inT(m,t)).length]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox(`f-${C.ui}-q`,`${C.ui}.q`,f.q,'Search memo no., subject, recipient')}
     <label class="sr" for="f-${C.ui}-type">Type</label><select id="f-${C.ui}-type" data-filter="${C.ui}.type"><option value="">All types</option>${types.map(d=>`<option ${d===f.type?'selected':''}>${esc(d)}</option>`).join('')}</select></div>`;
   if(!list.length)h+=emptyBlock(`No ${hol?'holiday advisories':C.name.toLowerCase()+'s'} here`,{disc:'Disciplinary memos to employees appear here.',co:'Company memos appear here.',hol:'Holiday advisories appear here, upcoming holidays first.'}[cat],`<div data-write>${newBtn}</div>`);
