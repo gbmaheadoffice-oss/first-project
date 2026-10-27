@@ -645,7 +645,7 @@ const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[],
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -743,6 +743,7 @@ const ROUTES={
   attendance:{t:'Attendance',nav:'Attendance',icon:'clock'},
   attpolicy:{t:'Attendance',nav:'Cut-offs & Late Counting',icon:'cal'},
   permits:{t:'Leave Management',nav:'Permit to Work Approvals',icon:'hat'},
+  leavereport:{t:'Leave Management',nav:'Leave Summary Report',icon:'clip'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
   memos:{t:'Company Communications',nav:'Disciplinary Actions',icon:'memo'},
   cmemos:{t:'Company Communications',nav:'Company Memoranda',icon:'send'},
@@ -750,7 +751,7 @@ const ROUTES={
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits']},att:{name:'Attendance',icon:'clock',routes:['attendance','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -911,7 +912,7 @@ VIEWS.leaves=function(){
   h+=`<section class="card">${tabsHtml('leave',['Pending','Approved','Declined','All'].map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox('f-leave-q','leave.q',f.q,'Search employee, leave type, site, reason')}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending requests':'No leave records here',f.tab==='Pending'?'Leave requests filed by employees appear here for your approval.':'Try another tab or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:1080px"><thead><tr><th>Employee</th><th>Site Location</th><th>Leave</th><th>Dates</th><th class="r">Days</th><th>Attachment</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
-    ${list.map(l=>{const e=EMP[l.employeeId];return`<tr class="click" data-act="view-leave" data-id="${l.id}" tabindex="0"><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${l.employeeId}"><span class="nm">${esc(reqName(l))}</span></button>${sampleChip(l)}${reqChips(l)}<div class="sub">Filed ${fmtTs(l.filedAt)}</div></td><td>${siteCell(l)}</td><td style="max-width:240px"><div class="nm">${esc(l.type)}</div><div class="sub" style="overflow-wrap:anywhere">${esc((l.reason||'').length>70?l.reason.slice(0,70)+'…':(l.reason||''))}</div></td><td class="num" style="white-space:nowrap">${fmtS(l.from)} – ${fmt(l.to)}</td><td class="r num">${l.days}${usesCredits(l)?(l.status==='Approved'&&l.creditDays!=null?`<div class="sub">SIL −${f4(l.creditDays)}${l.unpaidDays?` · ${l.unpaidDays} unpaid`:''}</div>`:l.status==='Pending'?(()=>{const s=silInfo(EMP[l.employeeId]);return`<div class="sub ${s&&s.eligible&&s.available>=l.days?'':'lowc'}">${s&&s.eligible?`${f4(s.available)} SIL left`:'No SIL yet'}</div>`})():''):''}</td><td>${attCell(l)}</td><td>${statusChip(l.status)}${l.decidedAt?`<div class="sub">by ${uname(l.decidedBy)} · ${fmtTs(l.decidedAt)}</div>`:''}${l.status==='Approved'?`<div style="margin-top:4px">${ptwChip(l)}</div>`:''}</td>
+    ${list.map(l=>{const e=EMP[l.employeeId];return`<tr class="click" data-act="view-leave" data-id="${l.id}" tabindex="0"><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${l.employeeId}"><span class="nm">${esc(reqName(l))}</span></button>${sampleChip(l)}${reqChips(l)}<div class="sub">Filed ${fmtTs(l.filedAt)}</div></td><td>${siteCell(l)}</td><td style="max-width:240px"><div class="nm">${esc(l.type)}</div><div class="sub" style="overflow-wrap:anywhere">${esc((l.reason||'').length>70?l.reason.slice(0,70)+'…':(l.reason||''))}</div></td><td class="num" style="white-space:nowrap">${fmtS(l.from)} – ${fmt(l.to)}</td><td class="r num">${l.days}${usesCredits(l)?(()=>{const sh=POOL_SHORT[creditPool(EMP[l.employeeId],l.type)];if(l.status==='Approved'&&l.creditDays!=null)return`<div class="sub">${sh} −${f2(l.creditDays)}${l.unpaidDays?` · ${l.unpaidDays} unpaid`:''}</div>`;if(l.status!=='Pending')return'';const s=leaveCredit(l);return`<div class="sub ${s&&s.eligible&&s.available>=l.days?'':'lowc'}">${s&&s.eligible?`${f2(s.available)} ${sh} left`:`No ${sh} yet`}</div>`})():''}</td><td>${attCell(l)}</td><td>${statusChip(l.status)}${l.decidedAt?`<div class="sub">by ${uname(l.decidedBy)} · ${fmtTs(l.decidedAt)}</div>`:''}${l.status==='Approved'?`<div style="margin-top:4px">${ptwChip(l)}</div>`:''}</td>
       <td><div class="acts" data-write>${l.status==='Pending'?`<button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined">Decline</button>`:''}<button class="icon-btn" data-act="del" data-id="${l.id}" data-k="leaves" aria-label="Delete leave record">${ic('trash')}</button></div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -947,6 +948,66 @@ VIEWS.permits=function(){
   </tbody></table></div>`;
   return h+'</section>';
 };
+
+/* ---- Leave Summary Report: approved leaves in a period and whether each one has a Permit to Work ---- */
+const LREP_TABS=['All','Permit issued','Permit pending','Permit declined','No permit filed','Not yet back'];
+function lrepStatus(l){const p=permitFor(l);const back=nextWorkday(l.to);
+  if(!p)return{k:diff(back,today())>=0?'No permit filed':'Not yet back',p,back};
+  const filed=p.filedAt?iso(new Date(p.filedAt)):'';
+  return{k:p.status==='Approved'?'Permit issued':p.status==='Pending'?'Permit pending':'Permit declined',p,back,filed,late:!!filed&&filed>back}}
+function lrepRows(){
+  const f=UI.lrep;const a=f.from||'0000-01-01',b=f.to||'9999-12-31';const q=f.q.trim().toLowerCase();
+  let list=S.leaves.filter(l=>l.status==='Approved'&&l.from<=b&&l.to>=a);
+  if(f.client)list=list.filter(l=>siteClient(l)===f.client);
+  if(f.type)list=list.filter(l=>l.type===f.type);
+  if(q)list=list.filter(l=>[reqName(l),(EMP[l.employeeId]||{}).empNo,l.type,l.reason,siteClient(l),siteLoc(l),(permitFor(l)||{}).no].join(' ').toLowerCase().includes(q));
+  return list.sort((x,y)=>x.from<y.from?-1:x.from>y.from?1:reqName(x)<reqName(y)?-1:1).map(l=>({l,...lrepStatus(l)}));
+}
+const lrepChip=r=>r.k==='Permit issued'?`<span class="chip ok">${ic('check')}Issued</span>`:r.k==='Permit pending'?`<span class="chip info">${ic('clock')}Pending</span>`:r.k==='Permit declined'?`<span class="chip bad">Declined</span>`:r.k==='No permit filed'?`<span class="chip bad">${ic('alert')}No permit filed</span>`:`<span class="chip">Still on leave</span>`;
+VIEWS.leavereport=function(){
+  const f=UI.lrep;const all=lrepRows();const n=k=>k==='All'?all.length:all.filter(r=>r.k===k).length;
+  const rows=all.filter(r=>f.tab==='All'||r.k===f.tab);
+  const clients=[...new Set(S.leaves.filter(l=>l.status==='Approved').map(siteClient).filter(Boolean))].sort();
+  let h=groupTabs()+ph('Leave Summary Report','Approved leaves within the period and whether each employee filed a Permit to Work before returning. Due back is the next working day after the leave (Sundays skipped).',
+    `<button class="btn ghost" data-act="lrep-copy">${ic('copy')}Copy list</button><button class="btn ghost" data-act="lrep-xlsx">${ic('download')}Export to Excel</button>`);
+  h+=`<div class="stats" style="margin-bottom:18px"><div class="stat"><b>${n('All')}</b><span>Approved leaves</span></div><div class="stat ok"><b>${n('Permit issued')}</b><span>Permit to Work issued</span></div><div class="stat warn"><b>${n('Permit pending')}</b><span>Permit waiting for HR</span></div><div class="stat bad"><b>${n('No permit filed')+n('Permit declined')}</b><span>Back from leave without a permit</span></div></div>`;
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 12px;flex-wrap:wrap">
+    <label class="sr" for="f-lrep-from">From</label><input id="f-lrep-from" type="date" data-filter="lrep.from" value="${f.from}" style="flex:0 1 165px" title="From">
+    <label class="sr" for="f-lrep-to">To</label><input id="f-lrep-to" type="date" data-filter="lrep.to" value="${f.to}" style="flex:0 1 165px" title="To">
+    <label class="sr" for="f-lrep-client">Client company</label><select id="f-lrep-client" data-filter="lrep.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    <label class="sr" for="f-lrep-type">Leave type</label><select id="f-lrep-type" data-filter="lrep.type"><option value="">All leave types</option>${LEAVE_TYPES.map(t=>`<option ${t===f.type?'selected':''}>${t}</option>`).join('')}</select>
+    ${searchBox('f-lrep-q','lrep.q',f.q,'Search employee, ID no., site, reason, permit no.')}</div>
+    ${tabsHtml('lrep',LREP_TABS.map(k=>[k,n(k)]),f.tab)}`;
+  if(!rows.length)h+=emptyBlock('No leaves here','No approved leaves match this period and filter. Try another period or tab.');
+  else h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1260px"><thead><tr><th>Employee</th><th>Site Location</th><th>Leave</th><th>Reason</th><th>Dates</th><th class="r">Days</th><th>Due Back</th><th>Permit to Work</th><th>Permit Filed</th></tr></thead><tbody>
+    ${rows.map(r=>{const{l,p}=r;const e=EMP[l.employeeId];return`<tr class="click" data-act="view-leave" data-id="${l.id}" tabindex="0"><td><span class="nm">${esc(reqName(l))}</span>${reqChips(l)}${e&&e.empNo?`<div class="sub">${esc(e.empNo)}</div>`:''}</td><td>${siteCell(l)}</td><td><div class="nm">${esc(l.type)}</div></td><td style="min-width:200px;max-width:280px;overflow-wrap:anywhere">${l.reason?esc(l.reason):'<span class="sub">No reason given</span>'}</td><td class="num" style="white-space:nowrap">${fmtS(l.from)} – ${fmt(l.to)}</td><td class="r num">${l.days}</td><td class="num" style="white-space:nowrap">${fmt(r.back)}</td>
+      <td>${lrepChip(r)}${p?`<div class="sub"><button type="button" class="link" data-act="view-permit" data-id="${p.id}" style="padding:0">${esc(p.no)}</button>${p.returnDate?` · return ${fmtS(p.returnDate)}`:''}</div>`:''}</td>
+      <td class="num" style="white-space:nowrap">${p?`${fmtTs(p.filedAt)}${r.late?`<div class="sub lowc">Filed after due back</div>`:''}`:'<span class="sub">—</span>'}</td></tr>`}).join('')}
+  </tbody></table></div>`;
+  return h+'</section>';
+};
+const lrepTitle=()=>`Leave Summary Report · ${fmt(UI.lrep.from)} – ${fmt(UI.lrep.to)}${UI.lrep.client?' · '+UI.lrep.client:''}${UI.lrep.type?' · '+UI.lrep.type:''}${UI.lrep.tab!=='All'?' · '+UI.lrep.tab:''}`;
+const LREP_COLS=['ID Number','Name','Client Company','Site Location','Leave Type','Reason','From','To','Days','Due Back','Permit to Work','Permit No.','Permit Return Date','Permit Filed On','Filed After Due Back'];
+const lrepLine=r=>{const{l,p}=r;const e=EMP[l.employeeId]||{};return[e.empNo||'',reqName(l),siteClient(l),siteLoc(l),l.type,l.reason||'',l.from,l.to,l.days,r.back,r.k,p?p.no||'':'',p?p.returnDate||'':'',r.filed||'',r.late?'Yes':'']};
+const lrepList=()=>lrepRows().filter(r=>UI.lrep.tab==='All'||r.k===UI.lrep.tab);
+function lrepCopy(){
+  const rows=lrepList();const txt=[lrepTitle(),LREP_COLS.join('\t')].concat(rows.map(r=>lrepLine(r).map(v=>String(v).replace(/\s+/g,' ')).join('\t'))).join('\n');
+  navigator.clipboard.writeText(txt).then(()=>toast(`${rows.length} row${rows.length===1?'':'s'} copied. Paste into Excel or Google Sheets.`),()=>toast('Copy is blocked in this view. Select the table and press Ctrl+C.',{kind:'bad'}));
+}
+async function lrepXlsx(){
+  const rows=lrepList();if(!rows.length){toast('There are no leaves to export.',{kind:'bad'});return}
+  const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+  if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
+  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  const aoa=[[lrepTitle()],[],LREP_COLS].concat(rows.map(lrepLine));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,28,30,24,14,40,12,12,7,12,18,16,16,16,12].map(w=>({wch:w}));
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:LREP_COLS.length-1}})};
+  const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Leave Summary');
+  wb.Props={Title:'Leave Summary Report',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
+  const name=`GBMA Leave Summary ${UI.lrep.from} to ${UI.lrep.to}${UI.lrep.client?' - '+UI.lrep.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
+  try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} leave${rows.length===1?'':'s'} to ${name}.`)}
+  catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else if(c==='rate_limited')toast('A save prompt is already open. Finish it, then try again.',{kind:'bad'});else toast('The file could not be saved in this view.',{kind:'bad'})}
+}
 
 /* ---- Attendance ----
    One document per employee per month: attendance/<employeeId>_<YYYY-MM> = {employeeId, month, days:{date:{in,out,status}}}.
@@ -1476,7 +1537,11 @@ function empColumns(){
     ['201 Requirements Submitted',e=>`${docCount(e)} of ${docTotal(e)}`],['Scanned Files Uploaded',e=>fileCount(e)],
     ...DOCS.filter(([k])=>!['covid','application','exam','photo','brgy','police','nbi','psa','marriage','dependents'].includes(k)).map(([k,l])=>[l,req(k)]),
     ...MS.flatMap(m=>[[`${m.label} Client Score`,ev(m.k,r=>r.client?Number(r.client.avg):'')],[`${m.label} HR Score`,ev(m.k,r=>r.hr?Number(r.hr.avg):'')],[`${m.label} Final Score`,ev(m.k,r=>r.final!=null?r.final:Number(r.rating)||r.rating)]]),
-    ['SIL Credits Available',e=>{const s=silInfo(e);return s&&s.eligible?r4(s.available):s?0:''}],
+    ['SIL Credits Available',e=>{if(isOffice(e))return'';const s=silInfo(e);return s&&s.eligible?r2(s.available):s?0:''}],
+    ['VL Credits Available (Head Office)',e=>{if(!isOffice(e))return'';const s=hoInfo(e,'Vacation');return s.eligible?r2(s.available):0}],
+    ['SL Credits Available (Head Office)',e=>{if(!isOffice(e))return'';const s=hoInfo(e,'Sick');return s.eligible?r2(s.available):0}],
+    ['Paternity Leave Credits Available',e=>e.gender==='Female'?'':r2(fixedInfo(e,'Paternity').available)],
+    ['Solo Parent Leave Credits Available',e=>e.soloParent?r2(fixedInfo(e,'Solo Parent').available):''],
   ];
   return main.concat(extra);
 }
@@ -2093,55 +2158,134 @@ function permitForm(leaveId){
     onSubmit:async fd=>{const o={id:uid(),no:ptwNo(today()),employeeId:l.employeeId,leaveId:l.id,client:l.client||e.client||'',site:l.site||e.site||'',leaveType:l.type,leaveFrom:l.from,leaveTo:l.to,leaveDays:l.days,returnDate:String(fd.get('returnDate')),note:String(fd.get('note')||'').trim(),attachments:[],status:'Pending',filedAt:new Date().toISOString()};
       await save('permits',o);toast(`${o.no} submitted for approval.`)}});
 }
-/* ---- Service Incentive Leave credits ----
-   From the 1st anniversary of the hire date: on every anniversary the 5 SIL are received in salary and a new
-   service year starts. Credits for the current service year accrue at 5/12 per completed month since the last
-   anniversary (e.g. anniversary Feb 12, as of Oct 9 = 7 months = 2.9167). Only Sick and Vacation leave, combined,
-   use the credits, and only once HR approves the leave. */
+/* ---- Leave credits ----
+   Deployed employees, Service Incentive Leave (SIL): from the 1st anniversary of the hire date. On every anniversary
+   the 5 SIL are received in salary and a new service year starts. Credits for the current service year accrue at 5/12
+   per completed month since the last anniversary (e.g. anniversary Feb 12, as of Oct 9 = 7 months = 2.92). Sick and
+   Vacation leave, combined, use the credits.
+   Head Office staff: separate Vacation and Sick leave credits per calendar year, starting in the month of
+   regularization (that month counts). Days a year by service year, the first calendar year as a regular employee
+   being year 1: years 1–5 = 7 each, 6–10 = 8, 11 onward = 9. They accrue at days/12 a month cut to 2 decimals (7 = 0.58, 8 = 0.66, 9 = 0.75), and December
+   gets the rest of the year's days (7: 0.62, 8: 0.74, 9: 0.75), from January, or from the
+   first credit month in the first year, credited on the 30th of each month (the last day in February). The first credit
+   month is the month of regularization when regularized on or before the 15th, otherwise the next month (regularized
+   Jul 15: from July; Jul 26: from August, +0.58 on Aug 30, Sep 30, Oct 30 and Nov 30, +0.62 on Dec 30 = 2.94). Credits reset every
+   January; the unused credits of the previous year are converted to cash.
+   All employees: Solo Parent leave 5 days (solo parents only) and Paternity leave 7 days per calendar year.
+   Credits are deducted only once HR approves the leave; days beyond the credits are without pay. */
 const SIL_DAYS=5;
 const SIL_TYPES=['Vacation','Sick','Service Incentive'];
+const HO_TIERS=[[11,9],[6,8],[1,7]];
+const hoDays=n=>(HO_TIERS.find(t=>n>=t[0])||HO_TIERS[2])[1];
+/* Head Office credit added each month: days/12 cut to 2 decimals (7 days = 0.58); December gets the rest of the
+   year's days, so January to December adds up to the full days (7: 0.58 × 11 + 0.62) */
+const hoRate=days=>Math.floor(days*100/12+1e-9)/100;
+const hoCredit=(days,k)=>k===12?r2(days-11*hoRate(days)):hoRate(days);
+const hoEarned=(days,from,to)=>{let t=0;for(let k=from;k<=to;k++)t+=hoCredit(days,k);return r2(t)};
+const FIXED_DAYS={'Solo Parent':5,'Paternity':7};
+const POOL_LABEL={sil:'SIL',Vacation:'Vacation leave',Sick:'Sick leave','Solo Parent':'Solo Parent leave',Paternity:'Paternity leave'};
+const POOL_SHORT={sil:'SIL',Vacation:'VL',Sick:'SL','Solo Parent':'Solo parent',Paternity:'Paternity'};
 const r4=v=>Math.round(v*10000)/10000;
-const f4=v=>r4(v).toFixed(4);
-const usesCredits=l=>SIL_TYPES.includes(l.type);
+/* credits show with 2 decimals */
+const f2=v=>r2(v).toFixed(2);
+/* the credit pool a leave type draws from for this employee, or null when the type uses no credits */
+function creditPool(e,type){if(FIXED_DAYS[type])return type;if(!SIL_TYPES.includes(type))return null;return isOffice(e)?(type==='Sick'?'Sick':'Vacation'):'sil'}
+const usesCredits=l=>!!creditPool(EMP[l.employeeId],l.type);
 const creditUsed=l=>l.creditDays!=null?l.creditDays:(l.days||0);
+function poolUse(e,pool,a,b){const mine=S.leaves.filter(l=>l.employeeId===e.id&&creditPool(e,l.type)===pool&&l.from>=a&&l.from<b);
+  return{used:r4(mine.filter(l=>l.status==='Approved').reduce((s,l)=>s+creditUsed(l),0)),pending:mine.filter(l=>l.status==='Pending').reduce((s,l)=>s+(l.days||0),0)}}
 function silInfo(e,asOf){
   asOf=asOf||today();if(!e||!e.hireDate)return null;
   const first=addMonths(e.hireDate,12);
-  if(asOf<first)return{eligible:false,firstAnniv:first};
+  if(asOf<first)return{pool:'sil',eligible:false,firstAnniv:first};
   let k=1;while(addMonths(e.hireDate,12*(k+1))<=asOf)k++;
   const anniv=addMonths(e.hireDate,12*k),next=addMonths(e.hireDate,12*(k+1)),prev=addMonths(e.hireDate,12*(k-1));
   let months=0;while(months<12&&addMonths(anniv,months+1)<=asOf)months++;
-  const mine=S.leaves.filter(l=>l.employeeId===e.id&&usesCredits(l));
-  const inRange=(l,a,b)=>l.from>=a&&l.from<b;
-  const used=r4(mine.filter(l=>l.status==='Approved'&&inRange(l,anniv,next)).reduce((s,l)=>s+creditUsed(l),0));
-  const pending=mine.filter(l=>l.status==='Pending'&&inRange(l,anniv,next)).reduce((s,l)=>s+(l.days||0),0);
-  const usedPrev=k>1?mine.filter(l=>l.status==='Approved'&&inRange(l,prev,anniv)).reduce((s,l)=>s+creditUsed(l),0):0;
+  const{used,pending}=poolUse(e,'sil',anniv,next);
+  const usedPrev=k>1?poolUse(e,'sil',prev,anniv).used:0;
   const earned=r4(SIL_DAYS/12*months);
-  return{eligible:true,anniv,next,months,earned,used,pending,available:r4(earned-used),
+  return{pool:'sil',eligible:true,anniv,next,months,earned,used,pending,available:r4(earned-used),
     paid:{date:anniv,days:k===1?SIL_DAYS:r4(Math.max(0,SIL_DAYS-usedPrev)),first:k===1},nextMonth:months<12?addMonths(anniv,months+1):null};
 }
+/* Head Office credits are added on the 30th of the month, or the last day of February */
+const hoCreditDay=(y,k)=>`${y}-${pad(k)}-${pad(Math.min(30,new Date(y,k,0).getDate()))}`;
+/* first credit month (YYYY-MM): the regularization month if regularized on or before the 15th, else the next month */
+const hoStart=reg=>+reg.slice(8,10)<=15?reg.slice(0,7):addMonths(reg.slice(0,7)+'-01',1).slice(0,7);
+/* Head Office Vacation or Sick leave credits for the calendar year of asOf */
+function hoInfo(e,pool,asOf){
+  asOf=asOf||today();const reg=e.regularizedOn;
+  if(!reg||asOf<reg)return{pool,eligible:false};
+  const st=hoStart(reg),Y=+asOf.slice(0,4),rY=+st.slice(0,4),rM=+st.slice(5,7);
+  if(Y<rY){const{used,pending}=poolUse(e,pool,Y+'-01-01',(Y+1)+'-01-01');return{pool,eligible:true,year:Y,serviceYear:1,days:hoDays(1),rate:hoRate(hoDays(1)),startM:rM,months:0,earned:0,used,pending,available:r4(-used),prev:null,nextMonth:hoCreditDay(rY,rM)}}
+  const n=Y-rY+1,days=hoDays(n),startM=Y===rY?rM:1;
+  const credits=[];for(let k=startM;k<=12;k++)credits.push(hoCreditDay(Y,k));
+  const months=credits.filter(d=>d<=asOf).length;
+  const rate=hoRate(days),earned=months?hoEarned(days,startM,startM+months-1):0;const{used,pending}=poolUse(e,pool,Y+'-01-01',(Y+1)+'-01-01');
+  let prev=null;
+  if(Y>rY){const pm=Y-1===rY?13-rM:12;prev={year:Y-1,days:r4(Math.max(0,hoEarned(hoDays(n-1),13-pm,12)-poolUse(e,pool,(Y-1)+'-01-01',Y+'-01-01').used))}}
+  return{pool,eligible:true,year:Y,serviceYear:n,days,rate,startM,months,earned,used,pending,available:r4(earned-used),prev,nextMonth:credits.find(d=>d>asOf)||null,nextCredit:hoCredit(days,startM+months)};
+}
+/* Solo Parent and Paternity leave: a fixed number of days per calendar year */
+function fixedInfo(e,pool,asOf){
+  asOf=asOf||today();const Y=+asOf.slice(0,4);
+  if(pool==='Solo Parent'&&!e.soloParent)return{pool,eligible:false};
+  const earned=FIXED_DAYS[pool];const{used,pending}=poolUse(e,pool,Y+'-01-01',(Y+1)+'-01-01');
+  return{pool,eligible:true,year:Y,earned,used,pending,available:r4(earned-used)};
+}
+function creditInfo(e,pool,asOf){if(!e||!pool)return null;return pool==='sil'?silInfo(e,asOf):FIXED_DAYS[pool]?fixedInfo(e,pool,asOf):hoInfo(e,pool,asOf)}
+/* credits for a leave request: calendar-year credits of the leave's year when it falls in a later year */
+function leaveCredit(l){
+  const e=EMP[l.employeeId];const pool=creditPool(e,l.type);if(!e||!pool)return null;
+  const asOf=pool!=='sil'&&(l.from||'').slice(0,4)>today().slice(0,4)?l.from.slice(0,4)+'-01-01':today();
+  return creditInfo(e,pool,asOf);
+}
+function notEligibleText(s,e){
+  if(s.pool==='sil')return`Not yet eligible for SIL (first anniversary ${fmt(s.firstAnniv)})`;
+  if(s.pool==='Solo Parent')return'Not tagged as a solo parent in the 201 file, so no Solo Parent leave credits';
+  return`Not yet regular, so no ${POOL_LABEL[s.pool].toLowerCase()} credits yet${e&&e.regularizedOn?` (regular on ${fmt(e.regularizedOn)})`:''}`;
+}
+function hoBox(e,s,label){
+  if(!s.eligible)return`<div class="silbox"><div class="silnum"><b class="num">0.00</b><span>${label}</span></div><p class="help" style="margin:0">Not yet regular. ${esc(e.firstName)} starts earning 7 ${label.toLowerCase()} credits a year (0.58 a month) from the month of regularization, or the next month when regularized after the 15th${e.regularizedOn?` (regular on <b>${fmt(e.regularizedOn)}</b>)`:''}. ${label} before then is without pay.</p></div>`;
+  return`<div class="silbox"><div class="silnum ${s.available<0?'neg':''}"><b class="num">${f2(s.available)}</b><span>${label} left</span></div>
+    <dl class="silcalc">
+      <div><dt>Year ${s.year}</dt><dd>Service year ${s.serviceYear} · ${s.days} days a year</dd></div>
+      <div><dt>Earned so far</dt><dd class="num">${s.startM+s.months-1===12?`${f2(s.rate)} × ${s.months-1} month${s.months===2?'':'s'} + ${f2(hoCredit(s.days,12))} (December)`:`${f2(s.rate)} × ${s.months} month${s.months===1?'':'s'}`} = <b>${f2(s.earned)}</b>${s.startM>1?`<div class="sub">from ${new Date(2000,s.startM-1,1).toLocaleDateString('en-US',{month:'long'})}, the first credit month</div>`:''}</dd></div>
+      <div><dt>Used (approved)</dt><dd class="num">− ${f2(s.used)}</dd></div>
+      <div><dt>Pending approval</dt><dd class="num">${s.pending?`${s.pending} day${s.pending===1?'':'s'} (not yet deducted)`:'None'}</dd></div>
+      <div><dt>Next credit</dt><dd>${s.nextMonth?`+${f2(s.nextCredit!=null?s.nextCredit:s.rate)} on ${fmt(s.nextMonth)}`:`Resets on Jan 1, ${s.year+1}`}</dd></div>
+      <div><dt>Year ${s.year-1}</dt><dd>${s.prev?`${f2(s.prev.days)} unused converted to cash`:'—'}</dd></div>
+    </dl></div>`;
+}
 function silCard(e){
-  const s=silInfo(e);
-  if(!s)return`<section class="sect"><h4>Leave credits (SIL)</h4><p class="help" style="margin:0;color:var(--muted)">Add a hire date to compute leave credits.</p></section>`;
-  if(!s.eligible)return`<section class="sect"><h4>Leave credits (SIL)</h4><div class="silbox"><div class="silnum"><b class="num">0.0000</b><span>available</span></div><p class="help" style="margin:0">Not yet eligible. ${esc(e.firstName)} receives 5 Service Incentive Leaves on the first anniversary, <b>${fmt(s.firstAnniv)}</b>. Sick and vacation leave before then is without pay.</p></div></section>`;
-  return`<section class="sect"><h4>Leave credits (SIL) · Sick + Vacation combined</h4><div class="silbox">
-    <div class="silnum ${s.available<0?'neg':''}"><b class="num">${f4(s.available)}</b><span>available</span></div>
+  let h;
+  if(isOffice(e)){
+    h=`<section class="sect"><h4>Leave credits · Head Office</h4><div style="display:grid;gap:10px">${hoBox(e,hoInfo(e,'Vacation'),'Vacation leave')}${hoBox(e,hoInfo(e,'Sick'),'Sick leave')}</div>`;
+  }else{
+    const s=silInfo(e);
+    if(!s)h=`<section class="sect"><h4>Leave credits (SIL)</h4><p class="help" style="margin:0;color:var(--muted)">Add a hire date to compute leave credits.</p>`;
+    else if(!s.eligible)h=`<section class="sect"><h4>Leave credits (SIL)</h4><div class="silbox"><div class="silnum"><b class="num">0.00</b><span>available</span></div><p class="help" style="margin:0">Not yet eligible. ${esc(e.firstName)} receives 5 Service Incentive Leaves on the first anniversary, <b>${fmt(s.firstAnniv)}</b>. Sick and vacation leave before then is without pay.</p></div>`;
+    else h=`<section class="sect"><h4>Leave credits (SIL) · Sick + Vacation combined</h4><div class="silbox">
+    <div class="silnum ${s.available<0?'neg':''}"><b class="num">${f2(s.available)}</b><span>available</span></div>
     <dl class="silcalc">
       <div><dt>Service year</dt><dd>${fmt(s.anniv)} – ${fmt(addDays(s.next,-1))}</dd></div>
-      <div><dt>Earned so far</dt><dd class="num">5 ÷ 12 × ${s.months} month${s.months===1?'':'s'} = <b>${f4(s.earned)}</b></dd></div>
-      <div><dt>Used (approved)</dt><dd class="num">− ${f4(s.used)}</dd></div>
+      <div><dt>Earned so far</dt><dd class="num">5 ÷ 12 × ${s.months} month${s.months===1?'':'s'} = <b>${f2(s.earned)}</b></dd></div>
+      <div><dt>Used (approved)</dt><dd class="num">− ${f2(s.used)}</dd></div>
       <div><dt>Pending approval</dt><dd class="num">${s.pending?`${s.pending} day${s.pending===1?'':'s'} (not yet deducted)`:'None'}</dd></div>
-      <div><dt>Next credit</dt><dd>${s.nextMonth?`+${f4(SIL_DAYS/12)} on ${fmt(s.nextMonth)}`:'—'}</dd></div>
-      <div><dt>On ${fmt(s.anniv)}</dt><dd>${s.paid.first?`First anniversary: 5 SIL received in salary`:`${f4(s.paid.days)} unused SIL from the previous year received in salary`}</dd></div>
-    </dl></div></section>`;
+      <div><dt>Next credit</dt><dd>${s.nextMonth?`+${f2(SIL_DAYS/12)} on ${fmt(s.nextMonth)}`:'—'}</dd></div>
+      <div><dt>On ${fmt(s.anniv)}</dt><dd>${s.paid.first?`First anniversary: 5 SIL received in salary`:`${f2(s.paid.days)} unused SIL from the previous year received in salary`}</dd></div>
+    </dl></div>`;
+  }
+  const fx=['Paternity','Solo Parent'].filter(p=>p==='Paternity'?e.gender!=='Female':e.soloParent).map(p=>{const s=fixedInfo(e,p);return`<div class="silline">${ic(p==='Paternity'?'users':'award')}<span>${POOL_LABEL[p]} ${s.year}: <b>${f2(s.available)}</b> of ${s.earned} days left${s.used?` (${f2(s.used)} used)`:''}${s.pending?` · ${s.pending} pending`:''}.</span></div>`}).join('');
+  return h+(fx?`<div style="display:grid;gap:8px;margin-top:10px">${fx}</div>`:'')+'</section>';
 }
 function creditPanel(l){
-  if(!usesCredits(l))return`<p class="help" style="margin:0;color:var(--muted)">${esc(l.type)} leave does not use SIL credits. Only Sick and Vacation leave do.</p>`;
-  const e=EMP[l.employeeId];const s=silInfo(e);if(!s)return'';
-  if(l.status==='Approved')return`<div class="silline">${ic('check')}<span>Deducted <b>${f4(l.creditDays!=null?l.creditDays:l.days)}</b> from SIL credits${l.unpaidDays?` · <b>${l.unpaidDays}</b> day${l.unpaidDays===1?'':'s'} without pay`:''}.</span></div>`;
+  const e=EMP[l.employeeId];const pool=creditPool(e,l.type);
+  if(!pool)return`<p class="help" style="margin:0;color:var(--muted)">${esc(l.type)} leave does not use leave credits.</p>`;
+  const s=leaveCredit(l);if(!s)return'';const lb=POOL_LABEL[pool];
+  if(l.status==='Approved')return`<div class="silline">${ic('check')}<span>Deducted <b>${f2(l.creditDays!=null?l.creditDays:l.days)}</b> from ${lb} credits${l.unpaidDays?` · <b>${l.unpaidDays}</b> day${l.unpaidDays===1?'':'s'} without pay`:''}.</span></div>`;
   if(l.status!=='Pending')return'';
   const avail=s.eligible?Math.max(0,s.available):0;const fromCredits=r4(Math.min(l.days,avail));const unpaid=r4(l.days-fromCredits);
-  return`<div class="silline ${unpaid>0?'warn':''}">${ic(unpaid>0?'alert':'info')}<span>${s.eligible?`Available SIL credits: <b>${f4(s.available)}</b>. `:`Not yet eligible for SIL (first anniversary ${fmt(s.firstAnniv)}). `}If approved: <b>${f4(fromCredits)}</b> deducted from credits${unpaid>0?`, <b>${f4(unpaid)}</b> day${unpaid===1?'':'s'} without pay`:''}${s.eligible?`, leaving <b>${f4(Math.max(0,s.available)-fromCredits)}</b>`:''}.</span></div>`;
+  return`<div class="silline ${unpaid>0?'warn':''}">${ic(unpaid>0?'alert':'info')}<span>${s.eligible?`Available ${lb} credits: <b>${f2(s.available)}</b>. `:`${notEligibleText(s,e)}. `}If approved: <b>${f2(fromCredits)}</b> deducted from credits${unpaid>0?`, <b>${f2(unpaid)}</b> day${unpaid===1?'':'s'} without pay`:''}${s.eligible?`, leaving <b>${f2(Math.max(0,s.available)-fromCredits)}</b>`:''}.</span></div>`;
 }
 function decide(id,k){
   const[col,status]=k.split(':');const rec=S[col].find(x=>x.id===id);if(!rec)return;
@@ -2156,7 +2300,7 @@ function decide(id,k){
     onSubmit:async fd=>{
       const prev=clone(rec);const o={...clone(rec),status,remarks:String(fd.get('remarks')||'').trim(),decidedAt:new Date().toISOString(),decidedBy:MEID};
       let extra='';
-      if(col==='leaves'&&status==='Approved'&&usesCredits(rec)){const s=silInfo(EMP[rec.employeeId]);const avail=s&&s.eligible?Math.max(0,s.available):0;o.creditDays=r4(Math.min(rec.days,avail));o.unpaidDays=r4(rec.days-o.creditDays);extra=` ${f4(o.creditDays)} deducted from SIL credits${o.unpaidDays?`, ${o.unpaidDays} without pay`:''}.`}
+      if(col==='leaves'&&status==='Approved'&&usesCredits(rec)){const s=leaveCredit(rec);const avail=s&&s.eligible?Math.max(0,s.available):0;o.creditDays=r4(Math.min(rec.days,avail));o.unpaidDays=r4(rec.days-o.creditDays);extra=` ${f2(o.creditDays)} deducted from ${POOL_LABEL[creditPool(EMP[rec.employeeId],rec.type)]} credits${o.unpaidDays?`, ${o.unpaidDays} without pay`:''}.`}
       if(status==='Declined'){delete o.creditDays;delete o.unpaidDays}
       if(col==='permits'&&status==='Approved')o.issuedOn=today();
       await save(col,o);
@@ -2867,7 +3011,7 @@ function renderDrawer(){
     const used=lv.filter(l=>l.status==='Approved'&&(l.from||'').startsWith(String(new Date().getFullYear()))).reduce((s,l)=>s+(l.days||0),0);
     const attM=today().slice(0,7),attPrev=(()=>{const d=parse(attM+'-01');d.setMonth(d.getMonth()-1);return iso(d).slice(0,7)})();
     const attLine=(m,s)=>`<button class="row" data-act="att-edit" data-id="${e.id}" data-k="${m}"><div class="grow"><span class="nm">${fmtMonth(m)}</span><div class="meta">${s.present} present · ${s.late} late (${hm(s.lateMin)}) · ${s.ut} undertime · ${s.absent} absent · ${s.leave} leave${s.norecord?` · ${s.norecord} no record`:''}</div></div>${s.perfect?`<span class="chip ok">${ic('award')}Perfect</span>`:s.late>3?`<span class="chip bad">${s.late} lates</span>`:s.ut>3?`<span class="chip warn">${s.ut} undertime</span>`:''}</button>`;
-    body=`${silCard(e)}<section class="sect"><h4>Attendance</h4><div class="rows">${attLine(attM,attSummary(e,attM))}${attLine(attPrev,attSummary(e,attPrev))}</div></section><section class="sect"><h4>Leaves ·${used} approved day${used===1?'':'s'} this year</h4>${lv.length?`<div class="rows">${lv.map(l=>`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(l.type)}</span><div class="meta">${fmt(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}${l.status==='Approved'&&usesCredits(l)?` · SIL −${f4(creditUsed(l))}${l.unpaidDays?`, ${l.unpaidDays} unpaid`:''}`:''}</div></div>${statusChip(l.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No leave records.</p>'}</section>
+    body=`${silCard(e)}<section class="sect"><h4>Attendance</h4><div class="rows">${attLine(attM,attSummary(e,attM))}${attLine(attPrev,attSummary(e,attPrev))}</div></section><section class="sect"><h4>Leaves ·${used} approved day${used===1?'':'s'} this year</h4>${lv.length?`<div class="rows">${lv.map(l=>`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(l.type)}</span><div class="meta">${fmt(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}${l.status==='Approved'&&usesCredits(l)?` · SIL −${f2(creditUsed(l))}${l.unpaidDays?`, ${l.unpaidDays} unpaid`:''}`:''}</div></div>${statusChip(l.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No leave records.</p>'}</section>
     <section class="sect"><h4>Permits to work</h4>${pm.length?`<div class="rows">${pm.map(p=>`<button class="row" data-act="view-permit" data-id="${p.id}"><div class="grow"><span class="nm">Return on ${fmt(p.returnDate)}</span><div class="meta">${esc(p.no)} · after ${esc((p.leaveType||'').toLowerCase())} leave ${fmtS(p.leaveFrom)} – ${fmtS(p.leaveTo)}</div></div>${statusChip(p.status==='Approved'?'Issued':p.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No permits.</p>'}</section>
     ${discRecord(e)}<section class="sect"><h4>Memos to this employee or their client</h4>${mm.length?`<div class="rows">${mm.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${esc(m.subject)}</span><div class="meta">${esc(m.no)} · ${esc(m.type)} · ${fmt(m.issuedOn)}</div></div>${statusChip(m.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No memos.</p>'}</section>`;
   }
@@ -3165,6 +3309,8 @@ const ACT={
   'pol-save':()=>polSave(),
   'pol-discard':()=>{UI.pol=null;renderView()},
   'att-copy':()=>attCopy(),
+  'lrep-copy':()=>lrepCopy(),
+  'lrep-xlsx':()=>lrepXlsx(),
   'eop-notice':(el,id)=>{const e=EMP[id];const n=e&&eopNotice(e);if(n)viewMemo(n.id);else eopForm(id)},
   'set-eoc':(el,id)=>{const e=EMP[id];const n=eopNotice(e);confirmBox('Set as Separated?',`This changes ${esc(fullName(e))}'s status to <b>Separated</b>, reason <b>End of Probationary Employment</b>${n&&n.effectiveOn?`, effective ${fmt(n.effectiveOn)} as stated in ${esc(n.no)}`:''}. The 201 file is kept.`,'Set as Separated',async()=>{const prev=clone(e);const o=clone(e);const d=(n&&n.effectiveOn)||today();Object.assign(o,{status:'Separated',separationReason:'End of Probationary Employment',separationDate:d,separationDetails:n?`Per ${n.no}.`:'',rehireEligible:o.rehireEligible||''});o.statusHistory=(o.statusHistory||[]).concat([{status:'Separated',reason:'End of Probationary Employment',details:o.separationDetails,date:d,at:new Date().toISOString(),by:MEID}]);await save('employees',o);toast(`${fullName(e)} is now Separated.`,{undo:()=>save('employees',prev)})})},
   'change-status':(el,id)=>statusForm(id),

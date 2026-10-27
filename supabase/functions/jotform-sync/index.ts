@@ -334,17 +334,51 @@ const addMonths = (d: string, n: number) => {
   r.setUTCDate(Math.min(day, last));
   return iso(r);
 };
-// SIL credits available on asOf, as silInfo() in the HRIS computes them (Sick + Vacation combined)
-function silAvailable(e: Doc | undefined, leaves: Doc[], asOf: string) {
-  if (!e?.hireDate || asOf < addMonths(e.hireDate, 12)) return 0;
+// Leave credits available on asOf, as leaveCredit() in the HRIS computes them: deployed SIL (Sick + Vacation combined,
+// from the 1st anniversary), Head Office Vacation and Sick separately per calendar year from the regularization month
+// (7/8/9 days a year for service years 1-5/6-10/11+), Solo Parent 5 and Paternity 7 days per calendar year.
+const FIXED_DAYS: Record<string, number> = { "Solo Parent": 5, Paternity: 7 };
+const hoDays = (n: number) => (n >= 11 ? 9 : n >= 6 ? 8 : 7);
+function creditPool(e: Doc, type: string) {
+  if (FIXED_DAYS[type]) return type;
+  if (!SIL_TYPES.includes(type)) return null;
+  return e.client === "Head Office" ? (type === "Sick" ? "Sick" : "Vacation") : "sil";
+}
+function creditAvailable(e: Doc | undefined, leaves: Doc[], type: string, from: string, day: string) {
+  const pool = e && creditPool(e, type);
+  if (!e || !pool) return 0;
+  const asOf = pool !== "sil" && (from || "").slice(0, 4) > day.slice(0, 4) ? from.slice(0, 4) + "-01-01" : day;
+  const used = (a: string, b: string) => leaves.filter((l) => l.employeeId === e.id && creditPool(e, l.type) === pool && l.status === "Approved" && l.from >= a && l.from < b)
+    .reduce((t, l) => t + (l.creditDays != null ? l.creditDays : l.days || 0), 0);
+  const Y = +asOf.slice(0, 4), y0 = `${Y}-01-01`, y1 = `${Y + 1}-01-01`;
+  if (pool === "Solo Parent" && !e.soloParent) return 0;
+  if (FIXED_DAYS[pool]) return Math.max(0, r4(FIXED_DAYS[pool] - used(y0, y1)));
+  if (pool !== "sil") {
+    const reg = e.regularizedOn;
+    if (!reg || asOf < reg) return 0;
+    // credited on the 30th of each month (last day of February). The first credit month is the regularization month
+    // when regularized on or before the 15th, otherwise the next month.
+    const st = +reg.slice(8, 10) <= 15 ? reg.slice(0, 7) : addMonths(reg.slice(0, 7) + "-01", 1).slice(0, 7);
+    const rY = +st.slice(0, 4), rM = +st.slice(5, 7);
+    if (Y < rY) return 0;
+    let months = 0;
+    for (let k = Y === rY ? rM : 1; k <= 12; k++) {
+      const d = `${Y}-${String(k).padStart(2, "0")}-${String(Math.min(30, new Date(Date.UTC(Y, k, 0)).getUTCDate())).padStart(2, "0")}`;
+      if (d <= asOf) months++;
+    }
+    // the monthly credit is days/12 cut to 2 decimals (7 days = 0.58); December gets the rest of the year's days (0.62)
+    const days = hoDays(Y - rY + 1), rate = Math.floor((days * 100) / 12 + 1e-9) / 100, startM = Y === rY ? rM : 1;
+    let earned = 0;
+    for (let k = startM; k < startM + months; k++) earned += k === 12 ? r4(days - 11 * rate) : rate;
+    return Math.max(0, r4(earned - used(y0, y1)));
+  }
+  if (!e.hireDate || asOf < addMonths(e.hireDate, 12)) return 0;
   let k = 1;
   while (addMonths(e.hireDate, 12 * (k + 1)) <= asOf) k++;
   const anniv = addMonths(e.hireDate, 12 * k), next = addMonths(e.hireDate, 12 * (k + 1));
   let months = 0;
   while (months < 12 && addMonths(anniv, months + 1) <= asOf) months++;
-  const used = leaves.filter((l) => l.employeeId === e.id && SIL_TYPES.includes(l.type) && l.status === "Approved" && l.from >= anniv && l.from < next)
-    .reduce((t, l) => t + (l.creditDays != null ? l.creditDays : l.days || 0), 0);
-  return Math.max(0, r4((5 / 12) * months - used));
+  return Math.max(0, r4((5 / 12) * months - used(anniv, next)));
 }
 async function instance(sid: string) {
   const r = await fetch(`${JF}/workflow/instance/${sid}`, { headers: { APIKEY: env("JOTFORM_API_KEY") } });
@@ -369,13 +403,13 @@ async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) 
     ws.forEach((w, k) => { if (w) found.push({ d: open[i + k], w }); });
   }
   const rows = [];
-  // in the order they were decided, so each SIL deduction sees the ones before it
+  // in the order they were decided, so each credit deduction sees the ones before it
   const at = (x: { w: Doc }) => steps(x.w).at(-1)?.at ?? "";
   for (const { d, w } of found.sort((a, b) => (at(a) < at(b) ? -1 : 1))) {
     const st = steps(w), done = w.status === "COMPLETED" && w.approvalSummary?.status === "COMPLETED";
     const status = !done ? "" : w.approvalSummary.text === "Approve" ? "Approved" : w.approvalSummary.text === "Deny" ? "Declined" : "";
     const jotformDecision = { outcome: status, steps: st };
-    // approving needs the 201 file (SIL credits); it waits until HR links the request
+    // approving needs the 201 file (leave credits); it waits until HR links the request
     if (!status || (status === "Approved" && !emps.has(d.employeeId))) {
       if (st.length && JSON.stringify(d.jotformDecision ?? null) !== JSON.stringify(jotformDecision)) rows.push({ id: d.id, sync: { jotformDecision } });
       continue;
@@ -384,8 +418,9 @@ async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) 
     // the approvers' comments stay in jotformDecision: they are internal notes (credit balances), and remarks print on the permit
     const o: Doc = { status, jotformDecision, decidedAt: last, decidedBy: "", decidedVia: "jotform" };
     const day = iso(new Date(new Date(last).getTime() + 8 * 36e5));
-    if (col === "leaves" && status === "Approved" && SIL_TYPES.includes(d.type)) {
-      o.creditDays = r4(Math.min(d.days || 0, silAvailable(emps.get(d.employeeId), leaves, day)));
+    const emp = emps.get(d.employeeId);
+    if (col === "leaves" && status === "Approved" && emp && creditPool(emp, d.type)) {
+      o.creditDays = r4(Math.min(d.days || 0, creditAvailable(emp, leaves, d.type, d.from, day)));
       o.unpaidDays = r4((d.days || 0) - o.creditDays);
     }
     if (col === "permits" && status === "Approved") o.issuedOn = day;
