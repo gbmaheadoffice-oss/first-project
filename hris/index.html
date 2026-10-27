@@ -806,9 +806,9 @@ const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={l
 const ph=(title,sub,actions='')=>`<div class="ph"><div><h2>${title}</h2><p>${sub}</p></div>${actions?`<div class="qa">${actions}</div>`:''}</div>`;
 const empOpts=(sel,all)=>{const list=S.employees.filter(e=>all||isActive(e)).sort(sortName);return`<option value="">Select employee</option>`+list.map(e=>`<option value="${e.id}" ${e.id===sel?'selected':''}>${esc(e.lastName)}, ${esc(e.firstName)} · ${esc(e.empNo)}</option>`).join('')};
 const emptyBlock=(title,text,btn)=>`<div class="empty"><strong>${title}</strong>${text}${btn||''}</div>`;
-const tabsHtml=(key,tabs,cur)=>`<div class="tabs" role="tablist">${tabs.map(([v,n])=>`<button role="tab" aria-selected="${cur===v}" data-act="tab" data-id="${key}" data-k="${v}">${v}<span class="n">${n}</span></button>`).join('')}</div>`;
-/* filter buttons above a list, as on Attendance: [value, count, icon, tone ('ok'|'warn'|'bad'), label] */
-const fbtnsHtml=(key,label,items,cur)=>`<div class="fbtns" role="group" aria-label="${label}">${items.map(([v,n,icon,tone,text])=>`<button class="fbtn ${tone||''}" data-act="tab" data-id="${key}" data-k="${v}" aria-pressed="${cur===v}">${ic(icon)}<span>${text||v}</span><b class="num">${n}</b></button>`).join('')}</div>`;
+/* filter buttons above a list, as on Attendance: [value, count, icon, tone ('ok'|'warn'|'bad'), label].
+   key is the UI section whose tab they set, or "section.field" to set another filter */
+const fbtnsHtml=(key,label,items,cur)=>`<div class="fbtns" role="group" aria-label="${label}">${items.map(([v,n,icon,tone,text])=>`<button class="fbtn ${tone||''}" data-act="${key.includes('.')?'fset':'tab'}" data-id="${key}" data-k="${v}" aria-pressed="${cur===v}">${ic(icon)}<span>${text||v}</span><b class="num">${n}</b></button>`).join('')}</div>`;
 const STATUS_BTNS=[['All','users',''],['Pending','clock','warn'],['Approved','check','ok'],['Declined','x','bad']];
 const searchBox=(id,key,val,ph)=>`<div class="srch">${ic('search')}<label class="sr" for="${id}">${ph}</label><input id="${id}" type="search" data-filter="${key}" value="${esc(val)}" placeholder="${ph}" autocomplete="off"></div>`;
 
@@ -876,7 +876,8 @@ VIEWS.employees=function(){
   const clCount=c=>S.employees.filter(e=>e.client===c&&isActive(e)).length;
   let h=ph('201 Files',`${S.employees.length} employee record${S.employees.length===1?'':'s'} across ${CLIENTS.length} client companies · personal data, deployment, government IDs and scanned requirements.`,`<button class="btn ghost" data-act="import-201" data-write>${ic('upload')}Import from Excel</button><button class="btn ghost" data-act="export-201">${ic('download')}Export to Excel</button><button class="btn" data-act="add-emp" data-write>${ic('plus')}Add Employee</button>`);
   const stc=s=>s==='All'?S.employees.length:S.employees.filter(e=>empStatus(e)===s).length;
-  h+=`<section class="card">${tabsHtml('emp',['Active','Separated','Blocklisted','All'].map(s=>[s,stc(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 12px">
+  h+=fbtnsHtml('emp','Show employees',[['All','users',''],['Active','check','ok'],['Separated','arrow','warn'],['Blocklisted','alert','bad']].map(([v,i,t])=>[v,stc(v),i,t]),f.tab);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 12px">
     ${searchBox('f-emp-q','emp.q',f.q,'Search name, employee no., position, client')}
     <label class="sr" for="f-emp-client">Client company</label><select id="f-emp-client" data-filter="emp.client" style="flex:1 1 260px;max-width:340px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)} (${clCount(c)})</option>`).join('')}</select>
     <label class="sr" for="f-emp-dept">Department</label><select id="f-emp-dept" data-filter="emp.dept"><option value="">All departments</option>${depts.map(d=>`<option ${deptKey(d)===deptKey(f.dept)?'selected':''}>${esc(d)}</option>`).join('')}</select>
@@ -1339,21 +1340,29 @@ async function polSave(){
 /* ---- Evaluations ---- */
 VIEWS.evaluations=function(){
   const f=UI.ev;const q=f.q.trim().toLowerCase();const t=today();
-  let list=S.employees.filter(e=>e.hireDate&&(f.scope==='prob'?isProb(e):isActive(e)));
+  /* filter buttons; the evaluation and regularization ones count probationary employees */
+  const y=String(new Date().getFullYear());
+  const msOf=e=>milestones(e);
+  const EV_SCOPES=[
+    ['prob','Probationary employees','clock','',e=>isProb(e)],
+    ['over','Overdue evaluations','alert','bad',e=>isProb(e)&&msOf(e).items.some(x=>x.state==='overdue')],
+    ['soon','Due in the next 14 days','clock','warn',e=>isProb(e)&&msOf(e).items.some(x=>x.state==='soon')],
+    ['reg30','Regularization due in 30 days','award','',e=>isProb(e)&&!msOf(e).reg.done&&diff(t,msOf(e).reg.due)<=30],
+    ['regY','Regularized in '+y,'check','ok',e=>(e.regularizedOn||'').startsWith(y)],
+    ['all','All active employees','users','',e=>isActive(e)]];
+  const scope=EV_SCOPES.find(x=>x[0]===f.scope)||EV_SCOPES[0];
+  const inScope=sc=>S.employees.filter(e=>e.hireDate&&sc[4](e));
+  let list=inScope(scope);
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.position].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>a.hireDate<b.hireDate?1:-1);
-  const probs=S.employees.filter(isProb);let over=0,soon=0,reg30=0;
-  probs.forEach(e=>{const m=milestones(e);m.items.forEach(x=>{if(x.state==='overdue')over++;if(x.state==='soon')soon++});if(!m.reg.done&&diff(t,m.reg.due)<=30)reg30++});
-  const y=String(new Date().getFullYear());const regY=S.employees.filter(e=>(e.regularizedOn||'').startsWith(y)).length;
   let h=ph('Evaluations & Regularization','Evaluations fall due 1, 3 and 5 months after the hire date. Regularization is due at 6 months.');
-  h+=`<div class="stats"><div class="stat bad"><b>${over}</b><span>Overdue evaluations</span></div><div class="stat warn"><b>${soon}</b><span>Due in the next 14 days</span></div><div class="stat"><b>${reg30}</b><span>Regularization due in 30 days</span></div><div class="stat ok"><b>${regY}</b><span>Regularized in ${y}</span></div></div>`;
   const pendE=S.employees.filter(e=>isProb(e)&&notRecommended(e)).map(e=>({e,n:eopNotice(e)})).filter(x=>!x.n||x.n.status==='Draft');
   if(pendE.length)h+=`<section class="card" data-write style="border-color:color-mix(in srgb,var(--bad) 35%,var(--line))"><div class="card-h"><h3>Not recommended · Notices of End of Probationary Employment</h3><span class="help" style="color:var(--muted)">Final score below 3.00. Review each notice before it is sent.</span></div><div class="rows">${pendE.map(({e,n})=>{const lo=MS.map(m=>e.evals&&e.evals[m.k]).filter(r=>r&&r.final!=null&&r.final<3).map(r=>r.final.toFixed(2));return`<div class="row"><div class="grow"><span class="nm">${esc(fullName(e))}</span><div class="meta">${esc(e.client||'')} · hired ${fmt(e.hireDate)}${lo.length?` · final score ${lo.join(', ')}`:''}</div></div>${n?`<span class="chip">${ic('edit')}Draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button>`:`<span class="chip bad">Not prepared</span><button class="btn sm bad" data-act="eop-notice" data-id="${e.id}">Prepare &amp; review</button>`}</div>`}).join('')}</div></section>`;
   const lost=S.clientevals.filter(r=>!EMP[r.employeeId]||!r.period).sort((a,b)=>(b.submittedAt||'')<(a.submittedAt||'')?-1:1);
   if(lost.length)h+=`<section class="card" data-write><div class="card-h"><h3>Client evaluations to link</h3><span class="help" style="color:var(--muted)">Google Form answers whose name or evaluation period did not match. Choose the employee and period.</span></div><div class="rows">${lost.map(r=>`<div class="row" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:220px"><span class="nm">${esc(r.name||'No name')}</span><div class="meta">${esc(r.periodText||'No period')} · ${esc(r.site||'')}${r.dateHired?' · hired '+fmt(r.dateHired):''} · ${esc(r.email||'')} · ${fmtTs(r.submittedAt)}${r.avg!=null?' · average '+Number(r.avg).toFixed(2):''}</div></div><select aria-label="Employee" id="cl-e-${esc(r.id)}">${empOpts(r.employeeId)}</select><select aria-label="Evaluation period" id="cl-k-${esc(r.id)}"><option value="">Period</option>${MS.map(m=>`<option value="${m.k}" ${m.k===r.period?'selected':''}>${m.label}</option>`).join('')}</select><button class="btn sm" data-act="link-ceval" data-id="${esc(r.id)}">Link</button></div>`).join('')}</div></section>`;
-  h+=`<section class="card"><div class="toolbar" style="margin-bottom:12px">${searchBox('f-ev-q','ev.q',f.q,'Search employee')}
-    <label class="sr" for="f-ev-scope">Show</label><select id="f-ev-scope" data-filter="ev.scope"><option value="prob" ${f.scope==='prob'?'selected':''}>Probationary employees</option><option value="all" ${f.scope==='all'?'selected':''}>All active employees</option></select></div>`;
-  if(!list.length)h+=emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.');
+  h+=fbtnsHtml('ev.scope','Show',EV_SCOPES.map(sc=>[sc[0],inScope(sc).length,sc[2],sc[3],sc[1]]),scope[0]);
+  h+=`<section class="card"><div class="toolbar" style="margin-bottom:12px">${searchBox('f-ev-q','ev.q',f.q,'Search employee')}</div>`;
+  if(!list.length)h+=scope[0]==='prob'?emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.'):emptyBlock('No employees here','No employees match this filter. Try another button or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th>Date Hired</th>${MS.map(m=>`<th>${m.label}</th>`).join('')}<th>Regularization</th></tr></thead><tbody>
     ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div><button class="link" style="padding:0;font-size:13px" data-act="client-eval" data-id="${e.id}">${ic('send')}Client evaluation form</button>${isProb(e)&&!e.supervisorEmail?`<div class="sub" style="color:var(--warn)">No supervisor email, so links are not emailed</div>`:''}</td><td class="num">${fmt(e.hireDate)}</td>
       ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`${(()=>{const r=x.state!=='stopped'&&clientResp(e,x.k);if(r)return`<span class="chip info" title="Answered on the Google Form by ${esc(r.email||'the client')}">${ic('check')}Client answered${r.avg!=null?' · '+Number(r.avg).toFixed(2):''}</span>`;const v=x.state!=='stopped'&&evalInvite(e,x.k);return v&&v.sentAt?`<span class="sub" title="Emailed to ${esc(v.to||'')}">${ic('send')}Link emailed ${fmtS(v.sentAt.slice(0,10))}${v.reminderAt?` · reminded ${fmtS(v.reminderAt.slice(0,10))}`:''}</span>`:''})()}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
@@ -1382,7 +1391,9 @@ function memoPage(cat){
     hol:'Announcements about regular holidays, special non-working days and holiday work schedules.'}[cat];
   const newBtn=`<button class="btn" data-act="${C.act}" data-write>${ic('plus')}${C.new}</button>`;
   let h=groupTabs()+ph(ROUTES[C.route].nav,sub,(cat==='disc'?`<button class="btn ghost" data-act="issue-memo" data-k="Notice to Explain" data-write>Notice to Explain</button>`:'')+newBtn);
-  h+=`<section class="card">${tabsHtml(C.ui,tabs.map(t=>[t,all.filter(m=>inT(m,t)).length]),f.tab)}<div class="toolbar" style="margin:14px 0 6px">${searchBox(`f-${C.ui}-q`,`${C.ui}.q`,f.q,'Search memo no., subject, recipient')}
+  const MEMO_LOOK={All:[hol?'cal':'memo',''],Open:['clock','warn'],Draft:['edit',''],Acknowledged:['check','ok'],Closed:['x',''],Upcoming:['cal','warn'],Past:['clock','']};
+  h+=fbtnsHtml(C.ui,'Show memos',['All'].concat(tabs.filter(t=>t!=='All')).map(t=>[t,all.filter(m=>inT(m,t)).length,...MEMO_LOOK[t]]),f.tab);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox(`f-${C.ui}-q`,`${C.ui}.q`,f.q,'Search memo no., subject, recipient')}
     <label class="sr" for="f-${C.ui}-type">Type</label><select id="f-${C.ui}-type" data-filter="${C.ui}.type"><option value="">All types</option>${types.map(d=>`<option ${d===f.type?'selected':''}>${esc(d)}</option>`).join('')}</select></div>`;
   if(!list.length)h+=emptyBlock(`No ${hol?'holiday advisories':C.name.toLowerCase()+'s'} here`,{disc:'Disciplinary memos to employees appear here.',co:'Company memos appear here.',hol:'Holiday advisories appear here, upcoming holidays first.'}[cat],`<div data-write>${newBtn}</div>`);
   else h+=`<div class="tw"><table class="tbl"><thead><tr><th>Memo No.</th><th>Subject</th><th>Type</th>${hol?'<th>Holiday</th>':''}<th>To</th><th>Issued</th>${hol?'':'<th>Status</th>'}</tr></thead><tbody>${list.map(memoRow).join('')}</tbody></table></div>`;
@@ -3117,7 +3128,9 @@ VIEWS.applicants=function(){
   const canSync=!!window.HRIS_SB;
   let h=ph('Applicants',`${S.applicants.length} job application${S.applicants.length===1?'':'s'} from the GBMA Online Job Application Form on Jotform. New applications appear here automatically within 5 minutes.`,
     canSync?`<button class="btn ghost" data-act="app-sync" data-write>${ic('download')}Check Jotform now</button>`:'');
-  h+=`<section class="card">${tabsHtml('app',APP_STATUS.concat('All').map(s=>[s,cnt(s)]),f.tab)}<div class="toolbar" style="margin:14px 0 12px">
+  const APP_LOOK={All:['users',''],New:['plus',''],Shortlisted:['award',''],'For interview':['cal','warn'],Hired:['check','ok'],'Not hired':['x','bad'],Blocklisted:['alert','bad']};
+  h+=fbtnsHtml('app','Show applicants',['All'].concat(APP_STATUS).map(s=>[s,cnt(s),...APP_LOOK[s]]),f.tab);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 12px">
     ${searchBox('f-app-q','app.q',f.q,'Search name, position, mobile, email, address')}
     <label class="sr" for="f-app-pos">Position applied for</label><select id="f-app-pos" data-filter="app.pos" style="flex:1 1 220px;max-width:320px"><option value="">All positions</option>${poss.map(p=>`<option ${p===f.pos?'selected':''}>${esc(p)}</option>`).join('')}</select></div>`;
   if(!list.length)h+=S.applicants.length?emptyBlock('No matching applicants','Try another tab, search or position.'):emptyBlock('No applicants yet','Job applications from Jotform will appear here.');
@@ -3283,6 +3296,7 @@ const ACT={
   side:()=>{if(mobile())APP.classList.toggle('side-open');else APP.classList.toggle('side-off')},
   grp:()=>{groupOpen=!groupOpen;renderNav()},
   tab:(el,id,k)=>{UI[id].tab=k;renderView()},
+  fset:(el,id,k)=>{const[a,b]=id.split('.');UI[a][b]=k;renderView()},
   dtab:(el,id)=>{drawerTab=id;renderDrawer();DR.querySelector(`[data-act="dtab"][data-id="${id}"]`).focus()},
   'add-emp':()=>empForm(),
   'edit-emp':(el,id)=>empForm(id),
