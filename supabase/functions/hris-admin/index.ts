@@ -1,9 +1,12 @@
 // HRIS Settings → User access. Only an HRIS admin may call this. The admin creates staff accounts (email + a
 // temporary password they give the person), sets each one's access, resets passwords and turns accounts off.
 // Access is kept in the account's app_metadata (users cannot change it themselves):
-//   hris_role  "admin" (everything + Settings) | "staff" (add and edit records) | "viewer" (view only)
-//   approver   "HR" | "Owner" | ""  (preselected in the Approve/Decline window)
-// Accounts made before this have no hris_role and count as staff; the database rules read hris_role too.
+//   hris_role    "admin" (everything + Settings) | "staff" (may edit some part) | "viewer" (may edit nothing)
+//   hris_access  per part of the HRIS: { view, edit, sites } (sites: null = all sites, or the sites allowed);
+//                set for "staff"/"viewer"; the role follows from it (no Edit ticked anywhere = viewer)
+//   approver     "HR" | "Owner" | ""  (preselected in the Approve/Decline window)
+// Accounts made before this have no hris_role and count as staff with full access; the database rules read
+// hris_role (viewers cannot change records), the HRIS screens apply the per-part and per-site access.
 import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 
 const env = (k: string) => Deno.env.get(k) ?? "";
@@ -21,11 +24,29 @@ type Meta = Record<string, unknown>;
 const ROLES = ["admin", "staff", "viewer"];
 const APPROVERS = ["", "HR", "Owner"];
 const role = (m: Meta | undefined) => (ROLES.includes(s(m?.hris_role)) ? s(m?.hris_role) : "staff");
+const PARTS = ["applicants", "employees", "leaves", "attendance", "evaluations", "comms"];
+type Part = { view: boolean; edit: boolean; sites: string[] | null };
+// keeps only known parts; Edit implies View; Applicants have no site
+function cleanAccess(a: unknown): Record<string, Part> {
+  const src = (a && typeof a === "object" ? a : {}) as Record<string, Record<string, unknown>>;
+  return Object.fromEntries(PARTS.map((p) => {
+    const x = src[p] ?? {}, edit = x.edit === true, view = edit || x.view === true;
+    const sites = p === "applicants" || !Array.isArray(x.sites) ? null : [...new Set((x.sites as unknown[]).map(s))].slice(0, 200);
+    return [p, { view, edit, sites }];
+  }));
+}
+// what an account is saved as: Admin, or the parts ticked (no Edit anywhere = viewer for the database rules)
+function accessMeta(r: string, a: unknown) {
+  if (r === "admin") return { hris_role: "admin", hris_access: null };
+  const acc = cleanAccess(a);
+  return { hris_role: Object.values(acc).some((x) => x.edit) ? "staff" : "viewer", hris_access: acc };
+}
 const OFF = "876000h"; // about 100 years: the account cannot sign in
 
 // deno-lint-ignore no-explicit-any
 const view = (u: any) => ({
   id: u.id, email: u.email, name: s(u.user_metadata?.full_name), role: role(u.app_metadata), approver: s(u.app_metadata?.approver),
+  access: u.app_metadata?.hris_access ?? null,
   active: !u.banned_until || new Date(u.banned_until) < new Date(), lastSignIn: u.last_sign_in_at ?? null, createdAt: u.created_at,
 });
 async function all() {
@@ -59,10 +80,10 @@ Deno.serve(async (req) => {
       if (!/^\S+@\S+\.\S+$/.test(email)) return json({ error: "Enter a valid email address." }, 400);
       if (!name) return json({ error: "Enter the person's full name." }, 400);
       if (!goodPassword(password)) return json({ error: "The temporary password needs at least 8 characters." }, 400);
-      if (!ROLES.includes(s(b.role))) return json({ error: "Choose an access level." }, 400);
+      if (!["admin", "custom"].includes(s(b.role))) return json({ error: "Choose an access level." }, 400);
       const { data, error } = await sb.auth.admin.createUser({
         email, password, email_confirm: true, user_metadata: { full_name: name },
-        app_metadata: { hris_role: s(b.role), approver: APPROVERS.includes(s(b.approver)) ? s(b.approver) : "" },
+        app_metadata: { ...accessMeta(s(b.role), b.access), approver: APPROVERS.includes(s(b.approver)) ? s(b.approver) : "" },
       });
       if (error) return json({ error: /already/i.test(error.message) ? "There is already an account with this email." : error.message }, 400);
       await sb.from("hris_profiles").upsert({ id: data.user.id, name, email, updated_at: new Date().toISOString() });
@@ -77,10 +98,10 @@ Deno.serve(async (req) => {
 
     if (action === "update") {
       const r = s(b.role), ap = s(b.approver), name = s(b.name);
-      if (!ROLES.includes(r) || !APPROVERS.includes(ap)) return json({ error: "Choose an access level." }, 400);
+      if (!["admin", "custom"].includes(r) || !APPROVERS.includes(ap)) return json({ error: "Choose an access level." }, 400);
       if (r !== "admin" && role(u.app_metadata) === "admin" && !(await admins())) return json({ error: "Keep at least one admin, or nobody can manage access." }, 400);
       const { data, error } = await sb.auth.admin.updateUserById(id, {
-        app_metadata: { ...u.app_metadata, hris_role: r, approver: ap },
+        app_metadata: { ...u.app_metadata, ...accessMeta(r, b.access), approver: ap },
         ...(name ? { user_metadata: { ...u.user_metadata, full_name: name } } : {}),
       });
       if (error) throw error;

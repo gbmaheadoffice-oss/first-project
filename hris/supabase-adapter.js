@@ -101,7 +101,7 @@ async function enter(user){
   if(!name)name=user.email.split('@')[0];
   /* access set in Settings → User access (hris-admin); accounts made before that are staff */
   const am=user.app_metadata||{};
-  ME={id:user.id,name,email:user.email,role:['admin','staff','viewer'].includes(am.hris_role)?am.hris_role:'staff',approver:am.approver||''};
+  ME={id:user.id,name,email:user.email,role:['admin','staff','viewer'].includes(am.hris_role)?am.hris_role:'staff',approver:am.approver||'',access:am.hris_access||null};
   sb.from('hris_profiles').upsert({id:user.id,name,email:user.email,updated_at:new Date().toISOString()}).then(()=>{},()=>{});
   const g=document.getElementById('gate');if(g)g.remove();
   readyResolve();
@@ -216,7 +216,7 @@ const db={
 
 /* ---------------- user ---------------- */
 const user={
-  me:async()=>({id:ME.id,name:ME.name,email:ME.email,role:ME.role,approver:ME.approver}),
+  me:async()=>({id:ME.id,name:ME.name,email:ME.email,role:ME.role,approver:ME.approver,access:ME.access}),
   can:async what=>what==='data.write'?ME.role!=='viewer':what==='users.manage'?ME.role==='admin':true,
   /* Settings → User access: list, create, update, password, disable, enable (admins only, checked on the server) */
   admin:async body=>{

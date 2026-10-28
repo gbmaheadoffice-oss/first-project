@@ -410,6 +410,10 @@ fieldset.factor legend{padding:0;font-size:15px;color:var(--ink);text-transform:
 @keyframes sh{to{background-position:-200% 0}}
 
 body.ro [data-write]{display:none!important}
+.acc-tbl{min-width:560px}.acc-tbl .c{text-align:center;width:64px}.acc-tbl input[type=checkbox]{width:20px;height:20px;accent-color:var(--side)}
+.acc-tbl td{vertical-align:top}.acc-all{display:flex;align-items:center;gap:8px;font-weight:600}
+.acc-sites{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 14px;margin-top:8px}
+.acc-sites label{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500}
 
 @media (max-width:1380px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:1023px){
@@ -646,12 +650,70 @@ const COLS=['employees','leaves','permits','memos','attendance','applicants','cl
 const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
-let ME={role:'',approver:''}; // the signed-in account's access (Settings → User access)
+let ME={role:'',approver:'',access:null}; // the signed-in account's access (Settings → User access)
+
+/* ---------------- access per part and per site ---------------- */
+// Admins see and change everything. Other accounts get, per part, View / Edit and the sites they may see
+// (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
+// ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
+const PARTS={applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications'};
+const PART_OF={applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',evaluations:'evaluations',memos:'comms',cmemos:'comms',holidays:'comms',settings:'admin'};
+const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',memos:'comms',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
+const acc=p=>{
+  if(ME.role==='admin')return{view:true,edit:true,sites:null};
+  if(p==='admin')return{view:false,edit:false,sites:null};
+  if(!ME.access)return{view:true,edit:ME.role!=='viewer',sites:null};
+  return ME.access[p]||{view:false,edit:false,sites:null};
+};
+const canView=p=>!p||acc(p).view;
+const canEdit=p=>!p||(acc(p).view&&acc(p).edit);
+// the site of a record: the employee's site, the memo's addressee, or none (company-wide, always shown)
+function siteOf(c,r){
+  if(c==='employees')return r.client||'';
+  if(c==='memos'){if(r.toType==='client')return r.toValue||'';if(r.toType==='employee'){const e=EMP[r.toValue];return e?e.client||'':null}return null}
+  if(r.client)return r.client;
+  const e=r.employeeId&&EMP[r.employeeId];return e?e.client||'':null;
+}
+const siteOK=(p,site)=>{const s=acc(p).sites;return!s||site==null||s.includes(site)};
+const recOK=(p,c,r)=>canView(p)&&siteOK(p,siteOf(c,r));
+// which records each page lists, so every page only shows the sites its part allows
+const PAGE_COLS={employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees']};
+// run fn with S limited to what the account may see: on a page, by that page's part; on the dashboard and in the
+// menu counts, each kind of record by its own part
+function scoped(rt,fn){
+  if(ME.role==='admin'||(!ME.access&&ME.role!=='viewer'))return fn();
+  const p=PART_OF[rt],keep={};
+  const cols=p&&PAGE_COLS[p]?PAGE_COLS[p]:Object.keys(COL_PART).filter(c=>S[c]);
+  if(!SCOPE_DEPTH++)ALL_EMPLOYEES=S.employees;
+  for(const c of cols){keep[c]=S[c];const q=p&&PAGE_COLS[p]?p:COL_PART[c];S[c]=S[c].filter(r=>recOK(q,c,r))}
+  try{return fn()}finally{Object.assign(S,keep);if(!--SCOPE_DEPTH)ALL_EMPLOYEES=null}
+}
+// names are looked up in every employee, also while a page is limited to some sites
+let SCOPE_DEPTH=0,ALL_EMPLOYEES=null;
+// may this account save to a collection? Its part's Edit, or the Edit of the page it is working on
+// (an evaluation saved from the Evaluations page is stored on the employee's 201 record)
+const pageEdit=()=>!!PART_OF[route]&&PART_OF[route]!=='admin'&&canEdit(PART_OF[route]);
+const mayWrite=col=>canEdit(COL_PART[col]||'')||pageEdit();
+// buttons that change records, by part; hidden when the account cannot edit that part
+const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees','del-file':'employees','import-201':'employees','change-status':'employees','cross-check':'employees',
+  'set-eoc':'evaluations','eop-notice':'evaluations','reg-contract':'evaluations',
+  'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves',
+  'att-edit':'attendance','att-import':'attendance','pol-save':'attendance','pol-discard':'attendance',
+  eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
+  'issue-memo':'comms','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants',
+  'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
+const actOK=a=>!ACT_PART[a]||canEdit(ACT_PART[a]);
+function applyAccessCss(){
+  let st=document.getElementById('access-css');if(!st){st=document.createElement('style');st.id='access-css';document.head.appendChild(st)}
+  const hide=Object.keys(ACT_PART).filter(a=>!actOK(a));
+  st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
+}
 const LS='manpower-hris-v1';
 const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
+  if(!mayWrite(col)){toast('Your account can only view this part of the HRIS.',{kind:'bad'});throw{code:'invalid_argument'}}
   obj=clone(obj);obj.updatedAt=new Date().toISOString();if(!obj.createdAt)obj.createdAt=obj.updatedAt;
   if(MODE==='db'){
     try{await DB.collection(col).doc(obj.id).set(obj)}
@@ -661,6 +723,7 @@ async function save(col,obj){
   }
 }
 async function remove(col,id){
+  if(!mayWrite(col)){toast('Your account can only view this part of the HRIS.',{kind:'bad'});throw{code:'invalid_argument'}}
   if(MODE==='db'){try{await DB.collection(col).doc(id).delete()}catch(e){toast('Could not delete. Try again.',{kind:'bad'});throw e}}
   else{S[col]=S[col].filter(x=>x.id!==id);persistLocal();refresh()}
 }
@@ -776,17 +839,19 @@ function counts(){
   };
 }
 function renderNav(){
-  const c=counts();const tot=c.leaves+c.permits+c.evals+c.memos;
-  const link=(r,n)=>`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
-  const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
+  const c=scoped('dashboard',counts);if(!canView('applicants'))c.applicants=0;if(!canView('leaves'))c.leaves=c.permits=0;if(!canView('evaluations'))c.evals=0;if(!canView('comms'))c.memos=0;
+  const tot=c.leaves+c.permits+c.evals+c.memos;
+  const link=(r,n)=>!canView(PART_OF[r])?'':`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
+  const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
     <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`+
    (ME.role==='admin'?link('settings'):'');
 }
 function render(focus){
-  EMP={};S.employees.forEach(e=>EMP[e.id]=e);
+  EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>EMP[e.id]=e);
   if(groupOf(route))lastOf[groupOf(route)]=route;
+  applyAccessCss();
   renderNav();
   $('#toptitle').textContent=ROUTES[route].t;
   document.title='Manpower HRIS';
@@ -797,7 +862,7 @@ function renderView(){
   const v=$('#view');const ae=document.activeElement;
   const aid=ae&&ae.id&&v.contains(ae)?ae.id:null;let sel=null;
   if(aid){try{if(typeof ae.selectionStart==='number')sel=[ae.selectionStart,ae.selectionEnd]}catch(e){}}
-  v.innerHTML=MODE==='loading'?loadingView():VIEWS[route]();
+  v.innerHTML=MODE==='loading'?loadingView():!canView(PART_OF[route])?ph(ROUTES[route].t,'Your account does not have access to this part of the HRIS. Ask your HRIS admin.'):scoped(route,()=>VIEWS[route]());
   if(aid){const el=document.getElementById(aid);if(el){el.focus({preventScroll:true});if(sel)try{el.setSelectionRange(sel[0],sel[1])}catch(e){}}}
   resolveNames();
 }
@@ -826,10 +891,11 @@ const VIEWS={};
 VIEWS.dashboard=function(){
   const c=counts();const active=S.employees.filter(isActive);
   const regSoon=S.employees.filter(isProb).filter(e=>{const m=milestones(e);return m&&!m.reg.done&&diff(today(),m.reg.due)<=30}).length;
-  const tile=(n,label,r,alert)=>`<button class="tile ${alert&&n?'alert':''}" data-act="nav" data-id="${r}"><b>${n}</b><span>${label}${ic('arrow')}</span></button>`;
+  // tiles, cards and buttons only for the parts this account can see
+  const tile=(n,label,r,alert)=>!canView(PART_OF[r])?'':`<button class="tile ${alert&&n?'alert':''}" data-act="nav" data-id="${r}"><b>${n}</b><span>${label}${ic('arrow')}</span></button>`;
   const hasSample=COLS.some(col=>S[col].some(x=>x.sample));
   let h=ph('Head Office Dashboard','Operations overview for HR, 201 files, leaves, permits and probationary evaluations.');
-  if(hasSample&&!DEMO)h+=`<div class="banner" data-write>${ic('info')}<span class="grow">Some records are marked <b>Sample</b> so you can try the system. Clear them when you start entering your real employees.</span><button class="btn sm ghost" data-act="clear-sample">Clear sample records</button></div>`;
+  if(hasSample&&!DEMO&&actOK('clear-sample'))h+=`<div class="banner" data-write>${ic('info')}<span class="grow">Some records are marked <b>Sample</b> so you can try the system. Clear them when you start entering your real employees.</span><button class="btn sm ghost" data-act="clear-sample">Clear sample records</button></div>`;
   h+=`<div class="tiles">
     ${tile(active.length,'Active Employees','employees')}
     ${tile(c.leaves,'Pending Leave Requests','leaves')}
@@ -840,8 +906,8 @@ VIEWS.dashboard=function(){
   </div>`;
   h+=`<section class="card" data-write><h3>Quick Actions</h3><div class="qa">
     <button class="btn" data-act="add-emp">Add Employee</button>
-    <button class="btn" data-act="nav" data-id="leaves">Review Leave Requests</button>
-    <button class="btn" data-act="nav" data-id="permits">Review Permits to Work</button>
+    ${canView('leaves')?`<button class="btn" data-act="nav" data-id="leaves">Review Leave Requests</button>
+    <button class="btn" data-act="nav" data-id="permits">Review Permits to Work</button>`:''}
     <button class="btn" data-act="issue-memo">Disciplinary Memo</button>
     <button class="btn" data-act="issue-cmemo">Company Memo</button>
     <button class="btn" data-act="issue-hol">Holiday Advisory</button>
@@ -869,7 +935,8 @@ VIEWS.dashboard=function(){
   const rm=S.memos.slice().sort((a,b)=>(b.issuedOn||'')<(a.issuedOn||'')?-1:1).slice(0,5);
   const memoCard=`<section class="card"><div class="card-h"><h3>Recent Memos</h3><button class="link" data-act="nav" data-id="memos">All memos${ic('arrow')}</button></div>
     ${rm.length?`<div class="rows">${rm.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${esc(m.subject)}</span><div class="meta">${esc(MEMO_CATS[memoCat(m)].name)} · ${esc(m.no)} · ${esc(m.type)} · To ${esc(memoTo(m))}</div></div>${statusChip(m.status)}</button>`).join('')}</div>`:emptyBlock('No memos yet','Issued memos and notices show here.')}</section>`;
-  h+=`<div class="grid2">${evalCard}${leaveCard}${deptCard}${permitCard}${docCard}${memoCard}</div>`;
+  const V=canView;
+  h+=`<div class="grid2">${V('evaluations')?evalCard:''}${V('leaves')?leaveCard:''}${V('employees')?deptCard:''}${V('leaves')?permitCard:''}${V('employees')?docCard:''}${V('comms')?memoCard:''}</div>`;
   return h;
 };
 
@@ -1414,7 +1481,16 @@ VIEWS.holidays=()=>memoPage('hol');
 /* ---------------- settings: user access ---------------- */
 // Accounts are made here by an admin (no sign-up). The server function hris-admin does the work and checks that
 // the caller is an admin; the database rules stop view-only and turned-off accounts from changing records.
-const ACCESS={admin:['Admin','Everything, plus Settings (manage user access)'],staff:['Staff','Add and edit records'],viewer:['View only','See records, cannot change anything']};
+const SITE_PARTS=['employees','leaves','attendance','evaluations','comms'];
+const allSites=()=>[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
+// one line per part the account can use, e.g. "201 Files: View + Edit · Sanno"
+function accessSummary(u){
+  if(u.role==='admin')return'<b>Admin</b><div class="sub">Everything, plus Settings</div>';
+  if(!u.access)return u.role==='viewer'?'<b>View only</b><div class="sub">All parts, all sites</div>':'<b>Full access</b><div class="sub">All parts, all sites (set before per-part access)</div>';
+  const rows=Object.keys(PARTS).filter(p=>u.access[p]&&u.access[p].view).map(p=>{const a=u.access[p];
+    return`<div class="sub"><b style="color:var(--ink)">${PARTS[p]}</b>: ${a.edit?'View + Edit':'View'}${SITE_PARTS.includes(p)?` · ${a.sites?esc(a.sites.join(', ')||'no site'):'all sites'}`:''}</div>`});
+  return'<b>Custom</b>'+(rows.join('')||'<div class="sub">No parts ticked: can sign in but sees nothing</div>');
+}
 let USERS=null,USERS_ERR='';
 async function loadUsers(){
   try{USERS=(await USER.admin({action:'list'})).users;USERS_ERR=''}catch(e){USERS_ERR=e.message||'Could not load the accounts.'}
@@ -1428,7 +1504,7 @@ VIEWS.settings=function(){
   const list=[...USERS].sort((a,b)=>(b.active-a.active)||(a.name||a.email).localeCompare(b.name||b.email));
   h+=`<section class="card"><div class="tw"><table class="tbl" style="min-width:860px"><thead><tr><th>Name</th><th>Access</th><th>Approves as</th><th>Last sign-in</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody>
     ${list.map(u=>`<tr><td><div class="nm">${esc(u.name||'—')}${u.id===MEID?' <span class="chip">You</span>':''}</div><div class="sub">${esc(u.email)}</div></td>
-      <td><b>${ACCESS[u.role][0]}</b><div class="sub">${ACCESS[u.role][1]}</div></td>
+      <td style="max-width:420px">${accessSummary(u)}</td>
       <td>${u.approver?`${esc(u.approver)}<div class="sub">${esc(APPROVERS[u.approver]||'')}</div>`:'—'}</td>
       <td class="num">${u.lastSignIn?fmtTs(u.lastSignIn):'Never'}</td>
       <td>${u.active?`<span class="chip ok">${ic('check')}Active</span>`:`<span class="chip bad">${ic('x2')}Turned off</span>`}</td>
@@ -1439,7 +1515,32 @@ VIEWS.settings=function(){
     <p class="help">Give each person their email and temporary password yourself. They can change it later with “Forgot password?” on the sign-in page. Turned-off accounts cannot sign in, and their past work keeps their name.</p>`;
   return h;
 };
-const accessOpts=Object.entries(ACCESS).map(([k,v])=>[k,`${v[0]} – ${v[1]}`]);
+const accessOpts=[['custom','Custom – choose the parts and sites below'],['admin','Admin – everything, plus Settings']];
+// the per-part grid: View / Edit, and for parts tied to employees, All sites or the ticked sites
+function accessGrid(a){
+  const sites=allSites();
+  // an account from before per-part access starts with what it has now
+  const cur=p=>a?(a[p]||{view:false,edit:false,sites:null}):{view:true,edit:true,sites:null};
+  return`<div class="field full" id="us-grid"><label>Parts of the HRIS</label>
+    <div class="tw"><table class="tbl acc-tbl"><thead><tr><th>Part</th><th class="c">View</th><th class="c">Edit</th><th>Sites</th></tr></thead><tbody>
+    ${Object.keys(PARTS).map(p=>{const x=cur(p);return`<tr><td class="nm">${PARTS[p]}</td>
+      <td class="c"><input type="checkbox" name="v_${p}" aria-label="View ${PARTS[p]}" ${x.view?'checked':''}></td>
+      <td class="c"><input type="checkbox" name="e_${p}" aria-label="Edit ${PARTS[p]}" ${x.edit?'checked':''}></td>
+      <td>${SITE_PARTS.includes(p)?`<label class="acc-all"><input type="checkbox" name="sa_${p}" ${x.sites?'':'checked'}> All sites</label>
+        <div class="acc-sites" data-sites="${p}" ${x.sites?'':'hidden'}>${sites.map(s=>`<label><input type="checkbox" name="s_${p}" value="${esc(s)}" ${x.sites&&x.sites.includes(s)?'checked':''}> ${esc(s)}</label>`).join('')}</div>`:'<span class="sub">—</span>'}</td></tr>`}).join('')}
+    </tbody></table></div><p class="help">View = can see that part. Edit = can also add and change records there. Untick “All sites” to pick the sites they may see in that part.</p></div>`;
+}
+function accessFrom(fd){
+  return Object.fromEntries(Object.keys(PARTS).map(p=>[p,{view:!!fd.get('v_'+p)||!!fd.get('e_'+p),edit:!!fd.get('e_'+p),sites:SITE_PARTS.includes(p)&&!fd.get('sa_'+p)?fd.getAll('s_'+p):null}]));
+}
+function wireAccessGrid(f){
+  const el=f.elements;
+  const sync=()=>{const custom=el['role'].value!=='admin';f.querySelector('#us-grid').hidden=!custom;
+    Object.keys(PARTS).forEach(p=>{const v=el['v_'+p],e=el['e_'+p];if(e.checked)v.checked=true;
+      const all=el['sa_'+p];if(all){const box=f.querySelector(`[data-sites="${p}"]`);box.hidden=all.checked}})};
+  f.addEventListener('change',ev=>{const n=ev.target.name||'';if(n.startsWith('v_')&&!ev.target.checked){const e=el['e_'+n.slice(2)];if(e)e.checked=false}sync()});
+  sync();
+}
 const approverOpts=[['','None'],...Object.entries(APPROVERS).map(([k,v])=>[k,`${k} – ${v}`])];
 const approverHelp='Preselected in “Approved by” when this person approves or declines a leave or permit.';
 // a readable temporary password, e.g. "Bear-4821-Gold"
@@ -1454,12 +1555,15 @@ function userForm(id){
   openModal({title:u?'Edit user':'Add user',submitLabel:u?'Save':'Create account',
     body:field({id:'us-name',name:'name',label:'Full name',req:1,value:u?u.name:''})+
       (u?`<div class="field"><label>Email</label><div class="ro-val">${esc(u.email)}</div></div>`:field({id:'us-email',name:'email',label:'Email',type:'email',req:1,attrs:'autocomplete="off"',help:'They sign in with this email.'}))+
-      field({id:'us-role',name:'role',label:'Access',type:'select',req:1,value:u?u.role:'staff',opts:accessOpts})+
+      field({id:'us-role',name:'role',label:'Access',type:'select',blank:false,value:u&&u.role==='admin'?'admin':'custom',opts:accessOpts})+
+      accessGrid(u?u.access:{})+
       field({id:'us-ap',name:'approver',label:'Approves as',type:'select',blank:false,value:u?u.approver:'',opts:approverOpts,help:approverHelp})+
       (u?'':passField(tempPass())),
+    wide:true,onOpen:wireAccessGrid,
     onSubmit:async(fd,f)=>{
       f.querySelectorAll('.formerr').forEach(e=>e.remove());
-      const b={name:fd.get('name'),role:fd.get('role'),approver:fd.get('approver')};
+      const b={name:fd.get('name'),role:fd.get('role'),approver:fd.get('approver'),access:accessFrom(fd)};
+      if(b.role!=='admin'&&Object.values(b.access).some(a=>a.sites&&!a.sites.length&&a.view)){f.querySelector('.mbody').insertAdjacentHTML('afterbegin','<div class="formerr" role="alert">A part with “All sites” unticked needs at least one site ticked.</div>');return false}
       const r=await userCall(u?{action:'update',id,...b}:{action:'create',email:fd.get('email'),password:fd.get('password'),...b},f);
       if(r!==false)toast(u?'Account updated.':`Account created for ${fd.get('email')}. Give them their temporary password.`);
       return r;
@@ -3052,7 +3156,9 @@ function bankSection(e){
 
 /* ---------------- employee drawer ---------------- */
 const DR=$('#drawer');let drawerEmp=null,drawerTab='overview';
-function openEmp(id,tab){drawerEmp=id;drawerTab=tab||'overview';renderDrawer();if(!DR.open)DR.showModal();const b=DR.querySelector('.dbody');if(b)b.scrollTop=0}
+function openEmp(id,tab){
+  const e=EMP[id];if(e&&!recOK('employees','employees',e))return toast('Your account does not have access to this employee’s 201 file.',{kind:'bad'});
+  drawerEmp=id;drawerTab=tab||'overview';renderDrawer();if(!DR.open)DR.showModal();const b=DR.querySelector('.dbody');if(b)b.scrollTop=0}
 DR.addEventListener('click',e=>{if(e.target===DR)DR.close()});
 function renderDrawer(){
   const e=EMP[drawerEmp];if(!e){if(DR.open)DR.close();return}
@@ -3425,7 +3531,9 @@ const ACT={
 document.addEventListener('click',ev=>{
   const a=ev.target.closest('[data-act]');if(!a)return;
   if(a.tagName==='TR'&&ev.target.closest('button,a,input,select'))return;
-  const f=ACT[a.dataset.act];if(f){ev.stopPropagation();f(a,a.dataset.id,a.dataset.k,ev)}
+  const f=ACT[a.dataset.act];if(!f)return;ev.stopPropagation();
+  if(!actOK(a.dataset.act)){ev.preventDefault();return toast('Your account can only view this part of the HRIS.',{kind:'bad'})}
+  scoped(route,()=>f(a,a.dataset.id,a.dataset.k,ev)); // forms opened here list only the sites this page allows
 });
 document.addEventListener('keydown',ev=>{
   if((ev.key==='Enter'||ev.key===' ')&&ev.target.matches('tr[data-act]')){ev.preventDefault();ev.target.click()}
@@ -3439,7 +3547,7 @@ const GQ=$('#gq'),GR=$('#gres'),GS=$('#gsearch');
 function openSearch(){GS.classList.add('open');GQ.focus()}
 function drawSearch(){
   const q=GQ.value.trim().toLowerCase();if(!q){GR.hidden=true;GQ.setAttribute('aria-expanded','false');return}
-  const hits=S.employees.filter(e=>[fullName(e),e.empNo,e.position,e.department,e.client].join(' ').toLowerCase().includes(q)).sort(sortName).slice(0,7);
+  const hits=S.employees.filter(e=>recOK('employees','employees',e)&&[fullName(e),e.empNo,e.position,e.department,e.client].join(' ').toLowerCase().includes(q)).sort(sortName).slice(0,7);
   GR.innerHTML=hits.length?hits.map(e=>`<button data-gid="${e.id}"><span class="avatar" style="width:34px;height:34px;font-size:12.5px" aria-hidden="true">${esc(initials(e))}</span><span style="min-width:0"><b>${esc(fullName(e))}</b><br><span style="color:var(--muted);font-size:13.5px">${esc(e.empNo)} · ${esc(e.position)}${e.client?' · '+esc(e.client):''}</span></span></button>`).join(''):`<div class="none">No employee matches “${esc(GQ.value)}”.</div>`;
   GR.hidden=false;GQ.setAttribute('aria-expanded','true');
 }
@@ -3457,7 +3565,7 @@ async function init(){
   try{if(window.claude&&typeof window.claude.use==='function'){[db,user,assets]=await Promise.all([window.claude.use('db').catch(()=>null),window.claude.use('user').catch(()=>null),window.claude.use('assets').catch(()=>null)])}}catch(e){}
   USER=user;ASSETS=db?assets:null;
   if(user){
-    try{const me=await user.me();MEID=me.id;ME={role:me.role||'staff',approver:me.approver||''};const av=$('#me');if(me.name){av.title=me.name;av.textContent=me.name.split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}}catch(e){}
+    try{const me=await user.me();MEID=me.id;ME={role:me.role||'staff',approver:me.approver||'',access:me.access||null};const av=$('#me');if(me.name){av.title=me.name;av.textContent=me.name.split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}}catch(e){}
     try{if(await user.can('data.write')===false)document.body.classList.add('ro')}catch(e){}
   }
   if(db){
