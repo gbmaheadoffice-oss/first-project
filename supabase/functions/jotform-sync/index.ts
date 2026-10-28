@@ -458,7 +458,7 @@ async function pushDecisions(col: "leaves" | "permits") {
   for (const d of todo) {
     const type = d.status === "Approved" ? "APPROVE" : "DENY", done: string[] = [];
     // e.g. "Approved in HRIS by Golden Bear Manpower Agency: 1st SL of the month, allowable w/o medcert"
-    const comment = `${d.status} in HRIS by ${names.get(d.decidedBy) || "HR"}${s(d.remarks) ? ": " + s(d.remarks) : ""}`;
+    const comment = `${d.status} in HRIS by ${s(d.decidedName) || names.get(d.decidedBy) || "HR"}${s(d.remarks) ? ": " + s(d.remarks) : ""}`;
     let result = "sent";
     try {
       const w = await jfWrite(`/workflow/instance/${d.jotform.submissionId}`);
