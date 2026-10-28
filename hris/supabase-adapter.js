@@ -41,6 +41,7 @@ function gate(){let g=document.getElementById('gate');if(!g){const st=document.c
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const head=`<div class="hd"><b>HRIS</b><span>GOLDEN BEAR MANPOWER AGENCY</span></div>`;
 const redirectTo=()=>location.origin+location.pathname;
+const OFF_MSG='Your HRIS account is turned off. Ask your HR admin.';
 
 function showLogin(note){
   const g=gate();
@@ -55,7 +56,7 @@ function showLogin(note){
   const f=g.querySelector('form');f.email.focus();
   f.onsubmit=async ev=>{ev.preventDefault();const b=f.querySelector('[type=submit]');b.disabled=true;b.textContent='Signing in…';
     const{error}=await sb.auth.signInWithPassword({email:f.email.value.trim(),password:f.password.value});
-    if(error){showLogin({kind:'bad',text:error.message==='Invalid login credentials'?'Wrong email or password.':error.message});return}
+    if(error){showLogin({kind:'bad',text:error.message==='Invalid login credentials'?'Wrong email or password.':/bann/i.test(error.message)?OFF_MSG:error.message});return}
   };
   g.querySelector('#g-forgot').onclick=async()=>{const email=f.email.value.trim();
     if(!email){showLogin({kind:'bad',text:'Type your email first, then click “Forgot password?”.'});return}
@@ -91,11 +92,16 @@ function showSetPassword(user,isInvite,note){
 let entering=false;
 async function enter(user){
   if(entering)return;entering=true;
+  /* a fresh token carries access changed in Settings since the last sign-in */
+  try{const{data,error}=await sb.auth.refreshSession();if(data&&data.user)user=data.user;
+    if(error&&/bann/i.test(error.message||'')){await sb.auth.signOut();entering=false;return showLogin({kind:'bad',text:OFF_MSG})}}catch(e){}
   const meta=user.user_metadata||{};
   let name=meta.full_name||'';
   try{const{data}=await sb.from('hris_profiles').select('name').eq('id',user.id).maybeSingle();if(!name&&data&&data.name)name=data.name}catch(e){}
   if(!name)name=user.email.split('@')[0];
-  ME={id:user.id,name,email:user.email};
+  /* access set in Settings → User access (hris-admin); accounts made before that are staff */
+  const am=user.app_metadata||{};
+  ME={id:user.id,name,email:user.email,role:['admin','staff','viewer'].includes(am.hris_role)?am.hris_role:'staff',approver:am.approver||''};
   sb.from('hris_profiles').upsert({id:user.id,name,email:user.email,updated_at:new Date().toISOString()}).then(()=>{},()=>{});
   const g=document.getElementById('gate');if(g)g.remove();
   readyResolve();
@@ -173,14 +179,17 @@ function startRealtime(){
 }
 function splitPath(p){const i=p.indexOf('/');return[p.slice(0,i),p.slice(i+1)]}
 
+/* a write refused by the database rules (view-only account) is reported the way the app expects */
+const denied=e=>e&&(e.code==='42501'||/row-level security/i.test(e.message||''))?{code:'invalid_argument',message:e.message}:e;
 async function put(col,id,obj){
   const{error}=await sb.from('hris_docs').upsert({collection:col,id,data:obj,updated_at:new Date().toISOString(),updated_by:ME&&ME.id});
-  if(error)throw error;
+  if(error)throw denied(error);
   if(cache[col]){cache[col].set(id,obj);emit(col)}
 }
 async function del(col,id){
-  const{error}=await sb.from('hris_docs').delete().eq('collection',col).eq('id',id);
-  if(error)throw error;
+  const{data,error}=await sb.from('hris_docs').delete().eq('collection',col).eq('id',id).select('id');
+  if(error)throw denied(error);
+  if(!data||!data.length)throw{code:'invalid_argument'};
   if(cache[col]){cache[col].delete(id);emit(col)}
 }
 function docRef(col,id){return{
@@ -207,8 +216,14 @@ const db={
 
 /* ---------------- user ---------------- */
 const user={
-  me:async()=>({id:ME.id,name:ME.name,email:ME.email}),
-  can:async()=>true,
+  me:async()=>({id:ME.id,name:ME.name,email:ME.email,role:ME.role,approver:ME.approver}),
+  can:async what=>what==='data.write'?ME.role!=='viewer':what==='users.manage'?ME.role==='admin':true,
+  /* Settings → User access: list, create, update, password, disable, enable (admins only, checked on the server) */
+  admin:async body=>{
+    const{data,error}=await sb.functions.invoke('hris-admin',{body});
+    if(error){let m='';try{m=(await error.context.json()).error}catch(e){}throw{message:m||'Could not reach the server. Try again.'}}
+    return data;
+  },
   profiles:async ids=>{
     const out={};if(!ids||!ids.length)return out;
     const{data}=await sb.from('hris_profiles').select('id,name').in('id',ids.filter(x=>/^[0-9a-f-]{36}$/i.test(x)));
