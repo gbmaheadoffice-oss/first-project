@@ -87,6 +87,11 @@ svg.i{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .gres{position:absolute;top:52px;left:0;right:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(10,20,45,.16);padding:6px;z-index:50}
 .gres button{display:flex;width:100%;gap:12px;align-items:center;text-align:left;border:0;background:none;padding:10px;border-radius:8px}
 .gres button:hover,.gres button:focus-visible{background:var(--surface-2)}
+.me-wrap{position:relative;flex:none}button.avatar{cursor:pointer;padding:0}
+.me-menu{position:absolute;top:52px;right:0;min-width:240px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(10,20,45,.16);padding:6px;z-index:60}
+.me-menu .who{padding:10px 12px 12px;border-bottom:1px solid var(--line);margin-bottom:6px}.me-menu .who b{display:block}.me-menu .who span{color:var(--muted);font-size:13.5px;overflow-wrap:anywhere}
+.me-menu button{display:flex;width:100%;gap:12px;align-items:center;text-align:left;border:0;background:none;padding:10px 12px;border-radius:8px;color:var(--ink);font-size:15px}
+.me-menu button:hover,.me-menu button:focus-visible{background:var(--surface-2)}
 .gres .none{padding:12px;color:var(--muted)}
 .avatar{width:44px;height:44px;border-radius:50%;background:var(--side);color:var(--gold);display:grid;place-items:center;font-weight:800;font-size:15px;flex:none;overflow:hidden;border:2px solid var(--surface)}
 .avatar img{width:100%;height:100%;object-fit:cover}
@@ -468,7 +473,8 @@ body.ro [data-write]{display:none!important}
         <kbd>Ctrl K</kbd>
         <div class="gres" id="gres" hidden></div>
       </div>
-      <div class="avatar" id="me" title="HR">HR</div>
+      <div class="me-wrap"><button class="avatar" id="me" type="button" title="HR" aria-haspopup="menu" aria-expanded="false" aria-controls="me-menu">HR</button>
+        <div class="me-menu" id="me-menu" role="menu" hidden></div></div>
     </header>
     <div class="demobar" id="demobar" hidden></div>
     <main id="view" tabindex="-1"></main>
@@ -845,8 +851,7 @@ function renderNav(){
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`+
-   (ME.role==='admin'?link('settings'):'');
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
 function render(focus){
   EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>EMP[e.id]=e);
@@ -3495,6 +3500,8 @@ const ACT={
   regularize:(el,id)=>regularizeForm(id),
   del:(el,id,k)=>{const r=S[k].find(x=>x.id===id);const n=((r&&r.attachments)||[]).length;confirmBox('Delete this record?',`This permanently deletes the leave record${n?` and its ${n} attachment${n===1?'':'s'}`:''}.`,'Delete',async()=>{await remove(k,id);if(ASSETS&&r)for(const f of r.attachments||[]){try{await ASSETS.delete(f.id)}catch(e){}}toast('Record deleted.')})},
   'clear-sample':clearSample,
+  'me-settings':()=>{meMenu(false);go('settings')},
+  'me-signout':()=>{meMenu(false);confirmBox('Sign out?',`You are signed in as <b>${esc(ME.email)}</b>.`,'Sign out',()=>USER.signOut())},
   'user-add':()=>userForm(),
   'user-edit':(el,id)=>userForm(id),
   'user-pass':(el,id)=>userPass(id),
@@ -3554,6 +3561,21 @@ GR.addEventListener('keydown',ev=>{const bs=[...GR.querySelectorAll('button')];c
 GR.addEventListener('click',ev=>{const b=ev.target.closest('[data-gid]');if(!b)return;GR.hidden=true;GQ.value='';GS.classList.remove('open');openEmp(b.dataset.gid)});
 document.addEventListener('click',ev=>{if(!GS.contains(ev.target)){GR.hidden=true;GS.classList.remove('open');GQ.setAttribute('aria-expanded','false')}});
 
+/* ---------------- profile menu (top right): Settings for admins, Sign out ---------------- */
+const MEB=$('#me'),MEM=$('#me-menu');
+function meMenu(open){
+  if(open){
+    MEM.innerHTML=`<div class="who"><b>${esc(ME.name||'Signed in')}</b><span>${esc(ME.email||'')}</span></div>
+      ${ME.role==='admin'?`<button type="button" role="menuitem" data-act="me-settings">${ic('gear')}Settings</button>`:''}
+      ${USER&&USER.signOut?`<button type="button" role="menuitem" data-act="me-signout">${ic('arrow')}Sign out</button>`:''}`;
+  }
+  MEM.hidden=!open;MEB.setAttribute('aria-expanded',String(open));
+  if(open){const b=MEM.querySelector('button');if(b)b.focus()}
+}
+MEB.addEventListener('click',ev=>{ev.stopPropagation();meMenu(MEM.hidden)});
+document.addEventListener('click',ev=>{if(!MEM.hidden&&!MEM.contains(ev.target))meMenu(false)});
+MEM.addEventListener('keydown',ev=>{if(ev.key==='Escape'){meMenu(false);MEB.focus()}});
+
 /* ---------------- boot ---------------- */
 async function init(){
   render(false);
@@ -3561,7 +3583,7 @@ async function init(){
   try{if(window.claude&&typeof window.claude.use==='function'){[db,user,assets]=await Promise.all([window.claude.use('db').catch(()=>null),window.claude.use('user').catch(()=>null),window.claude.use('assets').catch(()=>null)])}}catch(e){}
   USER=user;ASSETS=db?assets:null;
   if(user){
-    try{const me=await user.me();MEID=me.id;ME={role:me.role||'staff',approver:me.approver||'',access:me.access||null};const av=$('#me');if(me.name){av.title=me.name;av.textContent=me.name.split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}}catch(e){}
+    try{const me=await user.me();MEID=me.id;ME={role:me.role||'staff',approver:me.approver||'',access:me.access||null,name:me.name||'',email:me.email||''};const av=$('#me');if(me.name){av.title=me.name;av.textContent=me.name.split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}}catch(e){}
     try{if(await user.can('data.write')===false)document.body.classList.add('ro')}catch(e){}
   }
   if(db){

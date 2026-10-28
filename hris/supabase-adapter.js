@@ -105,16 +105,10 @@ async function enter(user){
   sb.from('hris_profiles').upsert({id:user.id,name,email:user.email,updated_at:new Date().toISOString()}).then(()=>{},()=>{});
   const g=document.getElementById('gate');if(g)g.remove();
   readyResolve();
-  addSignOut();
 }
 
-function addSignOut(){
-  const go=()=>{const av=document.getElementById('me');if(!av)return setTimeout(go,200);
-    av.style.cursor='pointer';av.setAttribute('role','button');av.tabIndex=0;av.title=`${ME.name} · click to sign out`;
-    const out=async()=>{if(confirm(`Sign out ${ME.email}?`)){await sb.auth.signOut();location.replace(redirectTo())}};
-    av.addEventListener('click',out);av.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();out()}});
-  };go();
-}
+/* the HRIS profile menu (top right) has Sign out */
+async function signOut(){await sb.auth.signOut();location.replace(redirectTo())}
 
 let decided=false;
 sb.auth.onAuthStateChange((event,session)=>{
@@ -217,6 +211,7 @@ const db={
 /* ---------------- user ---------------- */
 const user={
   me:async()=>({id:ME.id,name:ME.name,email:ME.email,role:ME.role,approver:ME.approver,access:ME.access}),
+  signOut,
   can:async what=>what==='data.write'?ME.role!=='viewer':what==='users.manage'?ME.role==='admin':true,
   /* Settings → User access: list, create, update, password, disable, enable (admins only, checked on the server) */
   admin:async body=>{
