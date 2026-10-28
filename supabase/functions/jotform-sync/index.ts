@@ -434,7 +434,7 @@ async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) 
 // ---------- decisions made in the HRIS -> the Jotform approval workflows ----------
 // When HR approves or declines a Jotform request in the HRIS, the HR approval step still open in its workflow is
 // completed with the same outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY),
-// with HR's remarks as the comment. The final approver's step (Gladys) is never completed from here: she still
+// with who decided in the HRIS and HR's remarks as the comment. The final approver's step (Gladys) is never completed from here: she still
 // approves in Jotform. The result is kept in jotformPush so each request is sent once.
 const MAX_PUSH = 10; // requests per run; the rest go on the next runs
 const FINAL_APPROVER = "gladness311@gmail.com";
@@ -453,8 +453,12 @@ async function pushDecisions(col: "leaves" | "permits") {
   const todo = (await docs(col)).filter((d) => d.source === "jotform" && d.jotform?.submissionId && !d.jotformPush &&
     (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform").slice(0, MAX_PUSH);
   const rows = [];
+  const { data: users } = todo.length ? await sb.rpc("hris_jotform_names") : { data: [] };
+  const names = new Map(((users ?? []) as Doc[]).map((u) => [u.id, s(u.name)]));
   for (const d of todo) {
     const type = d.status === "Approved" ? "APPROVE" : "DENY", done: string[] = [];
+    // e.g. "Approved in HRIS by Golden Bear Manpower Agency: 1st SL of the month, allowable w/o medcert"
+    const comment = `${d.status} in HRIS by ${names.get(d.decidedBy) || "HR"}${s(d.remarks) ? ": " + s(d.remarks) : ""}`;
     let result = "sent";
     try {
       const w = await jfWrite(`/workflow/instance/${d.jotform.submissionId}`);
@@ -466,7 +470,7 @@ async function pushDecisions(col: "leaves" | "permits") {
         const task = await jfWrite(`/workflow/task/${t.id}`);
         const outcome = (task.element?.outcomes ?? []).find((o: Doc) => o.type === type);
         if (!outcome) throw new Error(`no ${type} button on the approval step`);
-        await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID, ...(s(d.remarks) ? { comment: s(d.remarks) } : {}) });
+        await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID, comment });
         done.push(s(t.properties?.assigneeEmail));
       }
     } catch (e) {

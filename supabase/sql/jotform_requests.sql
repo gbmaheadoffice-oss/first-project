@@ -51,4 +51,12 @@ $$;
 revoke all on function public.hris_jotform_docs(text) from public, anon, authenticated;
 grant execute on function public.hris_jotform_docs(text) to service_role;
 
+-- HRIS users' names, so jotform-sync can say in Jotform who approved or declined in the HRIS.
+create or replace function public.hris_jotform_names()
+returns table (id uuid, name text) language sql stable security definer set search_path = public as $$
+  select id, coalesce(nullif(trim(name), ''), email) from public.hris_profiles;
+$$;
+revoke all on function public.hris_jotform_names() from public, anon, authenticated;
+grant execute on function public.hris_jotform_names() to service_role;
+
 select 'ok' as result;
