@@ -434,9 +434,8 @@ async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) 
 // ---------- decisions made in the HRIS -> the Jotform approval workflows ----------
 // When HR approves or declines a Jotform request in the HRIS, every approval step still open in its workflow is
 // completed with the same outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY),
-// so the workflow finishes and Jotform sends its usual emails. Only decisions made from PUSH_SINCE on are sent; the
-// result is kept in jotformPush so each request is sent once.
-const PUSH_SINCE = "2026-10-28T04:00:00Z";
+// so the workflow finishes and Jotform sends its usual emails. HR's remarks go with it as the approval comment.
+// The result is kept in jotformPush so each request is sent once.
 const MAX_PUSH = 10; // requests per run; the rest go on the next runs
 async function jfWrite(path: string, body?: unknown) {
   const r = await fetch(`${JF}${path}`, {
@@ -451,7 +450,7 @@ async function jfWrite(path: string, body?: unknown) {
 async function pushDecisions(col: "leaves" | "permits") {
   if (!env("JOTFORM_WRITE_KEY")) return { skipped: "no JOTFORM_WRITE_KEY" };
   const todo = (await docs(col)).filter((d) => d.source === "jotform" && d.jotform?.submissionId && !d.jotformPush &&
-    (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform" && (d.decidedAt || "") >= PUSH_SINCE).slice(0, MAX_PUSH);
+    (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform").slice(0, MAX_PUSH);
   const rows = [];
   for (const d of todo) {
     const type = d.status === "Approved" ? "APPROVE" : "DENY", done: string[] = [];
@@ -467,7 +466,7 @@ async function pushDecisions(col: "leaves" | "permits") {
           const task = await jfWrite(`/workflow/task/${t.id}`);
           const outcome = (task.element?.outcomes ?? []).find((o: Doc) => o.type === type);
           if (!outcome) throw new Error(`no ${type} button on the approval step`);
-          await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID });
+          await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID, ...(s(d.remarks) ? { comment: s(d.remarks) } : {}) });
           done.push(s(t.properties?.assigneeEmail));
         }
       }
