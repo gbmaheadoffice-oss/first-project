@@ -1502,10 +1502,9 @@ VIEWS.settings=function(){
   let h=ph('User access','Create the accounts your staff use to sign in, and choose what each one can do. Nobody can sign up on their own.',`<button class="btn" data-act="user-add">${ic('plus')}Add user</button>`);
   if(USERS_ERR)return h+`<div class="banner">${ic('alert')}<span class="grow">${esc(USERS_ERR)}</span><button class="btn sm ghost" data-act="user-reload">Try again</button></div>`;
   const list=[...USERS].sort((a,b)=>(b.active-a.active)||(a.name||a.email).localeCompare(b.name||b.email));
-  h+=`<section class="card"><div class="tw"><table class="tbl" style="min-width:860px"><thead><tr><th>Name</th><th>Access</th><th>Approves as</th><th>Last sign-in</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody>
+  h+=`<section class="card"><div class="tw"><table class="tbl" style="min-width:860px"><thead><tr><th>Name</th><th>Access</th><th>Last sign-in</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody>
     ${list.map(u=>`<tr><td><div class="nm">${esc(u.name||'—')}${u.id===MEID?' <span class="chip">You</span>':''}</div><div class="sub">${esc(u.email)}</div></td>
       <td style="max-width:420px">${accessSummary(u)}</td>
-      <td>${u.approver?`${esc(u.approver)}<div class="sub">${esc(APPROVERS[u.approver]||'')}</div>`:'—'}</td>
       <td class="num">${u.lastSignIn?fmtTs(u.lastSignIn):'Never'}</td>
       <td>${u.active?`<span class="chip ok">${ic('check')}Active</span>`:`<span class="chip bad">${ic('x2')}Turned off</span>`}</td>
       <td class="r" style="white-space:nowrap"><button class="btn sm ghost" data-act="user-edit" data-id="${u.id}">${ic('edit')}Edit</button>
@@ -1541,8 +1540,6 @@ function wireAccessGrid(f){
   f.addEventListener('change',ev=>{const n=ev.target.name||'';if(n.startsWith('v_')&&!ev.target.checked){const e=el['e_'+n.slice(2)];if(e)e.checked=false}sync()});
   sync();
 }
-const approverOpts=[['','None'],...Object.entries(APPROVERS).map(([k,v])=>[k,`${k} – ${v}`])];
-const approverHelp='Preselected in “Approved by” when this person approves or declines a leave or permit.';
 // a readable temporary password, e.g. "Bear-4821-Gold"
 const tempPass=()=>{const w=['Bear','Gold','Star','Sun','Leaf','Wave','Rock','Lake'],r=n=>w[crypto.getRandomValues(new Uint32Array(1))[0]%n];return`${r(8)}-${1000+crypto.getRandomValues(new Uint32Array(1))[0]%9000}-${r(8)}`};
 const passField=v=>field({id:'us-pw',name:'password',label:'Temporary password',req:1,value:v,attrs:'minlength="8" autocomplete="off"',help:'At least 8 characters. Copy it now and give it to the person; it is not shown again.'});
@@ -1557,12 +1554,11 @@ function userForm(id){
       (u?`<div class="field"><label>Email</label><div class="ro-val">${esc(u.email)}</div></div>`:field({id:'us-email',name:'email',label:'Email',type:'email',req:1,attrs:'autocomplete="off"',help:'They sign in with this email.'}))+
       field({id:'us-role',name:'role',label:'Access',type:'select',blank:false,value:u&&u.role==='admin'?'admin':'custom',opts:accessOpts})+
       accessGrid(u?u.access:{})+
-      field({id:'us-ap',name:'approver',label:'Approves as',type:'select',blank:false,value:u?u.approver:'',opts:approverOpts,help:approverHelp})+
       (u?'':passField(tempPass())),
     wide:true,onOpen:wireAccessGrid,
     onSubmit:async(fd,f)=>{
       f.querySelectorAll('.formerr').forEach(e=>e.remove());
-      const b={name:fd.get('name'),role:fd.get('role'),approver:fd.get('approver'),access:accessFrom(fd)};
+      const b={name:fd.get('name'),role:fd.get('role'),access:accessFrom(fd)};
       if(b.role!=='admin'&&Object.values(b.access).some(a=>a.sites&&!a.sites.length&&a.view)){f.querySelector('.mbody').insertAdjacentHTML('afterbegin','<div class="formerr" role="alert">A part with “All sites” unticked needs at least one site ticked.</div>');return false}
       const r=await userCall(u?{action:'update',id,...b}:{action:'create',email:fd.get('email'),password:fd.get('password'),...b},f);
       if(r!==false)toast(u?'Account updated.':`Account created for ${fd.get('email')}. Give them their temporary password.`);
