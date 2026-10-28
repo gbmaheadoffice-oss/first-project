@@ -704,7 +704,8 @@ const pwdChip=e=>e&&e.pwd?` <span class="chip ${pwdExpired(e)?'warn':'info'}" ti
 const soloChip=e=>e&&e.soloParent?` <span class="chip ${soloExpired(e)?'warn':'solo'}" title="${soloExpired(e)?'Solo Parent ID expired':'Solo parent'}">${ic('users')}Solo parent${soloExpired(e)?' · ID expired':''}</span>`:'';
 const sampleChip=o=>o&&o.sample?' <span class="chip sample">Sample</span>':'';
 const uname=id=>id?`<span data-uid="${esc(id)}">HR</span>`:'HR';
-// who approved or declined a leave or permit: the name typed in the decision window, else the account
+// who approved or declined a leave or permit: the approver picked in the decision window, else the account
+const APPROVERS={HR:'hrd02.goldenbear@gmail.com',Owner:'gladness311@gmail.com'};
 const byName=r=>r.decidedName?esc(r.decidedName):uname(r.decidedBy);
 function nextNo(col,prefix){const y=new Date().getFullYear();const re=new RegExp('^'+prefix+'-'+y+'-(\\d+)$');let max=0;S[col].forEach(x=>{const m=re.exec(x.no||'');if(m)max=Math.max(max,+m[1])});return`${prefix}-${y}-${String(max+1).padStart(3,'0')}`}
 function nextEmpNo(client,hire){return makeEmpId(client||'',hire||today(),nextSeq())}
@@ -2313,9 +2314,9 @@ function decide(id,k){
     ?`<dl class="summary"><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${esc(rec.type)}</dd><dt>Dates</dt><dd>${fmt(rec.from)} – ${fmt(rec.to)} (${rec.days} day${rec.days===1?'':'s'})</dd><dt>Reason</dt><dd>${esc(rec.reason)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>`
     :`<dl class="summary"><dt>Permit</dt><dd>${esc(rec.no)}</dd><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${ptwLeaveText(rec)}</dd><dt>Return to work</dt><dd>${fmt(rec.returnDate)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>${!dec&&needsFit(rec)?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached. Check that the employee is fit to work before issuing the permit.</span></div>`:''}`;
   const what=col==='leaves'?'leave request':'permit to work';const isPtwIssue=col==='permits'&&!dec;
-  // the HR staff share one login for now, so whoever decides types their name (suggested from earlier decisions)
-  const names=[...new Set(['leaves','permits'].flatMap(c=>S[c].map(x=>x.decidedName)).filter(Boolean))].sort();
-  const byField=field({id:'dc-by',name:'decidedName',label:dec?'Declined by':isPtwIssue?'Issued by':'Approved by',req:1,attrs:'list="dc-by-list" autocomplete="off"',help:'Your name, as it should appear on the request and in Jotform.'})+`<datalist id="dc-by-list">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
+  // the staff share one login for now, so whoever decides picks who they are. On Jotform requests, HR closes only
+  // the HR approval step; Owner (the final approver) closes the rest of the workflow too.
+  const byField=field({id:'dc-by',name:'decidedName',label:dec?'Declined by':isPtwIssue?'Issued by':'Approved by',type:'select',req:1,opts:Object.entries(APPROVERS).map(([k,v])=>[k,`${k} – ${v}`]),help:rec.source==='jotform'?'HR: Gladys still approves in Jotform. Owner: the Jotform workflow is finished.':''});
   openModal({title:isPtwIssue?'Issue Permit to Work':`${dec?'Decline':'Approve'} ${what}`,body:sum+(col==='leaves'&&!dec?creditPanel(rec):'')+byField+field({id:'dc-rem',name:'remarks',label:dec?'Reason for declining':'Remarks (optional)',type:'textarea',req:dec,attrs:'style="min-height:80px"',help:dec?'The employee sees this reason.':''}),
     submitLabel:dec?'Decline':isPtwIssue?'Issue permit':'Approve',submitClass:dec?'bad':'ok',
     onSubmit:async fd=>{

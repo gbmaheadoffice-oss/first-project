@@ -432,12 +432,14 @@ async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) 
 }
 
 // ---------- decisions made in the HRIS -> the Jotform approval workflows ----------
-// When HR approves or declines a Jotform request in the HRIS, the HR approval step still open in its workflow is
-// completed with the same outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY),
-// with who decided in the HRIS and HR's remarks as the comment. The final approver's step (Gladys) is never completed from here: she still
-// approves in Jotform. The result is kept in jotformPush so each request is sent once.
+// When a Jotform request is approved or declined in the HRIS, its open approval steps are completed with the same
+// outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY), with who decided and the
+// remarks as the comment. The decider is picked in the HRIS: "HR" completes only the HR step, so the final approver
+// (Gladys) still approves in Jotform; "Owner" is Gladys herself and finishes the workflow. The result is kept in
+// jotformPush so each request is sent once.
 const MAX_PUSH = 10; // requests per run; the rest go on the next runs
 const FINAL_APPROVER = "gladness311@gmail.com";
+const APPROVERS: Record<string, string> = { HR: "hrd02.goldenbear@gmail.com", Owner: FINAL_APPROVER };
 async function jfWrite(path: string, body?: unknown) {
   const r = await fetch(`${JF}${path}`, {
     method: body ? "POST" : "GET",
@@ -457,21 +459,28 @@ async function pushDecisions(col: "leaves" | "permits") {
   const names = new Map(((users ?? []) as Doc[]).map((u) => [u.id, s(u.name)]));
   for (const d of todo) {
     const type = d.status === "Approved" ? "APPROVE" : "DENY", done: string[] = [];
-    // e.g. "Approved in HRIS by Golden Bear Manpower Agency: 1st SL of the month, allowable w/o medcert"
-    const comment = `${d.status} in HRIS by ${s(d.decidedName) || names.get(d.decidedBy) || "HR"}${s(d.remarks) ? ": " + s(d.remarks) : ""}`;
+    // e.g. "Approved in HRIS by HR (hrd02.goldenbear@gmail.com): 1st SL of the month, allowable w/o medcert"
+    const by = s(d.decidedName), owner = by === "Owner";
+    const who = APPROVERS[by] ? `${by} (${APPROVERS[by]})` : by || names.get(d.decidedBy) || "HR";
+    const comment = `${d.status} in HRIS by ${who}${s(d.remarks) ? ": " + s(d.remarks) : ""}`;
     let result = "sent";
     try {
-      const w = await jfWrite(`/workflow/instance/${d.jotform.submissionId}`);
-      const open = (w.taskList ?? []).filter((t: Doc) => t.status === "ACTIVE" && s(t.properties?.taskName) === "Approval");
-      const hr = open.filter((t: Doc) => s(t.properties?.assigneeEmail).toLowerCase() !== FINAL_APPROVER);
-      if (w.status === "COMPLETED") result = "already finished in Jotform";
-      else if (!hr.length) result = open.length ? "HR step already done; waiting for the final approver" : "no open approval step";
-      for (const t of hr) {
-        const task = await jfWrite(`/workflow/task/${t.id}`);
-        const outcome = (task.element?.outcomes ?? []).find((o: Doc) => o.type === type);
-        if (!outcome) throw new Error(`no ${type} button on the approval step`);
-        await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID, comment });
-        done.push(s(t.properties?.assigneeEmail));
+      // completing the HR step opens the final approver's, so the Owner's decision looks again after each step
+      for (let round = 0; round < 5; round++) {
+        const w = await jfWrite(`/workflow/instance/${d.jotform.submissionId}`);
+        const open = (w.taskList ?? []).filter((t: Doc) => t.status === "ACTIVE" && s(t.properties?.taskName) === "Approval");
+        const mine = owner ? open : open.filter((t: Doc) => s(t.properties?.assigneeEmail).toLowerCase() !== FINAL_APPROVER);
+        if (done.length && !mine.length) break;
+        if (w.status === "COMPLETED") { result = "already finished in Jotform"; break; }
+        if (!mine.length) { result = open.length ? "HR step already done; waiting for the final approver" : "no open approval step"; break; }
+        for (const t of mine) {
+          const task = await jfWrite(`/workflow/task/${t.id}`);
+          const outcome = (task.element?.outcomes ?? []).find((o: Doc) => o.type === type);
+          if (!outcome) throw new Error(`no ${type} button on the approval step`);
+          await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID, comment });
+          done.push(s(t.properties?.assigneeEmail));
+        }
+        if (!owner) break;
       }
     } catch (e) {
       result = "error: " + String((e as Error)?.message ?? e);
