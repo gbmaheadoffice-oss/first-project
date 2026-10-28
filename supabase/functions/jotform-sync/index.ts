@@ -2,7 +2,8 @@
 //   GBMA Online Job Application Form -> "applicants" (only the answers are refreshed; HR's status and notes are kept)
 //   GBMA Leave Form                  -> "leaves"  (new requests start as Pending)
 //   GBMA Permit to Work              -> "permits" (new requests start as Pending, linked to their leave)
-//   Approve/Deny in the Jotform approval workflows is copied to requests still Pending in the HRIS
+//   Approve/Deny in the Jotform approval workflows is copied to requests still Pending in the HRIS,
+//   and Approve/Decline done in the HRIS is sent back to those workflows
 // Runs every 5 minutes from pg_cron, and on demand from the HRIS "Check Jotform now" buttons.
 import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 
@@ -430,6 +431,58 @@ async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) 
   return { checked: open.length, decided: rows.filter((r) => r.sync.status).length, written: await save(col, rows) };
 }
 
+// ---------- decisions made in the HRIS -> the Jotform approval workflows ----------
+// When HR approves or declines a Jotform request in the HRIS, every approval step still open in its workflow is
+// completed with the same outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY),
+// so the workflow finishes and Jotform sends its usual emails. Only decisions made from PUSH_SINCE on are sent; the
+// result is kept in jotformPush so each request is sent once.
+const PUSH_SINCE = "2026-10-28T04:00:00Z";
+const MAX_PUSH = 10; // requests per run; the rest go on the next runs
+async function jfWrite(path: string, body?: unknown) {
+  const r = await fetch(`${JF}${path}`, {
+    method: body ? "POST" : "GET",
+    headers: { APIKEY: env("JOTFORM_WRITE_KEY"), ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || j?.responseCode !== 200) throw new Error(`${r.status} ${j?.message ?? ""}`.trim());
+  return j.content as Doc;
+}
+async function pushDecisions(col: "leaves" | "permits") {
+  if (!env("JOTFORM_WRITE_KEY")) return { skipped: "no JOTFORM_WRITE_KEY" };
+  const todo = (await docs(col)).filter((d) => d.source === "jotform" && d.jotform?.submissionId && !d.jotformPush &&
+    (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform" && (d.decidedAt || "") >= PUSH_SINCE).slice(0, MAX_PUSH);
+  const rows = [];
+  for (const d of todo) {
+    const type = d.status === "Approved" ? "APPROVE" : "DENY", done: string[] = [];
+    let result = "sent";
+    try {
+      // completing one step opens the next (HR Staff, then Gladys), so look again after each one
+      for (let round = 0; round < 5; round++) {
+        const w = await jfWrite(`/workflow/instance/${d.jotform.submissionId}`);
+        if (w.status === "COMPLETED") { if (!done.length) result = "already finished in Jotform"; break; }
+        const open = (w.taskList ?? []).filter((t: Doc) => t.status === "ACTIVE" && s(t.properties?.taskName) === "Approval");
+        if (!open.length) { result = done.length ? "sent" : "no open approval step"; break; }
+        for (const t of open) {
+          const task = await jfWrite(`/workflow/task/${t.id}`);
+          const outcome = (task.element?.outcomes ?? []).find((o: Doc) => o.type === type);
+          if (!outcome) throw new Error(`no ${type} button on the approval step`);
+          await jfWrite(`/workflow/task/${t.id}/complete`, { outcomeID: outcome.outcomeID });
+          done.push(s(t.properties?.assigneeEmail));
+        }
+      }
+    } catch (e) {
+      result = "error: " + String((e as Error)?.message ?? e);
+    }
+    // errors are retried on the next runs, up to 3 times
+    // sync.jotform is sent back unchanged: the upsert rewrites it on decided records
+    const tries = (d.jotformPushError?.tries ?? 0) + 1, keep = { jotform: d.jotform };
+    if (result.startsWith("error") && tries < 3) { rows.push({ id: d.id, sync: keep, set: { jotformPushError: { tries, result, at: new Date().toISOString() } } }); continue; }
+    rows.push({ id: d.id, sync: keep, set: { jotformPush: { outcome: d.status, steps: done, result, at: new Date().toISOString() } } });
+  }
+  return { sent: rows.length, written: await save(col, rows) };
+}
+
 async function syncApplicants(full: boolean) {
   const subs = await fetchSubs(FORM_ID, await sinceFor("hris_applicants_last_created", {}, full));
   const rows = subs.map((x) => ({
@@ -466,6 +519,8 @@ Deno.serve(async (req) => {
       const byId = new Map(emps.map((e) => [e.id, e]));
       out.leaveDecisions = await syncDecisions("leaves", byId);
       out.permitDecisions = await syncDecisions("permits", byId);
+      out.leavePush = await pushDecisions("leaves");
+      out.permitPush = await pushDecisions("permits");
     }
   } catch (e) {
     return json({ ...out, ok: false, error: String((e as Error)?.message ?? e) }, 502);
