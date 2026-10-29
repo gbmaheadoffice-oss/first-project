@@ -508,6 +508,7 @@ const P={
   award:'<circle cx="12" cy="8" r="6"/><path d="M15.5 12.9 17 22l-5-3-5 3 1.5-9.1"/>',
   alert:'<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4M12 17h.01"/>',
   clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  ot:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4M19 6l-1.5 1.5"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
   copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
@@ -652,8 +653,8 @@ const susDays=label=>{const r=/^(\d+) Days/.exec(label||'');return r?+r[1]:0};
 function susEnd(from,days){let d=from,k=1;while(parse(d).getDay()===0)d=addDays(d,1);const start=d;while(k<days){d=addDays(d,1);if(parse(d).getDay()!==0)k++}return{from:start,to:d,resume:nextWorkday(d)}}
 
 /* ---------------- state + storage ---------------- */
-const COLS=['employees','leaves','permits','memos','attendance','applicants','clientevals','evalinvites'];
-const S={employees:[],leaves:[],permits:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[]};
+const COLS=['employees','leaves','permits','overtime','memos','attendance','applicants','clientevals','evalinvites'];
+const S={employees:[],leaves:[],permits:[],overtime:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 let ME={role:'',approver:'',access:null}; // the signed-in account's access (Settings → User access)
@@ -663,8 +664,8 @@ let ME={role:'',approver:'',access:null}; // the signed-in account's access (Set
 // (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
 // ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
 const PARTS={applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications'};
-const PART_OF={applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',evaluations:'evaluations',memos:'comms',cmemos:'comms',holidays:'comms',settings:'admin'};
-const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',memos:'comms',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
+const PART_OF={applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',evaluations:'evaluations',memos:'comms',cmemos:'comms',holidays:'comms',settings:'admin'};
+const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
 const acc=p=>{
   if(ME.role==='admin')return{view:true,edit:true,sites:null};
   if(p==='admin')return{view:false,edit:false,sites:null};
@@ -683,7 +684,7 @@ function siteOf(c,r){
 const siteOK=(p,site)=>{const s=acc(p).sites;return!s||site==null||s.includes(site)};
 const recOK=(p,c,r)=>canView(p)&&siteOK(p,siteOf(c,r));
 // which records each page lists, so every page only shows the sites its part allows
-const PAGE_COLS={employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees']};
+const PAGE_COLS={employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees']};
 // run fn with S limited to what the account may see: on a page, by that page's part; on the dashboard and in the
 // menu counts, each kind of record by its own part
 function scoped(rt,fn){
@@ -704,7 +705,7 @@ const mayWrite=col=>canEdit(COL_PART[col]||'')||pageEdit();
 const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees','del-file':'employees','import-201':'employees','change-status':'employees','cross-check':'employees',
   'set-eoc':'evaluations','eop-notice':'evaluations','reg-contract':'evaluations',
   'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves',
-  'att-edit':'attendance','att-import':'attendance','pol-save':'attendance','pol-discard':'attendance',
+  'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
   'issue-memo':'comms','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants',
   'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
@@ -715,7 +716,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -817,6 +818,7 @@ const ROUTES={
   leaves:{t:'Leave Management',nav:'Leave Approvals',icon:'cal'},
   attendance:{t:'Attendance',nav:'Attendance',icon:'clock'},
   attpolicy:{t:'Attendance',nav:'Cut-offs & Late Counting',icon:'cal'},
+  overtime:{t:'Attendance',nav:'Overtime Requests',icon:'ot'},
   permits:{t:'Leave Management',nav:'Permit to Work Approvals',icon:'hat'},
   leavereport:{t:'Leave Management',nav:'Leave Summary Report',icon:'clip'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
@@ -827,7 +829,7 @@ const ROUTES={
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -840,18 +842,19 @@ function counts(){
     applicants:S.applicants.filter(a=>(a.status||'New')==='New').length,
     leaves:S.leaves.filter(l=>l.status==='Pending').length,
     permits:S.permits.filter(p=>p.status==='Pending').length,
+    overtime:S.overtime.filter(o=>o.status==='Pending').length,
     evals:evalQueue(14).filter(x=>x.k!=='reg').length,
     memos:S.memos.filter(m=>memoCat(m)==='disc'&&m.status==='Open').length
   };
 }
 function renderNav(){
-  const c=scoped('dashboard',counts);if(!canView('applicants'))c.applicants=0;if(!canView('leaves'))c.leaves=c.permits=0;if(!canView('evaluations'))c.evals=0;if(!canView('comms'))c.memos=0;
-  const tot=c.leaves+c.permits+c.evals+c.memos;
+  const c=scoped('dashboard',counts);if(!canView('applicants'))c.applicants=0;if(!canView('leaves'))c.leaves=c.permits=0;if(!canView('attendance'))c.overtime=0;if(!canView('evaluations'))c.evals=0;if(!canView('comms'))c.memos=0;
+  const tot=c.leaves+c.permits+c.overtime+c.evals+c.memos;
   const link=(r,n)=>!canView(PART_OF[r])?'':`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att')}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
 function render(focus){
   EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>EMP[e.id]=e);
@@ -879,7 +882,7 @@ async function resolveNames(){
   try{const ps=await USER.profiles(ids);els.forEach(el=>{const p=ps[el.dataset.uid];if(p&&p.name)el.textContent=p.name})}catch(e){}
 }
 // tabs at the top of a page in a menu group (Leave Management, Company Communications)
-const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,memos:c.memos};
+const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,overtime:c.overtime,memos:c.memos};
   return`<div class="tabs" role="tablist" aria-label="${NAV_GROUPS[g].name}" style="margin:-4px 0 18px">${NAV_GROUPS[g].routes.map(r=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(ROUTES[r].icon)}${ROUTES[r].nav}${n[r]!=null?`<span class="n">${n[r]}</span>`:''}</button>`).join('')}</div>`};
 const ph=(title,sub,actions='')=>`<div class="ph"><div><h2>${title}</h2><p>${sub}</p></div>${actions?`<div class="qa">${actions}</div>`:''}</div>`;
 const empOpts=(sel,all)=>{const list=S.employees.filter(e=>all||isActive(e)).sort(sortName);return`<option value="">Select employee</option>`+list.map(e=>`<option value="${e.id}" ${e.id===sel?'selected':''}>${esc(e.lastName)}, ${esc(e.firstName)} · ${esc(e.empNo)}</option>`).join('')};
@@ -1035,6 +1038,41 @@ VIEWS.permits=function(){
   return h+'</section>';
 };
 
+/* ---- Overtime Requests: from the Jotform "Overtime Request Form"; HR approves or declines ---- */
+const otHours=o=>{const n=Number(o.hours)||0;return`${n} hour${n===1?'':'s'}`};
+VIEWS.overtime=function(){
+  const f=UI.ot;const q=f.q.trim().toLowerCase();
+  const cnt=s=>s==='All'?S.overtime.length:S.overtime.filter(o=>o.status===s).length;
+  let list=S.overtime.filter(o=>f.tab==='All'||o.status===f.tab);
+  if(q)list=list.filter(o=>[reqName(o),o.department,o.reason,siteClient(o),siteLoc(o)].join(' ').toLowerCase().includes(q));
+  list.sort((a,b)=>f.tab==='Pending'?((a.date||'')<(b.date||'')?-1:1):((b.date||'')<(a.date||'')?-1:1));
+  const hrs=list.filter(o=>o.status==='Approved').reduce((t,o)=>t+(Number(o.hours)||0),0);
+  let h=groupTabs()+ph('Overtime Requests','Overtime requests from the Overtime Request Form on Jotform appear here within 5 minutes. Review each request and approve or decline it.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  h+=fbtnsHtml('ot','Show overtime requests',STATUS_BTNS.map(([v,i,t])=>[v,cnt(v),v==='All'?'ot':i,t]),f.tab);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-ot-q','ot.q',f.q,'Search employee, department, reason, site')}${hrs?`<span class="help" style="margin-left:auto">Approved in this list: <b class="num">${r4(hrs)}</b> hour${hrs===1?'':'s'}</span>`:''}</div>`;
+  if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending overtime requests':'No overtime requests here',f.tab==='Pending'?'Overtime requests filed on Jotform appear here for approval.':'Try another tab or search.');
+  else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th>Site Location</th><th>Date of Overtime</th><th class="r">Hours</th><th>Reason</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
+    ${list.map(o=>`<tr class="click" data-act="view-ot" data-id="${o.id}" tabindex="0"><td><div class="nm">${esc(reqName(o))}${reqChips(o)}</div><div class="sub">${esc(o.department||'')}${o.department?' · ':''}Filed ${fmtTs(o.filedAt)}</div></td><td>${siteCell(o)}</td><td class="num" style="white-space:nowrap"><b>${fmt(o.date)}</b></td><td class="num r">${esc(String(o.hours??''))}</td><td style="max-width:260px"><div class="sub" style="color:var(--ink);overflow-wrap:anywhere">${esc((o.reason||'—').slice(0,140))}</div></td><td>${statusChip(o.status)}${o.decidedAt?`<div class="sub">by ${decider(o)}</div>`:''}</td>
+      <td><div class="acts" data-write>${o.status==='Pending'?`<button class="btn sm ok" data-act="decide-ot" data-id="${o.id}" data-k="overtime:Approved">Approve</button><button class="btn sm bad-ghost" data-act="decide-ot" data-id="${o.id}" data-k="overtime:Declined">Decline</button>`:''}</div></td></tr>`).join('')}
+  </tbody></table></div>`;
+  return h+'</section>';
+};
+function viewOvertime(id){
+  const o=S.overtime.find(x=>x.id===id);if(!o)return;const e=EMP[o.employeeId];
+  const acts=o.status==='Pending'?`<button type="button" class="btn bad-ghost" data-write id="vo-dec">Decline</button><button type="button" class="btn ok" data-write id="vo-app">Approve</button>`:'';
+  openModal({title:`Overtime · ${esc(reqName(o))}`,wide:1,
+    body:`<div style="display:flex;gap:8px;flex-wrap:wrap">${statusChip(o.status)}${reqChips(o)}</div>
+    <dl class="kv"><div><dt>Employee</dt><dd>${esc(reqName(o))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(o)}
+    <div><dt>Date of overtime</dt><dd><b>${fmt(o.date)}</b></dd></div><div><dt>Hours requested</dt><dd><b>${otHours(o)}</b></dd></div>
+    <div><dt>Department</dt><dd>${esc(o.department||(e&&e.department)||'—')}</dd></div><div><dt>Filed on</dt><dd>${fmtTs(o.filedAt)}</dd></div>
+    <div><dt>Status</dt><dd>${esc(o.status)}${o.decidedAt?` by ${decider(o)} · ${fmtTs(o.decidedAt)}`:''}</dd></div>
+    <div style="grid-column:1/-1"><dt>Reason for overtime</dt><dd style="white-space:pre-wrap">${esc(o.reason||'—')}</dd></div>
+    ${o.remarks?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(o.remarks)}</dd></div>`:''}</dl>
+    ${jfSection('overtime',o)}`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button>${acts}`,
+    onOpen:f=>{const b=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};b('#vo-app',()=>decide(id,'overtime:Approved'));b('#vo-dec',()=>decide(id,'overtime:Declined'));b('#jf-link-btn',()=>linkReq('overtime',id,f.querySelector('#jf-link').value))}});
+  resolveNames();
+}
 /* ---- Leave Summary Report: approved leaves in a period and whether each one has a Permit to Work ---- */
 const LREP_TABS=['All','Permit issued','Permit pending','Permit declined','No permit filed','Not yet back'];
 function lrepStatus(l){const p=permitFor(l);const back=nextWorkday(l.to);
@@ -2487,10 +2525,12 @@ function decide(id,k){
   const[col,status]=k.split(':');const rec=S[col].find(x=>x.id===id);if(!rec)return;
   const dec=status==='Declined';const e=EMP[rec.employeeId];
   if(!e&&!dec)return toast('Link this request to the employee’s 201 file first: open it and use Link to employee.',{kind:'bad'});
-  const sum=col==='leaves'
+  const sum=col==='overtime'
+    ?`<dl class="summary"><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Date of overtime</dt><dd>${fmt(rec.date)}</dd><dt>Hours</dt><dd>${otHours(rec)}</dd><dt>Reason</dt><dd>${esc(rec.reason||'—')}</dd></dl>`
+    :col==='leaves'
     ?`<dl class="summary"><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${esc(rec.type)}</dd><dt>Dates</dt><dd>${fmt(rec.from)} – ${fmt(rec.to)} (${rec.days} day${rec.days===1?'':'s'})</dd><dt>Reason</dt><dd>${esc(rec.reason)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>`
     :`<dl class="summary"><dt>Permit</dt><dd>${esc(rec.no)}</dd><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${ptwLeaveText(rec)}</dd><dt>Return to work</dt><dd>${fmt(rec.returnDate)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>${!dec&&needsFit(rec)?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached. Check that the employee is fit to work before issuing the permit.</span></div>`:''}`;
-  const what=col==='leaves'?'leave request':'permit to work';const isPtwIssue=col==='permits'&&!dec;
+  const what=col==='leaves'?'leave request':col==='overtime'?'overtime request':'permit to work';const isPtwIssue=col==='permits'&&!dec;
   // the staff share one login for now, so whoever decides picks who they are. On Jotform requests, HR closes only
   // the HR approval step; Owner (the final approver) closes the rest of the workflow too.
   const byField=field({id:'dc-by',name:'decidedName',label:dec?'Declined by':isPtwIssue?'Issued by':'Approved by',type:'select',req:1,value:ME.approver,opts:Object.entries(APPROVERS).map(([k,v])=>[k,`${k} – ${v}`]),help:rec.source==='jotform'?'HR: Gladys still approves in Jotform. Owner: the Jotform workflow is finished.':''});
@@ -2503,7 +2543,7 @@ function decide(id,k){
       if(status==='Declined'){delete o.creditDays;delete o.unpaidDays}
       if(col==='permits'&&status==='Approved')o.issuedOn=today();
       await save(col,o);
-      toast(`${col==='leaves'?'Leave request':rec.no} ${col==='permits'&&status==='Approved'?'issued':status.toLowerCase()}.${extra}`,{undo:()=>save(col,prev)});
+      toast(`${col==='leaves'?'Leave request':col==='overtime'?'Overtime request':rec.no} ${col==='permits'&&status==='Approved'?'issued':status.toLowerCase()}.${extra}`,{undo:()=>save(col,prev)});
     }});
 }
 function ptwDoc(p){
@@ -2536,7 +2576,7 @@ function viewPermit(id){
       b('#vp-copy',async()=>{try{await navigator.clipboard.writeText(ptwText(p));toast('Permit text copied.')}catch(err){const r=document.createRange();r.selectNodeContents(f.querySelector('.memo-doc'));const s=getSelection();s.removeAllRanges();s.addRange(r);toast('Text selected. Press Ctrl+C to copy.')}})}});
   resolveNames();
 }
-const JF_FORMS={leaves:'261329099923466',permits:'261331432840448'};
+const JF_FORMS={leaves:'261329099923466',permits:'261331432840448',overtime:'263009342008044'};
 /* Decisions made in the Jotform approval workflow (HR Staff, then Gladys Espedillon) come in as r.jotformDecision */
 const decider=r=>r.decidedVia==='jotform'?esc([...new Set(((r.jotformDecision||{}).steps||[]).map(x=>x.by))].join(', ')||'Jotform')+' on Jotform':byName(r);
 function jfApproval(r){
@@ -2550,10 +2590,11 @@ function jfSection(col,r){
   const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;
   const dt=v=>v?fmt(String(v).slice(0,10))+(/\d{2}:\d{2}/.test(v)&&String(v).slice(11,16)!=='00:00'?' · '+String(v).slice(11,16):''):'';
   return`<section class="sect"><h4>From Jotform</h4>
-    ${EMP[r.employeeId]?'':`<div class="banner" style="background:var(--warn-bg)">${ic('alert')}<span class="grow">This request did not match a 201 file. The employee typed <b>${esc(j.name||'—')}</b> with ID <b>${esc(j.empNo||'—')}</b>. Link it to the right employee before approving.</span></div>
+    ${EMP[r.employeeId]?'':`<div class="banner" style="background:var(--warn-bg)">${ic('alert')}<span class="grow">This request did not match a 201 file. The employee typed <b>${esc(j.name||'—')}</b>${j.empNo?` with ID <b>${esc(j.empNo)}</b>`:''}${j.email?` (${esc(j.email)})`:''}. Link it to the right employee before approving.</span></div>
     <div data-write style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:10px 0 12px"><div class="field" style="flex:1 1 260px;margin:0"><label for="jf-link">Employee</label><select id="jf-link">${empOpts('',1)}</select></div><button type="button" class="btn" id="jf-link-btn">Link to employee</button></div>`}
     <dl class="kv">${kv('Name typed',j.name)}${kv('Employee ID typed',j.empNo)}${kv('Email',j.email)}${kv('Site assignment',j.site)}${kv('Regular work schedule',j.schedule)}
-    ${col==='leaves'?kv('Leave type chosen',j.leaveType)+kv('Leave date',dt(j.leaveDate))+kv('Return date',dt(j.returnDate))+kv('No. of days (Jotform)',j.days)
+    ${col==='overtime'?kv('Department typed',j.department)+kv('Date of overtime',j.date&&fmt(j.date))+kv('Hours requested',j.hours)
+      :col==='leaves'?kv('Leave type chosen',j.leaveType)+kv('Leave date',dt(j.leaveDate))+kv('Return date',dt(j.returnDate))+kv('No. of days (Jotform)',j.days)
       :kv('Date filed',j.dateFiled&&fmt(j.dateFiled))+kv('Absence',j.startDate?fmt(j.startDate)+' – '+fmt(j.endDate):'')+kv('Days of absence',j.days)+kv('Leave Submission ID# typed',j.leaveSubmissionId)}</dl>
     ${jfApproval(r)}
     <p style="margin:8px 0 0"><a class="link" href="https://www.jotform.com/inbox/${JF_FORMS[col]}/${esc(j.submissionId)}" target="_blank" rel="noopener">${ic('ext')}Open in Jotform</a></p></section>`;
@@ -2563,7 +2604,7 @@ async function linkReq(col,id,empId){
   if(!e)return toast('Choose the employee first.',{kind:'bad'});
   await save(col,{...clone(r),employeeId:e.id,client:e.client||'',site:e.site||''});
   toast(`Linked to ${fullName(e)}.`);
-  waitFor(()=>{const x=S[col].find(y=>y.id===id);return x&&x.employeeId===e.id},()=>col==='leaves'?viewLeave(id):viewPermit(id));
+  waitFor(()=>{const x=S[col].find(y=>y.id===id);return x&&x.employeeId===e.id},()=>col==='leaves'?viewLeave(id):col==='overtime'?viewOvertime(id):viewPermit(id));
 }
 function viewLeave(id){
   const l=S.leaves.find(x=>x.id===id);if(!l)return;const e=EMP[l.employeeId];
@@ -3213,6 +3254,7 @@ function renderDrawer(){
     const attM=today().slice(0,7),attPrev=(()=>{const d=parse(attM+'-01');d.setMonth(d.getMonth()-1);return iso(d).slice(0,7)})();
     const attLine=(m,s)=>`<button class="row" data-act="att-edit" data-id="${e.id}" data-k="${m}"><div class="grow"><span class="nm">${fmtMonth(m)}</span><div class="meta">${s.present} present · ${s.late} late (${hm(s.lateMin)}) · ${s.ut} undertime · ${s.absent} absent · ${s.leave} leave${s.norecord?` · ${s.norecord} no record`:''}</div></div>${s.perfect?`<span class="chip ok">${ic('award')}Perfect</span>`:s.late>3?`<span class="chip bad">${s.late} lates</span>`:s.ut>3?`<span class="chip warn">${s.ut} undertime</span>`:''}</button>`;
     body=`${silCard(e)}<section class="sect"><h4>Attendance</h4><div class="rows">${attLine(attM,attSummary(e,attM))}${attLine(attPrev,attSummary(e,attPrev))}</div></section><section class="sect"><h4>Leaves ·${used} approved day${used===1?'':'s'} this year</h4>${lv.length?`<div class="rows">${lv.map(l=>`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(l.type)}</span><div class="meta">${fmt(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}${l.status==='Approved'&&usesCredits(l)?` · SIL −${f2(creditUsed(l))}${l.unpaidDays?`, ${l.unpaidDays} unpaid`:''}`:''}</div></div>${statusChip(l.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No leave records.</p>'}</section>
+    ${(()=>{const ot=S.overtime.filter(o=>o.employeeId===e.id).sort((a,b)=>(a.date||'')<(b.date||'')?1:-1);return`<section class="sect"><h4>Overtime</h4>${ot.length?`<div class="rows">${ot.map(o=>`<button class="row" data-act="view-ot" data-id="${o.id}"><div class="grow"><span class="nm">${fmt(o.date)} · ${otHours(o)}</span><div class="meta" style="overflow-wrap:anywhere">${esc((o.reason||'').slice(0,90))}</div></div>${statusChip(o.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No overtime requests.</p>'}</section>`})()}
     <section class="sect"><h4>Permits to work</h4>${pm.length?`<div class="rows">${pm.map(p=>`<button class="row" data-act="view-permit" data-id="${p.id}"><div class="grow"><span class="nm">Return on ${fmt(p.returnDate)}</span><div class="meta">${esc(p.no)} · after ${esc((p.leaveType||'').toLowerCase())} leave ${fmtS(p.leaveFrom)} – ${fmtS(p.leaveTo)}</div></div>${statusChip(p.status==='Approved'?'Issued':p.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No permits.</p>'}</section>
     ${discRecord(e)}<section class="sect"><h4>Memos to this employee or their client</h4>${mm.length?`<div class="rows">${mm.map(m=>`<button class="row" data-act="view-memo" data-id="${m.id}"><div class="grow"><span class="nm">${esc(m.subject)}</span><div class="meta">${esc(m.no)} · ${esc(m.type)} · ${fmt(m.issuedOn)}</div></div>${statusChip(m.status)}</button>`).join('')}</div>`:'<p class="help" style="color:var(--muted)">No memos.</p>'}</section>`;
   }
@@ -3470,7 +3512,7 @@ async function syncJotform(el){
   if(!window.HRIS_SB)return;el.disabled=true;const t=el.innerHTML;el.textContent='Checking Jotform…';
   const req=el.dataset.k==='requests';
   try{const{data,error}=await window.HRIS_SB.functions.invoke('jotform-sync',{body:req?{only:'requests'}:{only:'applicants'}});if(error)throw error;
-    if(req){const n=((data.leaves||{}).written||0)+((data.permits||{}).written||0),dn=((data.leaveDecisions||{}).decided||0)+((data.permitDecisions||{}).decided||0);toast(n||dn?`${n} leave or permit request${n===1?'':'s'} added or updated${dn?`, ${dn} decided in Jotform`:''}.`:'No new leave or permit requests.')}
+    if(req){const w=k=>(data[k]||{}).written||0,dd=k=>(data[k]||{}).decided||0,n=w('leaves')+w('permits')+w('overtime'),dn=dd('leaveDecisions')+dd('permitDecisions')+dd('overtimeDecisions');toast(n||dn?`${n} leave, permit or overtime request${n===1?'':'s'} added or updated${dn?`, ${dn} decided in Jotform`:''}.`:'No new leave, permit or overtime requests.')}
     else toast(data&&data.written?`${data.written} application${data.written===1?'':'s'} added or updated.`:'No new applications.')}
   catch(e){toast('Could not reach Jotform. Try again in a minute.',{kind:'bad'})}
   finally{el.disabled=false;el.innerHTML=t}
@@ -3492,6 +3534,8 @@ const ACT={
   'issue-cmemo':(el,id,k)=>memoForm('co',null,k,id),
   'issue-hol':(el,id,k)=>memoForm('hol',null,k,id),
   decide:(el,id,k)=>decide(id,k),
+  'decide-ot':(el,id,k)=>decide(id,k),
+  'view-ot':(el,id)=>viewOvertime(id),
   'view-permit':(el,id)=>viewPermit(id),
   'view-memo':(el,id)=>viewMemo(id),
   eval:(el,id,k)=>evalForm(id,k),

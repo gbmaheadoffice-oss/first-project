@@ -2,6 +2,7 @@
 //   GBMA Online Job Application Form -> "applicants" (only the answers are refreshed; HR's status and notes are kept)
 //   GBMA Leave Form                  -> "leaves"  (new requests start as Pending)
 //   GBMA Permit to Work              -> "permits" (new requests start as Pending, linked to their leave)
+//   Overtime Request Form            -> "overtime" (new requests start as Pending)
 //   Approve/Deny in the Jotform approval workflows is copied to requests still Pending in the HRIS,
 //   and Approve/Decline done in the HRIS is sent back to those workflows
 // Runs every 5 minutes from pg_cron, and on demand from the HRIS "Check Jotform now" buttons.
@@ -10,6 +11,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 const FORM_ID = "261088132496057";
 const LEAVE_FORM = "261329099923466";
 const PERMIT_FORM = "261331432840448";
+const OT_FORM = "263009342008044";
 const JF = "https://api.jotform.com";
 const PAGE = 1000;
 const BUCKET = "hris-files";
@@ -323,6 +325,29 @@ async function syncPermits(full: boolean, match: ReturnType<typeof matcher>, sto
   return { fetched: subs.length, written: await save("permits", rows) };
 }
 
+// Overtime Request Form: Employee Name (2), Email (8), Department (3), Date of Overtime (4), Hours Requested (5),
+// Reason for Overtime (6). There is no employee ID on the form, so the employee is found by name, else by a unique email.
+async function syncOvertime(full: boolean, match: ReturnType<typeof matcher>, stored: Map<string, Doc>, emps: Doc[]) {
+  const subs = await fetchSubs(OT_FORM, await sinceFor("hris_jotform_last_created", { col: "overtime" }, full));
+  const rows = [];
+  for (const x of subs) {
+    const a = x.answers ?? {}, id = `jf-${x.id}`, prev = stored.get(id);
+    const n = parts(a, "2"), email = low(txt(a, "8"));
+    const byMail = email ? emps.filter((v) => low(v.email) === email) : [];
+    const e = match("", n) ?? (byMail.length === 1 ? byMail[0] : undefined);
+    const jotform = {
+      submissionId: x.id, formId: OT_FORM, createdAt: x.created_at, updatedAt: x.updated_at,
+      name: [n.first, n.middle, n.last, n.suffix].filter(Boolean).join(" "), firstName: n.first, lastName: n.last,
+      email: txt(a, "8"), department: txt(a, "3"), date: date(a, "4"), hours: txt(a, "5"),
+    };
+    const sync = { date: date(a, "4"), hours: Number(txt(a, "5")) || 0, department: txt(a, "3"), reason: txt(a, "6"), jotform };
+    const fill = e ? { employeeId: e.id, client: e.client ?? "", site: e.site ?? "" } : {};
+    if (!prev) rows.push({ id, data: { source: "jotform", employeeId: "", client: "", site: "", ...fill, ...sync, status: "Pending", filedAt: isoAt(x.created_at) }, sync, fill });
+    else rows.push({ id, sync, fill });
+  }
+  return { fetched: subs.length, written: await save("overtime", rows) };
+}
+
 // ---------- decisions from the Jotform approval workflows ----------
 // "GBMA Leave Form: Workflow" and "GBMA Permit to Work: Workflow" send each submission to HR Staff, then Gladys
 // Espedillon, who Approve or Deny it in Jotform. A request still Pending in the HRIS takes the same decision once the
@@ -395,7 +420,7 @@ function steps(w: Doc): Step[] {
     return { by: s(t.user?.name) || s(v.assigneeEmail), outcome: v.type === "APPROVE" ? "Approved" : "Denied", comment: s(v.comment) || comment.get(String(v.submissionID ?? "")) || "", at: isoAt(t.created_at) };
   });
 }
-async function syncDecisions(col: "leaves" | "permits", emps: Map<string, Doc>) {
+async function syncDecisions(col: "leaves" | "permits" | "overtime", emps: Map<string, Doc>) {
   const all = await docs(col), leaves = col === "leaves" ? all : [];
   const open = all.filter((d) => d.source === "jotform" && d.status === "Pending" && d.jotform?.submissionId);
   const found: { d: Doc; w: Doc }[] = [];
@@ -450,7 +475,7 @@ async function jfWrite(path: string, body?: unknown) {
   if (!r.ok || j?.responseCode !== 200) throw new Error(`${r.status} ${j?.message ?? ""}`.trim());
   return j.content as Doc;
 }
-async function pushDecisions(col: "leaves" | "permits") {
+async function pushDecisions(col: "leaves" | "permits" | "overtime") {
   if (!env("JOTFORM_WRITE_KEY")) return { skipped: "no JOTFORM_WRITE_KEY" };
   const todo = (await docs(col)).filter((d) => d.source === "jotform" && d.jotform?.submissionId && !d.jotformPush &&
     (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform").slice(0, MAX_PUSH);
@@ -516,22 +541,25 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const full = body?.full === true;
-  // only: "applicants" or "requests" (leaves and permits); left out = everything
+  // only: "applicants" or "requests" (leaves, permits and overtime); left out = everything
   const only = s(body?.only);
   copied = 0;
   const out: Record<string, unknown> = { ok: true, mode: full ? "full" : "incremental" };
   try {
     if (only !== "requests") out.applicants = await syncApplicants(full);
     if (only !== "applicants") {
-      const [emps, leaves, permits] = await Promise.all([docs("employees"), docs("leaves"), docs("permits")]);
+      const [emps, leaves, permits, overtime] = await Promise.all([docs("employees"), docs("leaves"), docs("permits"), docs("overtime")]);
       const match = matcher(emps);
       out.leaves = await syncLeaves(full, match, new Map(leaves.map((l) => [l.id, l])));
       out.permits = await syncPermits(full, match, new Map(permits.map((p) => [p.id, p])), await docs("leaves"));
+      out.overtime = await syncOvertime(full, match, new Map(overtime.map((o) => [o.id, o])), emps);
       const byId = new Map(emps.map((e) => [e.id, e]));
       out.leaveDecisions = await syncDecisions("leaves", byId);
       out.permitDecisions = await syncDecisions("permits", byId);
+      out.overtimeDecisions = await syncDecisions("overtime", byId);
       out.leavePush = await pushDecisions("leaves");
       out.permitPush = await pushDecisions("permits");
+      out.overtimePush = await pushDecisions("overtime");
     }
   } catch (e) {
     return json({ ...out, ok: false, error: String((e as Error)?.message ?? e) }, 502);

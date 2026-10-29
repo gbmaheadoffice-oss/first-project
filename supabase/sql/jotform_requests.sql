@@ -1,4 +1,5 @@
--- Jotform GBMA Leave Form -> hris_docs 'leaves', GBMA Permit to Work -> hris_docs 'permits'.
+-- Jotform GBMA Leave Form -> hris_docs 'leaves', GBMA Permit to Work -> hris_docs 'permits',
+-- Overtime Request Form -> hris_docs 'overtime'.
 -- Each row is {id, data, sync, fill, set}:
 --   data  the whole record, used only the first time the submission is seen (status 'Pending')
 --   sync  the employee's answers; refreshed while HR has not decided yet (status 'Pending'), otherwise only 'jotform'
@@ -8,7 +9,7 @@ create or replace function public.hris_upsert_jotform(col text, rows jsonb)
 returns integer language plpgsql security definer set search_path = public as $$
 declare r jsonb; d jsonb; nd jsonb; f jsonb; k text; n integer := 0;
 begin
-  if col not in ('leaves', 'permits') then raise exception 'unsupported collection %', col; end if;
+  if col not in ('leaves', 'permits', 'overtime') then raise exception 'unsupported collection %', col; end if;
   for r in select * from jsonb_array_elements(rows) loop
     select data into d from public.hris_docs where collection = col and id = r->>'id' for update;
     if not found then
@@ -43,10 +44,10 @@ $$;
 revoke all on function public.hris_jotform_last_created(text) from public, anon, authenticated;
 grant execute on function public.hris_jotform_last_created(text) to service_role;
 
--- Records jotform-sync and gform-eval need: employees, leaves, permits, and client evaluation answers and invitations.
+-- Records jotform-sync and gform-eval need: employees, leaves, permits, overtime, and client evaluation answers and invitations.
 create or replace function public.hris_jotform_docs(col text)
 returns setof jsonb language sql stable security definer set search_path = public as $$
-  select data from public.hris_docs where collection = col and col in ('employees', 'leaves', 'permits', 'clientevals', 'evalinvites');
+  select data from public.hris_docs where collection = col and col in ('employees', 'leaves', 'permits', 'overtime', 'clientevals', 'evalinvites');
 $$;
 revoke all on function public.hris_jotform_docs(text) from public, anon, authenticated;
 grant execute on function public.hris_jotform_docs(text) to service_role;
