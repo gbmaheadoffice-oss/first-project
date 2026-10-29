@@ -1588,7 +1588,7 @@ const tempPass=()=>{const w=['Bear','Gold','Star','Sun','Leaf','Wave','Rock','La
 const passField=v=>field({id:'us-pw',name:'password',label:'Temporary password',req:1,value:v,attrs:'minlength="8" autocomplete="off"',help:'At least 8 characters. Copy it now and give it to the person; it is not shown again.'});
 async function userCall(body,f){
   try{const r=await USER.admin(body);await loadUsers();return r}
-  catch(e){f.querySelector('.mbody').insertAdjacentHTML('afterbegin',`<div class="formerr" role="alert">${esc(e.message)}</div>`);return false}
+  catch(e){f.querySelector('.mbody').insertAdjacentHTML('afterbegin',`<div class="formerr" role="alert">${esc(e.message)}</div>`);f.querySelector('.formerr').scrollIntoView({block:'nearest'});return false}
 }
 function userForm(id){
   const u=id&&USERS.find(x=>x.id===id);
@@ -1602,7 +1602,7 @@ function userForm(id){
     onSubmit:async(fd,f)=>{
       f.querySelectorAll('.formerr').forEach(e=>e.remove());
       const b={name:fd.get('name'),role:fd.get('role'),access:accessFrom(fd)};
-      if(b.role!=='admin'&&Object.values(b.access).some(a=>a.sites&&!a.sites.length&&a.view)){f.querySelector('.mbody').insertAdjacentHTML('afterbegin','<div class="formerr" role="alert">A part with “All sites” unticked needs at least one site ticked.</div>');return false}
+      if(b.role!=='admin'&&Object.values(b.access).some(a=>a.sites&&!a.sites.length&&a.view)){f.querySelector('.mbody').insertAdjacentHTML('afterbegin','<div class="formerr" role="alert">A part with “All sites” unticked needs at least one site ticked.</div>');f.querySelector('.formerr').scrollIntoView({block:'nearest'});return false}
       const r=await userCall(u?{action:'update',id,...b}:{action:'create',email:fd.get('email'),password:fd.get('password'),...b},f);
       if(r!==false)toast(u?'Account updated.':`Account created for ${fd.get('email')}. Give them their temporary password.`);
       return r;
