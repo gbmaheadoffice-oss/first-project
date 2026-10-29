@@ -211,6 +211,15 @@ const db={
 /* ---------------- user ---------------- */
 const user={
   me:async()=>({id:ME.id,name:ME.name,email:ME.email,role:ME.role,approver:ME.approver,access:ME.access}),
+  /* re-reads the account from the server, so access changed in Settings reaches a HRIS that is already open */
+  refresh:async()=>{
+    const{data,error}=await sb.auth.getUser();
+    if(error&&/bann/i.test(error.message||'')){await sb.auth.signOut();location.replace(redirectTo());return null}
+    if(error||!data||!data.user)return null;
+    const am=data.user.app_metadata||{};
+    ME.role=['admin','staff','viewer'].includes(am.hris_role)?am.hris_role:'staff';ME.approver=am.approver||'';ME.access=am.hris_access||null;
+    return user.me();
+  },
   signOut,
   can:async what=>what==='data.write'?ME.role!=='viewer':what==='users.manage'?ME.role==='admin':true,
   /* Settings → User access: list, create, update, password, disable, enable (admins only, checked on the server) */

@@ -3629,6 +3629,22 @@ async function init(){
   if(user){
     try{const me=await user.me();MEID=me.id;ME={role:me.role||'staff',approver:me.approver||'',access:me.access||null,name:me.name||'',email:me.email||''};const av=$('#me');if(me.name){av.title=me.name;av.textContent=me.name.split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}}catch(e){}
     try{if(await user.can('data.write')===false)document.body.classList.add('ro')}catch(e){}
+    if(user.refresh){
+      // access changed in Settings applies without a reload: checked every minute and when the tab is opened again
+      let busy=false;
+      const check=async()=>{
+        if(busy||document.hidden)return;busy=true;
+        try{const me=await user.refresh();
+          if(me&&JSON.stringify([me.role,me.access])!==JSON.stringify([ME.role,ME.access])){
+            ME={...ME,role:me.role||'staff',approver:me.approver||'',access:me.access||null};
+            document.body.classList.toggle('ro',ME.role==='viewer');
+            refresh();toast('Your HRIS access was updated.');
+          }}catch(e){}
+        busy=false;
+      };
+      setInterval(check,60000);
+      document.addEventListener('visibilitychange',check);
+    }
   }
   if(db){
     DB=db;MODE='db';const got=new Set();
