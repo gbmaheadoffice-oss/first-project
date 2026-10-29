@@ -2593,7 +2593,7 @@ function jfSection(col,r){
     ${EMP[r.employeeId]?'':`<div class="banner" style="background:var(--warn-bg)">${ic('alert')}<span class="grow">This request did not match a 201 file. The employee typed <b>${esc(j.name||'—')}</b>${j.empNo?` with ID <b>${esc(j.empNo)}</b>`:''}${j.email?` (${esc(j.email)})`:''}. Link it to the right employee before approving.</span></div>
     <div data-write style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:10px 0 12px"><div class="field" style="flex:1 1 260px;margin:0"><label for="jf-link">Employee</label><select id="jf-link">${empOpts('',1)}</select></div><button type="button" class="btn" id="jf-link-btn">Link to employee</button></div>`}
     <dl class="kv">${kv('Name typed',j.name)}${kv('Employee ID typed',j.empNo)}${kv('Email',j.email)}${kv('Site assignment',j.site)}${kv('Regular work schedule',j.schedule)}
-    ${col==='overtime'?kv('Department typed',j.department)+kv('Date of overtime',j.date&&fmt(j.date))+kv('Hours requested',j.hours)
+    ${col==='overtime'?kv('ID number typed',j.empNo)+kv('Department typed',j.department)+kv('Date of overtime',j.date&&fmt(j.date))+kv('Hours requested',j.hours)
       :col==='leaves'?kv('Leave type chosen',j.leaveType)+kv('Leave date',dt(j.leaveDate))+kv('Return date',dt(j.returnDate))+kv('No. of days (Jotform)',j.days)
       :kv('Date filed',j.dateFiled&&fmt(j.dateFiled))+kv('Absence',j.startDate?fmt(j.startDate)+' – '+fmt(j.endDate):'')+kv('Days of absence',j.days)+kv('Leave Submission ID# typed',j.leaveSubmissionId)}</dl>
     ${jfApproval(r)}

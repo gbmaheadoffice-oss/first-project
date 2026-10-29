@@ -325,20 +325,20 @@ async function syncPermits(full: boolean, match: ReturnType<typeof matcher>, sto
   return { fetched: subs.length, written: await save("permits", rows) };
 }
 
-// Overtime Request Form: Employee Name (2), Email (8), Department (3), Date of Overtime (4), Hours Requested (5),
-// Reason for Overtime (6). There is no employee ID on the form, so the employee is found by name, else by a unique email.
+// Overtime Request Form: Employee Name (2), ID Number (9), Email (8), Department (3), Date of Overtime (4),
+// Hours Requested (5), Reason for Overtime (6). The employee is found by ID number or name, else by a unique email.
 async function syncOvertime(full: boolean, match: ReturnType<typeof matcher>, stored: Map<string, Doc>, emps: Doc[]) {
   const subs = await fetchSubs(OT_FORM, await sinceFor("hris_jotform_last_created", { col: "overtime" }, full));
   const rows = [];
   for (const x of subs) {
     const a = x.answers ?? {}, id = `jf-${x.id}`, prev = stored.get(id);
-    const n = parts(a, "2"), email = low(txt(a, "8"));
+    const n = parts(a, "2"), empNo = txt(a, "9"), email = low(txt(a, "8"));
     const byMail = email ? emps.filter((v) => low(v.email) === email) : [];
-    const e = match("", n) ?? (byMail.length === 1 ? byMail[0] : undefined);
+    const e = match(empNo, n) ?? (byMail.length === 1 ? byMail[0] : undefined);
     const jotform = {
       submissionId: x.id, formId: OT_FORM, createdAt: x.created_at, updatedAt: x.updated_at,
       name: [n.first, n.middle, n.last, n.suffix].filter(Boolean).join(" "), firstName: n.first, lastName: n.last,
-      email: txt(a, "8"), department: txt(a, "3"), date: date(a, "4"), hours: txt(a, "5"),
+      empNo, email: txt(a, "8"), department: txt(a, "3"), date: date(a, "4"), hours: txt(a, "5"),
     };
     const sync = { date: date(a, "4"), hours: Number(txt(a, "5")) || 0, department: txt(a, "3"), reason: txt(a, "6"), jotform };
     const fill = e ? { employeeId: e.id, client: e.client ?? "", site: e.site ?? "" } : {};
