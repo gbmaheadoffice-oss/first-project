@@ -777,9 +777,21 @@ const pwdChip=e=>e&&e.pwd?` <span class="chip ${pwdExpired(e)?'warn':'info'}" ti
 const soloChip=e=>e&&e.soloParent?` <span class="chip ${soloExpired(e)?'warn':'solo'}" title="${soloExpired(e)?'Solo Parent ID expired':'Solo parent'}">${ic('users')}Solo parent${soloExpired(e)?' · ID expired':''}</span>`:'';
 const sampleChip=o=>o&&o.sample?' <span class="chip sample">Sample</span>':'';
 const uname=id=>id?`<span data-uid="${esc(id)}">HR</span>`:'HR';
-// who approved or declined a leave or permit: the approver picked in the decision window, else the account
+// Leaves, permits and overtime are approved in two steps: HR first (hrd02), then the Owner, whose HRIS account is
+// gbmaheadoffice and whose Jotform account is gladness311. Only the Owner's approval makes a request Approved.
+// The HRIS account decides which step someone takes; other accounts that may edit take the HR step.
 const APPROVERS={HR:'hrd02.goldenbear@gmail.com',Owner:'gladness311@gmail.com'};
-const byName=r=>r.decidedName?esc(r.decidedName):uname(r.decidedBy);
+const STEP_OF={'hrd02.goldenbear@gmail.com':'HR','gbmaheadoffice@gmail.com':'Owner'};
+const myStep=()=>STEP_OF[(ME.email||'').toLowerCase()]||'HR';
+// the HR approval of a request still waiting for the Owner: given in the HRIS (r.hrApproval) or in Jotform
+function hrStep(r){
+  if(!r||r.status!=='Pending')return null;
+  if(r.hrApproval)return{by:r.hrApproval.name||'HR',at:r.hrApproval.at,via:'HRIS',remarks:r.hrApproval.remarks||''};
+  const x=((r.jotformDecision||{}).steps||[]).find(t=>t.outcome==='Approved');
+  return x?{by:x.by,at:x.at,via:'Jotform',remarks:x.comment||''}:null;
+}
+const hrChip=r=>{const h=hrStep(r);return h?` <span class="chip info" title="Approved by ${esc(h.by)} on ${h.via}, ${esc(fmtTs(h.at))}">${ic('check')}HR approved · waiting for Owner</span>`:''};
+const byName=r=>r.decidedName?esc(r.hrApproval&&r.decidedName==='Owner'&&r.status==='Approved'?'HR, then Owner':r.decidedName):uname(r.decidedBy);
 function nextNo(col,prefix){const y=new Date().getFullYear();const re=new RegExp('^'+prefix+'-'+y+'-(\\d+)$');let max=0;S[col].forEach(x=>{const m=re.exec(x.no||'');if(m)max=Math.max(max,+m[1])});return`${prefix}-${y}-${String(max+1).padStart(3,'0')}`}
 function nextEmpNo(client,hire){return makeEmpId(client||'',hire||today(),nextSeq())}
 /* Internal = GBMA office staff (employees assigned to Head Office). External = deployed employees and outside parties. */
@@ -930,7 +942,7 @@ VIEWS.dashboard=function(){
     ${q.length?`<div class="rows">${q.map(x=>`<button class="row" data-act="open-emp" data-id="${x.e.id}"><div class="grow"><span class="nm">${esc(fullName(x.e))}</span> <span class="meta">· ${x.label}</span></div>${stateChip(x.state,x.due)}<span class="dt">${fmtS(x.due)}</span></button>`).join('')}</div>`:emptyBlock('Nothing due','No evaluations or regularizations fall due in the next 30 days.')}</section>`;
   const pl=S.leaves.filter(l=>l.status==='Pending').sort((a,b)=>a.from<b.from?-1:1).slice(0,5);
   const leaveCard=`<section class="card"><div class="card-h"><h3>Pending Leave Requests — Next 5</h3><button class="link" data-act="nav" data-id="leaves">All requests${ic('arrow')}</button></div>
-    ${pl.length?`<div class="rows">${pl.map(l=>`<div class="row"><div class="grow"><span class="nm">${esc(reqName(l))}</span> <span class="meta">· ${esc(l.type)}</span><div class="dt">${fmtS(l.from)} – ${fmtS(l.to)} · ${l.days} day${l.days===1?'':'s'}${siteClient(l)?' · '+esc(siteClient(l)):''}${(l.attachments||[]).length?' · '+ic('pclip','i sm'):''}</div></div><div class="acts" data-write style="display:flex;gap:6px"><button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved" aria-label="Approve leave of ${esc(reqName(l))}">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined" aria-label="Decline leave of ${esc(reqName(l))}">Decline</button></div></div>`).join('')}</div>`:emptyBlock('All caught up','No leave requests are waiting for approval.')}</section>`;
+    ${pl.length?`<div class="rows">${pl.map(l=>`<div class="row"><div class="grow"><span class="nm">${esc(reqName(l))}</span> <span class="meta">· ${esc(l.type)}</span>${hrChip(l)}<div class="dt">${fmtS(l.from)} – ${fmtS(l.to)} · ${l.days} day${l.days===1?'':'s'}${siteClient(l)?' · '+esc(siteClient(l)):''}${(l.attachments||[]).length?' · '+ic('pclip','i sm'):''}</div></div><div class="acts" data-write style="display:flex;gap:6px"><button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved" aria-label="Approve leave of ${esc(reqName(l))}">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined" aria-label="Decline leave of ${esc(reqName(l))}">Decline</button></div></div>`).join('')}</div>`:emptyBlock('All caught up','No leave requests are waiting for approval.')}</section>`;
   const byCl={};active.forEach(e=>{byCl[e.client||'Unassigned']=(byCl[e.client||'Unassigned']||0)+1});
   const cls=Object.entries(byCl).sort((a,b)=>b[1]-a[1]);const mx=Math.max(1,...cls.map(d=>d[1]));
   const deptCard=`<section class="card"><div class="card-h"><h3>Deployed Headcount by Client</h3><span class="help" style="color:var(--muted)">${cls.length} of ${CLIENTS.length} clients staffed</span></div>${cls.length?`<div class="bars" role="list">${cls.map(([d,n])=>`<button class="bl link" style="text-align:left;padding:0;color:var(--muted);font-weight:500" data-act="client-filter" data-id="${esc(d)}" role="listitem">${esc(d)}</button><div class="bt" aria-hidden="true"><div class="bf" style="width:${(n/mx*100).toFixed(1)}%"></div></div><span class="bv">${n}</span>`).join('')}</div>`:emptyBlock('No active employees','')}</section>`;
@@ -978,7 +990,7 @@ VIEWS.employees=function(){
 const siteClient=r=>r.client||(EMP[r.employeeId]||{}).client||(r.jotform&&r.jotform.site)||'';
 /* Requests from Jotform keep what the employee typed (r.jotform); that name shows until HR links a 201 file */
 const reqName=r=>EMP[r.employeeId]?fullName(EMP[r.employeeId]):(r.jotform&&r.jotform.name)||'Unknown employee';
-const reqChips=r=>(r&&r.source==='jotform'?` <span class="chip info" title="Filed on Jotform">Jotform</span>`:'')+(r&&!EMP[r.employeeId]?` <span class="chip warn" title="Link this request to the employee's 201 file">${ic('alert')}No 201 match</span>`:'');
+const reqChips=r=>hrChip(r)+(r&&r.source==='jotform'?` <span class="chip info" title="Filed on Jotform">Jotform</span>`:'')+(r&&!EMP[r.employeeId]?` <span class="chip warn" title="Link this request to the employee's 201 file">${ic('alert')}No 201 match</span>`:'');
 const siteLoc=r=>r.site||(EMP[r.employeeId]||{}).site||'';
 const siteCell=r=>`<div style="max-width:220px">${esc(siteClient(r)||'—')}</div>${siteLoc(r)?`<div class="sub">${esc(siteLoc(r))}</div>`:''}`;
 const attCell=r=>{const n=(r.attachments||[]).length;return n?`<span class="chip info">${ic('pclip')}${n} file${n===1?'':'s'}</span>`:`<span class="sub">None</span>`};
@@ -2548,14 +2560,21 @@ function decide(id,k){
     :col==='leaves'
     ?`<dl class="summary"><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${esc(rec.type)}</dd><dt>Dates</dt><dd>${fmt(rec.from)} – ${fmt(rec.to)} (${rec.days} day${rec.days===1?'':'s'})</dd><dt>Reason</dt><dd>${esc(rec.reason)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>`
     :`<dl class="summary"><dt>Permit</dt><dd>${esc(rec.no)}</dd><dt>Employee</dt><dd>${esc(reqName(rec))}</dd><dt>Site location</dt><dd>${esc([siteClient(rec),siteLoc(rec)].filter(Boolean).join(' · ')||'—')}</dd><dt>Leave</dt><dd>${ptwLeaveText(rec)}</dd><dt>Return to work</dt><dd>${fmt(rec.returnDate)}</dd><dt>Attachment</dt><dd>${(rec.attachments||[]).length?(rec.attachments.length+' file'+(rec.attachments.length===1?'':'s')):'None'}</dd></dl>${!dec&&needsFit(rec)?`<div class="silline warn">${ic('alert')}<span>Return from <b>sick leave</b> with no fit-to-work or medical certificate attached. Check that the employee is fit to work before issuing the permit.</span></div>`:''}`;
-  const what=col==='leaves'?'leave request':col==='overtime'?'overtime request':'permit to work';const isPtwIssue=col==='permits'&&!dec;
-  // the staff share one login for now, so whoever decides picks who they are. On Jotform requests, HR closes only
-  // the HR approval step; Owner (the final approver) closes the rest of the workflow too.
-  const byField=field({id:'dc-by',name:'decidedName',label:dec?'Declined by':isPtwIssue?'Issued by':'Approved by',type:'select',req:1,value:ME.approver,opts:Object.entries(APPROVERS).map(([k,v])=>[k,`${k} – ${v}`]),help:rec.source==='jotform'?'HR: Gladys still approves in Jotform. Owner: the Jotform workflow is finished.':''});
-  openModal({title:isPtwIssue?'Issue Permit to Work':`${dec?'Decline':'Approve'} ${what}`,body:sum+(col==='leaves'&&!dec?creditPanel(rec):'')+byField+field({id:'dc-rem',name:'remarks',label:dec?'Reason for declining':'Remarks (optional)',type:'textarea',req:dec,attrs:'style="min-height:80px"',help:dec?'The employee sees this reason.':''}),
-    submitLabel:dec?'Decline':isPtwIssue?'Issue permit':'Approve',submitClass:dec?'bad':'ok',
+  const what=col==='leaves'?'leave request':col==='overtime'?'overtime request':'permit to work';
+  // HR's approval is the first step and leaves the request Pending; the Owner's approval (or anyone's decline) is final
+  const step=myStep(),first=!dec&&step==='HR',hr=hrStep(rec);
+  if(first&&hr)return toast(`HR already approved this ${what}. It now needs the Owner’s approval (gbmaheadoffice@gmail.com).`);
+  const isPtwIssue=col==='permits'&&!dec&&!first;
+  const stepNote=`<div class="silline">${ic('info')}<span>${dec?`You are declining as <b>${step}</b>. This is final.`:first?`You are approving as <b>HR</b> (first approval). It stays pending until the <b>Owner</b> also approves.`:`You are approving as the <b>Owner</b> (final approval).${hr?` HR approved it${hr.via==='Jotform'?' in Jotform':''} on ${fmtTs(hr.at)}.`:' HR has not approved it yet.'}`}</span></div>`;
+  openModal({title:isPtwIssue?'Issue Permit to Work':`${dec?'Decline':'Approve'} ${what}${first?' (HR)':''}`,body:sum+(col==='leaves'&&!dec?creditPanel(rec):'')+stepNote+field({id:'dc-rem',name:'remarks',label:dec?'Reason for declining':'Remarks (optional)',type:'textarea',req:dec,attrs:'style="min-height:80px"',help:dec?'The employee sees this reason.':''}),
+    submitLabel:dec?'Decline':isPtwIssue?'Issue permit':first?'Approve as HR':'Approve',submitClass:dec?'bad':'ok',
     onSubmit:async fd=>{
-      const prev=clone(rec);const o={...clone(rec),status,remarks:String(fd.get('remarks')||'').trim(),decidedAt:new Date().toISOString(),decidedBy:MEID,decidedName:String(fd.get('decidedName')||'').trim()};
+      const prev=clone(rec),rem=String(fd.get('remarks')||'').trim(),now=new Date().toISOString();
+      if(first){
+        await save(col,{...clone(rec),hrApproval:{by:MEID,name:'HR',email:ME.email||'',at:now,remarks:rem}});
+        return void toast('Approved by HR. It now waits for the Owner’s approval.',{undo:()=>save(col,prev)});
+      }
+      const o={...clone(rec),status,remarks:rem,decidedAt:now,decidedBy:MEID,decidedName:step};
       let extra='';
       if(col==='leaves'&&status==='Approved'&&usesCredits(rec)){const s=leaveCredit(rec);const avail=s&&s.eligible?Math.max(0,s.available):0;o.creditDays=r4(Math.min(rec.days,avail));o.unpaidDays=r4(rec.days-o.creditDays);extra=` ${f2(o.creditDays)} deducted from ${POOL_LABEL[creditPool(EMP[rec.employeeId],rec.type)]} credits${o.unpaidDays?`, ${o.unpaidDays} without pay`:''}.`}
       if(status==='Declined'){delete o.creditDays;delete o.unpaidDays}

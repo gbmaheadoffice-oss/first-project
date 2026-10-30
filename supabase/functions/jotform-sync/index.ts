@@ -459,9 +459,10 @@ async function syncDecisions(col: "leaves" | "permits" | "overtime", emps: Map<s
 // ---------- decisions made in the HRIS -> the Jotform approval workflows ----------
 // When a Jotform request is approved or declined in the HRIS, its open approval steps are completed with the same
 // outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY), with who decided and the
-// remarks as the comment. The decider is picked in the HRIS: "HR" completes only the HR step, so the final approver
-// (Gladys) still approves in Jotform; "Owner" is Gladys herself and finishes the workflow. The result is kept in
-// jotformPush so each request is sent once.
+// remarks as the comment. Approval has two steps: HR's approval in the HRIS (hrApproval, the request stays Pending)
+// completes only the HR step, so the final approver (Gladys) still approves in Jotform or in the HRIS; the Owner's
+// decision ("Owner" = Gladys, HRIS account gbmaheadoffice) finishes the workflow. The results are kept in
+// jotformPushHR and jotformPush so each step is sent once.
 const MAX_PUSH = 10; // requests per run; the rest go on the next runs
 const FINAL_APPROVER = "gladness311@gmail.com";
 const APPROVERS: Record<string, string> = { HR: "hrd02.goldenbear@gmail.com", Owner: FINAL_APPROVER };
@@ -477,17 +478,19 @@ async function jfWrite(path: string, body?: unknown) {
 }
 async function pushDecisions(col: "leaves" | "permits" | "overtime") {
   if (!env("JOTFORM_WRITE_KEY")) return { skipped: "no JOTFORM_WRITE_KEY" };
-  const todo = (await docs(col)).filter((d) => d.source === "jotform" && d.jotform?.submissionId && !d.jotformPush &&
-    (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform").slice(0, MAX_PUSH);
+  const hrOnly = (d: Doc) => d.status === "Pending" && !!d.hrApproval && !d.jotformPushHR;
+  const todo = (await docs(col)).filter((d) => d.source === "jotform" && d.jotform?.submissionId && (hrOnly(d) ||
+    (!d.jotformPush && (d.status === "Approved" || d.status === "Declined") && d.decidedVia !== "jotform"))).slice(0, MAX_PUSH);
   const rows = [];
   const { data: users } = todo.length ? await sb.rpc("hris_jotform_names") : { data: [] };
   const names = new Map(((users ?? []) as Doc[]).map((u) => [u.id, s(u.name)]));
   for (const d of todo) {
-    const type = d.status === "Approved" ? "APPROVE" : "DENY", done: string[] = [];
+    const hr = hrOnly(d), outcome = hr ? "Approved" : d.status, done: string[] = [];
+    const type = outcome === "Approved" ? "APPROVE" : "DENY", rem = s(hr ? d.hrApproval.remarks : d.remarks);
     // e.g. "Approved in HRIS by HR (hrd02.goldenbear@gmail.com): 1st SL of the month, allowable w/o medcert"
-    const by = s(d.decidedName), owner = by === "Owner";
+    const by = hr ? "HR" : s(d.decidedName), owner = by === "Owner";
     const who = APPROVERS[by] ? `${by} (${APPROVERS[by]})` : by || names.get(d.decidedBy) || "HR";
-    const comment = `${d.status} in HRIS by ${who}${s(d.remarks) ? ": " + s(d.remarks) : ""}`;
+    const comment = `${outcome} in HRIS by ${who}${rem ? ": " + rem : ""}`;
     let result = "sent";
     try {
       // completing the HR step opens the final approver's, so the Owner's decision looks again after each step
@@ -512,9 +515,9 @@ async function pushDecisions(col: "leaves" | "permits" | "overtime") {
     }
     // errors are retried on the next runs, up to 3 times
     // sync.jotform is sent back unchanged: the upsert rewrites it on decided records
-    const tries = (d.jotformPushError?.tries ?? 0) + 1, keep = { jotform: d.jotform };
-    if (result.startsWith("error") && tries < 3) { rows.push({ id: d.id, sync: keep, set: { jotformPushError: { tries, result, at: new Date().toISOString() } } }); continue; }
-    rows.push({ id: d.id, sync: keep, set: { jotformPush: { outcome: d.status, steps: done, result, at: new Date().toISOString() } } });
+    const errKey = hr ? "jotformPushHRError" : "jotformPushError", tries = (d[errKey]?.tries ?? 0) + 1, keep = { jotform: d.jotform };
+    if (result.startsWith("error") && tries < 3) { rows.push({ id: d.id, sync: keep, set: { [errKey]: { tries, result, at: new Date().toISOString() } } }); continue; }
+    rows.push({ id: d.id, sync: keep, set: { [hr ? "jotformPushHR" : "jotformPush"]: { outcome, steps: done, result, at: new Date().toISOString() } } });
   }
   return { sent: rows.length, written: await save(col, rows) };
 }
