@@ -1554,7 +1554,7 @@ VIEWS.settings=function(){
         <button class="btn sm ghost" data-act="user-pass" data-id="${u.id}">${ic('key')}Password</button>
         ${u.id===MEID?'':`<button class="btn sm ${u.active?'ghost':''}" data-act="user-onoff" data-id="${u.id}">${u.active?'Turn off':'Turn on'}</button>`}</td></tr>`).join('')}
     </tbody></table></div></section>
-    <p class="help">Give each person their email and temporary password yourself. They can change it later with “Forgot password?” on the sign-in page. Turned-off accounts cannot sign in, and their past work keeps their name.</p>`;
+    <p class="help">Give each person their email and temporary password yourself. After signing in they can change it themselves under their profile picture (top right) → My account. Turned-off accounts cannot sign in, and their past work keeps their name.</p>`;
   return h;
 };
 const accessOpts=[['custom','Custom – choose the parts and sites below'],['admin','Admin – everything, plus Settings']];
@@ -1613,6 +1613,24 @@ function userPass(id){
   openModal({title:'Set a new password',submitLabel:'Set password',
     body:`<p style="margin:0 0 12px">For <b>${esc(u.name||u.email)}</b> (${esc(u.email)}). Their old password stops working.</p>`+passField(tempPass()),
     onSubmit:async(fd,f)=>{f.querySelectorAll('.formerr').forEach(e=>e.remove());const r=await userCall({action:'password',id,password:fd.get('password')},f);if(r!==false)toast('Password changed. Give them the new one.');return r}});
+}
+// My account (profile menu, every user): their own password, e.g. to replace the temporary one HR gave them
+function myAccount(){
+  const err=(f,m)=>{f.querySelectorAll('.formerr').forEach(e=>e.remove());f.querySelector('.mbody').insertAdjacentHTML('afterbegin',`<div class="formerr" role="alert">${esc(m)}</div>`);f.querySelector('.formerr').scrollIntoView({block:'nearest'});return false};
+  openModal({title:'My account',submitLabel:'Change password',
+    body:`<dl class="kv"><div><dt>Name</dt><dd>${esc(ME.name||'—')}</dd></div><div><dt>Email</dt><dd>${esc(ME.email||'—')}</dd></div></dl>
+      <h3 style="margin:16px 0 8px;font-size:16px">Change password</h3>`+
+      field({id:'my-cur',name:'current',label:'Current password',type:'password',req:1,attrs:'autocomplete="current-password"',help:'The temporary password HR gave you, or your present one.'})+
+      field({id:'my-new',name:'next',label:'New password',type:'password',req:1,attrs:'minlength="8" autocomplete="new-password"',help:'At least 8 characters.'})+
+      field({id:'my-new2',name:'next2',label:'Type the new password again',type:'password',req:1,attrs:'minlength="8" autocomplete="new-password"'}),
+    onSubmit:async(fd,f)=>{
+      const cur=String(fd.get('current')||''),nx=String(fd.get('next')||'');
+      if(nx.length<8)return err(f,'The new password needs at least 8 characters.');
+      if(nx!==fd.get('next2'))return err(f,'The two new passwords are not the same.');
+      if(nx===cur)return err(f,'Choose a password different from your current one.');
+      try{await USER.changePassword(cur,nx)}catch(e){return err(f,e.message||'Could not change the password. Try again.')}
+      toast('Your password was changed. Use the new one next time you sign in.');
+    }});
 }
 function userOnOff(id){
   const u=USERS.find(x=>x.id===id);if(!u)return;
@@ -3545,6 +3563,7 @@ const ACT={
   del:(el,id,k)=>{const r=S[k].find(x=>x.id===id);const n=((r&&r.attachments)||[]).length;confirmBox('Delete this record?',`This permanently deletes the leave record${n?` and its ${n} attachment${n===1?'':'s'}`:''}.`,'Delete',async()=>{await remove(k,id);if(ASSETS&&r)for(const f of r.attachments||[]){try{await ASSETS.delete(f.id)}catch(e){}}toast('Record deleted.')})},
   'clear-sample':clearSample,
   'me-settings':()=>{meMenu(false);go('settings')},
+  'me-account':()=>{meMenu(false);myAccount()},
   'me-signout':()=>{meMenu(false);confirmBox('Sign out?',`You are signed in as <b>${esc(ME.email)}</b>.`,'Sign out',()=>USER.signOut())},
   'user-add':()=>userForm(),
   'user-edit':(el,id)=>userForm(id),
@@ -3610,6 +3629,7 @@ const MEB=$('#me'),MEM=$('#me-menu');
 function meMenu(open){
   if(open){
     MEM.innerHTML=`<div class="who"><b>${esc(ME.name||'Signed in')}</b><span>${esc(ME.email||'')}</span></div>
+      ${USER&&USER.changePassword?`<button type="button" role="menuitem" data-act="me-account">${ic('key')}My account</button>`:''}
       ${ME.role==='admin'?`<button type="button" role="menuitem" data-act="me-settings">${ic('gear')}Settings</button>`:''}
       ${USER&&USER.signOut?`<button type="button" role="menuitem" data-act="me-signout">${ic('arrow')}Sign out</button>`:''}`;
   }

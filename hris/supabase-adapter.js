@@ -221,6 +221,13 @@ const user={
     return user.me();
   },
   signOut,
+  /* My account: the signed-in person changes their own password (e.g. the temporary one); the current one is checked first */
+  changePassword:async(current,next)=>{
+    const{error:bad}=await sb.auth.signInWithPassword({email:ME.email,password:current});
+    if(bad)throw{message:/rate|many/i.test(bad.message||'')?'Too many tries. Wait a few minutes and try again.':'Your current password is not right.'};
+    const{error}=await sb.auth.updateUser({password:next});
+    if(error)throw{message:/different|same/i.test(error.message||'')?'Choose a password different from your current one.':error.message};
+  },
   can:async what=>what==='data.write'?ME.role!=='viewer':what==='users.manage'?ME.role==='admin':true,
   /* Settings → User access: list, create, update, password, disable, enable (admins only, checked on the server) */
   admin:async body=>{
