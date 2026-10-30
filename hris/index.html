@@ -2564,8 +2564,10 @@ function decide(id,k){
   // HR's approval is the first step and leaves the request Pending; the Owner's approval (or anyone's decline) is final
   const step=myStep(),first=!dec&&step==='HR',hr=hrStep(rec);
   if(first&&hr)return toast(`HR already approved this ${what}. It now needs the Owner’s approval (gbmaheadoffice@gmail.com).`);
+  // the Owner approves only after HR (hrd02) has
+  if(!dec&&!first&&!hr)return toast(`HR (hrd02.goldenbear@gmail.com) has to approve this ${what} first. You can approve it after that.`,{kind:'bad'});
   const isPtwIssue=col==='permits'&&!dec&&!first;
-  const stepNote=`<div class="silline">${ic('info')}<span>${dec?`You are declining as <b>${step}</b>. This is final.`:first?`You are approving as <b>HR</b> (first approval). It stays pending until the <b>Owner</b> also approves.`:`You are approving as the <b>Owner</b> (final approval).${hr?` HR approved it${hr.via==='Jotform'?' in Jotform':''} on ${fmtTs(hr.at)}.`:' HR has not approved it yet.'}`}</span></div>`;
+  const stepNote=`<div class="silline">${ic('info')}<span>${dec?`You are declining as <b>${step}</b>. This is final.`:first?`You are approving as <b>HR</b> (first approval). It stays pending until the <b>Owner</b> also approves.`:`You are approving as the <b>Owner</b> (final approval). HR approved it${hr.via==='Jotform'?' in Jotform':''} on ${fmtTs(hr.at)}.`}</span></div>`;
   openModal({title:isPtwIssue?'Issue Permit to Work':`${dec?'Decline':'Approve'} ${what}${first?' (HR)':''}`,body:sum+(col==='leaves'&&!dec?creditPanel(rec):'')+stepNote+field({id:'dc-rem',name:'remarks',label:dec?'Reason for declining':'Remarks (optional)',type:'textarea',req:dec,attrs:'style="min-height:80px"',help:dec?'The employee sees this reason.':''}),
     submitLabel:dec?'Decline':isPtwIssue?'Issue permit':first?'Approve as HR':'Approve',submitClass:dec?'bad':'ok',
     onSubmit:async fd=>{
