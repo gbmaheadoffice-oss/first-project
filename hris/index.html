@@ -175,6 +175,9 @@ button.row:hover .nm{text-decoration:underline}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}
 .tabs button{border:0;background:none;padding:12px 16px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap;display:flex;gap:8px;align-items:center;min-height:46px}
 .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--btn)}
+.subtabs{display:inline-flex;gap:2px;padding:3px;margin:-6px 0 16px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;max-width:100%;overflow-x:auto}
+.subtabs button{border:0;background:none;padding:6px 14px;border-radius:7px;font-weight:600;color:var(--muted);display:flex;gap:6px;align-items:center;min-height:34px;white-space:nowrap}
+.subtabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .tabs .n{background:var(--surface-2);border-radius:10px;padding:0 8px;font-size:12.5px;font-variant-numeric:tabular-nums;line-height:20px}
 
 /* tables */
@@ -831,7 +834,7 @@ const ROUTES={
   leaves:{t:'Leave Management',nav:'Leave Approvals',icon:'cal'},
   attendance:{t:'Attendance',nav:'Attendance',icon:'clock'},
   attpolicy:{t:'Attendance',nav:'Cut-offs & Late Counting',icon:'cal'},
-  overtime:{t:'Attendance',nav:'Overtime Requests',icon:'ot'},
+  overtime:{t:'Attendance',nav:'Overtime',icon:'ot'},
   otreport:{t:'Attendance',nav:'Overtime Summary',icon:'clip'},
   permits:{t:'Leave Management',nav:'Permit to Work Approvals',icon:'hat'},
   leavereport:{t:'Leave Management',nav:'Leave Summary Report',icon:'clip'},
@@ -896,8 +899,13 @@ async function resolveNames(){
   try{const ps=await USER.profiles(ids);els.forEach(el=>{const p=ps[el.dataset.uid];if(p&&p.name)el.textContent=p.name})}catch(e){}
 }
 // tabs at the top of a page in a menu group (Leave Management, Company Communications)
+// pages shown as one tab in their group, switched inside the page: Overtime = Requests + Summary
+const SUB_PAGES={overtime:[['overtime','Requests','ot'],['otreport','Summary','clip']]};
+const PARENT_OF={otreport:'overtime'};
+const subTabs=()=>{const p=PARENT_OF[route]||route;const L=SUB_PAGES[p];if(!L)return'';
+  return`<div class="subtabs" role="tablist" aria-label="${ROUTES[p].nav}">${L.map(([r,l,i])=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(i)}${l}</button>`).join('')}</div>`};
 const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,overtime:c.overtime,memos:c.memos};
-  return`<div class="tabs" role="tablist" aria-label="${NAV_GROUPS[g].name}" style="margin:-4px 0 18px">${NAV_GROUPS[g].routes.map(r=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(ROUTES[r].icon)}${ROUTES[r].nav}${n[r]!=null?`<span class="n">${n[r]}</span>`:''}</button>`).join('')}</div>`};
+  return`<div class="tabs" role="tablist" aria-label="${NAV_GROUPS[g].name}" style="margin:-4px 0 18px">${NAV_GROUPS[g].routes.filter(r=>!PARENT_OF[r]).map(r=>`<button role="tab" aria-selected="${route===r||PARENT_OF[route]===r}" data-act="nav" data-id="${r}">${ic(ROUTES[r].icon)}${ROUTES[r].nav}${n[r]!=null?`<span class="n">${n[r]}</span>`:''}</button>`).join('')}</div>`+subTabs()};
 const ph=(title,sub,actions='')=>`<div class="ph"><div><h2>${title}</h2><p>${sub}</p></div>${actions?`<div class="qa">${actions}</div>`:''}</div>`;
 const empOpts=(sel,all)=>{const list=S.employees.filter(e=>all||isActive(e)).sort(sortName);return`<option value="">Select employee</option>`+list.map(e=>`<option value="${e.id}" ${e.id===sel?'selected':''}>${esc(e.lastName)}, ${esc(e.firstName)} · ${esc(e.empNo)}</option>`).join('')};
 const emptyBlock=(title,text,btn)=>`<div class="empty"><strong>${title}</strong>${text}${btn||''}</div>`;
