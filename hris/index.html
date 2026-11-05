@@ -794,6 +794,13 @@ function hrStep(r){
   const x=((r.jotformDecision||{}).steps||[]).find(t=>t.outcome==='Approved');
   return x?{by:x.by,at:x.at,via:'Jotform',remarks:x.comment||''}:null;
 }
+// HR's remarks on its first-step approval, kept after the Owner decides (HRIS remarks, or the Jotform comment)
+function hrRemarks(r){
+  if(!r)return'';
+  if(r.hrApproval)return r.hrApproval.remarks||'';
+  const x=((r.jotformDecision||{}).steps||[]).find(t=>t.outcome==='Approved');
+  return x&&x.comment||'';
+}
 const hrChip=r=>{const h=hrStep(r);return h?` <span class="chip info" title="Approved by ${esc(h.by)} on ${h.via}, ${esc(fmtTs(h.at))}">${ic('check')}HR approved · waiting for Owner</span>`:''};
 const byName=r=>r.decidedName?esc(r.hrApproval&&r.decidedName==='Owner'&&r.status==='Approved'?'HR, then Owner':r.decidedName):uname(r.decidedBy);
 function nextNo(col,prefix){const y=new Date().getFullYear();const re=new RegExp('^'+prefix+'-'+y+'-(\\d+)$');let max=0;S[col].forEach(x=>{const m=re.exec(x.no||'');if(m)max=Math.max(max,+m[1])});return`${prefix}-${y}-${String(max+1).padStart(3,'0')}`}
@@ -1070,11 +1077,11 @@ VIEWS.overtime=function(){
   list.sort((a,b)=>f.tab==='Pending'?((a.date||'')<(b.date||'')?-1:1):((b.date||'')<(a.date||'')?-1:1));
   const hrs=list.filter(o=>o.status==='Approved').reduce((t,o)=>t+(Number(o.hours)||0),0);
   let h=groupTabs()+ph('Overtime Requests','Overtime requests from the Overtime Request Form on Jotform appear here within 5 minutes. Review each request and approve or decline it.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
-  h+=fbtnsHtml('ot','Show overtime requests',STATUS_BTNS.map(([v,i,t])=>[v,cnt(v),v==='All'?'ot':i,t]),f.tab);
+  h+=fbtnsHtml('ot','Show overtime requests',STATUS_BTNS.map(([v,i,t])=>[v,cnt(v),v==='All'?'ot':i,t,v==='Pending'?'For Approvals':v]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-ot-q','ot.q',f.q,'Search employee, department, reason, site')}${hrs?`<span class="help" style="margin-left:auto">Approved in this list: <b class="num">${r4(hrs)}</b> hour${hrs===1?'':'s'}</span>`:''}</div>`;
-  if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending overtime requests':'No overtime requests here',f.tab==='Pending'?'Overtime requests filed on Jotform appear here for approval.':'Try another tab or search.');
+  if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No overtime requests for approval':'No overtime requests here',f.tab==='Pending'?'Overtime requests filed on Jotform appear here for approval.':'Try another tab or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th>Site Location</th><th>Date of Overtime</th><th class="r">Hours</th><th>Reason</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
-    ${list.map(o=>`<tr class="click" data-act="view-ot" data-id="${o.id}" tabindex="0"><td><div class="nm">${esc(reqName(o))}${reqChips(o)}</div><div class="sub">${esc(o.department||'')}${o.department?' · ':''}Filed ${fmtDT(o.filedAt)}</div></td><td>${siteCell(o)}</td><td class="num" style="white-space:nowrap"><b>${fmt(o.date)}</b></td><td class="num r">${esc(String(o.hours??''))}</td><td style="max-width:260px"><div class="sub" style="color:var(--ink);overflow-wrap:anywhere">${esc((o.reason||'—').slice(0,140))}</div></td><td>${statusChip(o.status)}${o.decidedAt?`<div class="sub">by ${decider(o)}</div>`:''}</td>
+    ${list.map(o=>`<tr class="click" data-act="view-ot" data-id="${o.id}" tabindex="0"><td><div class="nm">${esc(reqName(o))}${reqChips(o)}</div><div class="sub">${esc(o.department||'')}${o.department?' · ':''}Filed ${fmtDT(o.filedAt)}</div></td><td>${siteCell(o)}</td><td class="num" style="white-space:nowrap"><b>${fmt(o.date)}</b></td><td class="num r">${esc(String(o.hours??''))}</td><td style="max-width:260px"><div class="sub" style="color:var(--ink);overflow-wrap:anywhere">${esc((o.reason||'—').slice(0,140))}</div></td><td>${statusChip(o.status)}${o.decidedAt?`<div class="sub">by ${decider(o)}</div>`:''}${hrRemarks(o)?`<div class="sub" style="max-width:220px;overflow-wrap:anywhere" title="${esc(hrRemarks(o))}">HR: “${esc(hrRemarks(o).slice(0,80))}${hrRemarks(o).length>80?'…':''}”</div>`:''}</td>
       <td><div class="acts" data-write>${o.status==='Pending'?`<button class="btn sm ok" data-act="decide-ot" data-id="${o.id}" data-k="overtime:Approved">Approve</button><button class="btn sm bad-ghost" data-act="decide-ot" data-id="${o.id}" data-k="overtime:Declined">Decline</button>`:''}</div></td></tr>`).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -1089,7 +1096,8 @@ function viewOvertime(id){
     <div><dt>Department</dt><dd>${esc(o.department||(e&&e.department)||'—')}</dd></div><div><dt>Filed on</dt><dd>${fmtDT(o.filedAt)}</dd></div>
     <div><dt>Status</dt><dd>${esc(o.status)}${o.decidedAt?` by ${decider(o)} · ${fmtTs(o.decidedAt)}`:''}</dd></div>
     <div style="grid-column:1/-1"><dt>Reason for overtime</dt><dd style="white-space:pre-wrap">${esc(o.reason||'—')}</dd></div>
-    ${o.remarks?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(o.remarks)}</dd></div>`:''}</dl>
+    ${hrRemarks(o)?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(hrRemarks(o))}</dd></div>`:''}
+    ${o.remarks?`<div style="grid-column:1/-1"><dt>${o.decidedName==='Owner'?'Owner remarks':'HR remarks'}</dt><dd style="white-space:pre-wrap">${esc(o.remarks)}</dd></div>`:''}</dl>
     ${jfSection('overtime',o)}`,
     foot:`<button type="button" class="btn ghost left" data-close>Close</button>${acts}`,
     onOpen:f=>{const b=(s,fn)=>{const el=f.querySelector(s);if(el)el.onclick=fn};b('#vo-app',()=>decide(id,'overtime:Approved'));b('#vo-dec',()=>decide(id,'overtime:Declined'));b('#jf-link-btn',()=>linkReq('overtime',id,f.querySelector('#jf-link').value))}});
@@ -2672,7 +2680,7 @@ function decide(id,k){
   // the Owner approves only after HR (hrd02) has
   if(!dec&&!first&&!hr)return toast(`HR (hrd02.goldenbear@gmail.com) has to approve this ${what} first. You can approve it after that.`,{kind:'bad'});
   const isPtwIssue=col==='permits'&&!dec&&!first;
-  const stepNote=`<div class="silline">${ic('info')}<span>${dec?`You are declining as <b>${step}</b>. This is final.`:first?`You are approving as <b>HR</b> (first approval). It stays pending until the <b>Owner</b> also approves.`:`You are approving as the <b>Owner</b> (final approval). HR approved it${hr.via==='Jotform'?' in Jotform':''} on ${fmtTs(hr.at)}.`}</span></div>`;
+  const stepNote=`<div class="silline">${ic('info')}<span>${dec?`You are declining as <b>${step}</b>. This is final.`:first?`You are approving as <b>HR</b> (first approval). It stays pending until the <b>Owner</b> also approves.`:`You are approving as the <b>Owner</b> (final approval). HR approved it${hr.via==='Jotform'?' in Jotform':''} on ${fmtTs(hr.at)}.`}</span></div>`+(hr&&hr.remarks?`<div class="silline">${ic('info')}<span><b>HR remarks:</b> <span style="white-space:pre-wrap">${esc(hr.remarks)}</span></span></div>`:'');
   openModal({title:isPtwIssue?'Issue Permit to Work':`${dec?'Decline':'Approve'} ${what}${first?' (HR)':''}`,body:sum+(col==='leaves'&&!dec?creditPanel(rec):'')+stepNote+field({id:'dc-rem',name:'remarks',label:dec?'Reason for declining':'Remarks (optional)',type:'textarea',req:dec,attrs:'style="min-height:80px"',help:dec?'The employee sees this reason.':''}),
     submitLabel:dec?'Decline':isPtwIssue?'Issue permit':first?'Approve as HR':'Approve',submitClass:dec?'bad':'ok',
     onSubmit:async fd=>{
