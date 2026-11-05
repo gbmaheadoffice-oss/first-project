@@ -2,9 +2,10 @@
  * Apps Script for the Google Form "CLIENT'S FEEDBACK & PERFORMANCE EVALUATION FORM".
  *  - Sends every response (with the rater's verified email) to the GBMA HRIS, which fills in the
  *    client's ratings and remarks in the employee's evaluation.
- *  - Every hour, asks the HRIS which evaluation links are due and emails them to the client supervisors
+ *  - Every 10 minutes, asks the HRIS which evaluation links are due and emails them to the client supervisors
  *    from this Google account: 7 days before the evaluation is due, and one reminder 3 days later
  *    if the client has not answered. (The HRIS sends nothing before 8:00 AM Manila time.)
+ *  - Every 10 minutes, emails employees the final decision (Approved / Declined) on their overtime requests.
  *
  * Setup (once), in the form: Extensions > Apps Script
  *   1. Paste this whole file into Code.gs and save.
@@ -20,7 +21,7 @@ function setup() {
     .filter(t => ['onSubmit', 'sendEvaluationEmails'].indexOf(t.getHandlerFunction()) >= 0)
     .forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('onSubmit').forForm(form).onFormSubmit().create();
-  ScriptApp.newTrigger('sendEvaluationEmails').timeBased().everyHours(1).create();
+  ScriptApp.newTrigger('sendEvaluationEmails').timeBased().everyMinutes(10).create();
 }
 
 function onSubmit(e) {
