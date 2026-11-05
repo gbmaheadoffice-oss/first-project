@@ -29,8 +29,14 @@ async function docsOf(col: string) {
   return (data ?? []) as Doc[];
 }
 
+// HR's remarks on its first approval (in the HRIS, or its comment in Jotform), like hrRemarks() in the HRIS
+function hrRemarks(o: Doc) {
+  if (o.hrApproval) return s(o.hrApproval.remarks);
+  return s((o.jotformDecision?.steps ?? []).find((t: Doc) => t.outcome === "Approved")?.comment);
+}
+// the address on the request (email typed on the form), else the 201 file's
 function mail(o: Doc, e: Doc | undefined) {
-  const to = okMail(o.jotform?.email) ? s(o.jotform.email) : s(e?.email);
+  const to = [o.email, o.jotform?.email, e?.email].map(s).find(okMail) ?? "";
   const first = s(e?.firstName) || s(o.jotform?.firstName) || s(o.jotform?.name);
   const ok = o.status === "Approved", word = ok ? "APPROVED" : "DECLINED";
   const day = o.date ? longDate(o.date) : "—", hrs = o.hours ? `${o.hours} hour${Number(o.hours) === 1 ? "" : "s"}` : "";
@@ -38,6 +44,7 @@ function mail(o: Doc, e: Doc | undefined) {
     `Date of overtime: ${day}`,
     hrs && `Hours requested: ${hrs}`,
     s(o.reason) && `Reason: ${s(o.reason)}`,
+    hrRemarks(o) && `HR remarks: ${hrRemarks(o)}`,
     s(o.remarks) && `${ok ? "Remarks" : "Reason for declining"}: ${s(o.remarks)}`,
   ].filter(Boolean).join("\n");
   const body = `Dear ${first || "Employee"},
