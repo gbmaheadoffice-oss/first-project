@@ -1135,6 +1135,8 @@ function otrepRows(){
   if(q)emps=emps.filter(e=>[fullName(e),e.empNo,e.client,e.site].join(' ').toLowerCase().includes(q));
   return emps.sort(sortName).map(e=>{const days=otrepDays(e,a,b,byDay);const s={ap:0,pend:0,actAp:0,pay:0,extra:0,noOut:0,reqs:0};
     days.forEach(x=>{s.ap+=x.ap;s.pend+=x.pend;s.pay+=x.pay;s.reqs+=x.reqs.filter(o=>o.status==='Approved').length;if(x.ap){s.actAp+=x.act;if(x.noOut)s.noOut++}else s.extra+=x.act});
+    // reasons of the approved and pending requests in the period, by date
+    s.reasons=days.flatMap(x=>x.reqs.filter(o=>o.status!=='Declined'&&String(o.reason||'').trim()).map(o=>({d:x.d,t:String(o.reason).trim(),st:o.status})));
     return{e,s,days}}).filter(r=>r.s.ap||r.s.pend||r.s.extra);
 }
 VIEWS.otreport=function(){
@@ -1153,13 +1155,14 @@ VIEWS.otreport=function(){
   if(unmatched)h+=`<div class="banner" style="margin-bottom:10px">${ic('info')}<span class="grow">${unmatched} approved overtime request${unmatched===1?' is':'s are'} not linked to a 201 file and ${unmatched===1?'is':'are'} left out. Open it in <a href="#overtime" data-act="nav" data-id="overtime">Overtime Requests</a> to link the employee.</span></div>`;
   if(!rows.length)h+=emptyBlock('No overtime here','No approved, pending or actual overtime in this period. Try another period, site or tab.');
   else{const tot=k=>rows.reduce((t,r)=>t+r.s[k],0);
-    h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1100px"><thead><tr><th>Employee</th><th class="r">Approved Requests</th><th class="r">Approved OT</th><th class="r">Actual OT on Approved Days</th><th class="r">Payable OT</th><th class="r">Difference</th><th class="r">OT Without Approval</th><th class="r">Pending OT</th><th>Remarks</th></tr></thead><tbody>
+    h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1320px"><thead><tr><th>Employee</th><th class="r">Approved Requests</th><th class="r">Approved OT</th><th class="r">Actual OT on Approved Days</th><th class="r">Payable OT</th><th class="r">Difference</th><th class="r">OT Without Approval</th><th class="r">Pending OT</th><th>Reason for Overtime</th><th>Remarks</th></tr></thead><tbody>
     ${rows.map(({e,s})=>{const dif=s.actAp-s.ap;return`<tr class="click" data-act="otrep-view" data-id="${e.id}" tabindex="0"><td><div class="nm">${esc(fullName(e))}</div><div class="sub">${esc(e.empNo)} · ${esc(e.client||'—')}</div></td>
       <td class="r num">${s.reqs}</td><td class="r num"><b>${otH(s.ap)}</b></td><td class="r num">${otH(s.actAp)}</td><td class="r num"><b>${otH(s.pay)}</b></td>
       <td class="r num ${dif<0?'att-warn':''}">${s.ap||s.actAp?(dif<0?'−':dif>0?'+':'')+otH(Math.abs(dif)).replace('—','0m'):'—'}</td>
       <td class="r num ${s.extra?'att-bad':''}">${otH(s.extra)}</td><td class="r num">${otH(s.pend)}</td>
+      <td style="min-width:220px;max-width:320px">${s.reasons.length?s.reasons.slice(0,3).map(x=>`<div class="sub" style="color:var(--ink);overflow-wrap:anywhere" title="${esc(x.t)}"><b class="num">${fmtS(x.d)}</b>${x.st==='Pending'?' <span style="color:var(--muted)">(pending)</span>':''}: ${esc(x.t.length>90?x.t.slice(0,90)+'…':x.t)}</div>`).join('')+(s.reasons.length>3?`<div class="sub">+${s.reasons.length-3} more · open to see all</div>`:''):'<span class="sub">—</span>'}</td>
       <td><div class="dchips">${s.pay<s.ap?`<span class="chip warn">Short of approved</span>`:''}${s.extra?`<span class="chip bad">OT without approval</span>`:''}${s.noOut?`<span class="chip">${s.noOut} day${s.noOut===1?'':'s'} no time out</span>`:''}</div></td></tr>`}).join('')}
-    </tbody><tfoot><tr><th>Total · ${rows.length} employee${rows.length===1?'':'s'}</th><th class="r num">${tot('reqs')}</th><th class="r num">${otH(tot('ap'))}</th><th class="r num">${otH(tot('actAp'))}</th><th class="r num">${otH(tot('pay'))}</th><th></th><th class="r num">${otH(tot('extra'))}</th><th class="r num">${otH(tot('pend'))}</th><th></th></tr></tfoot></table></div>`}
+    </tbody><tfoot><tr><th>Total · ${rows.length} employee${rows.length===1?'':'s'}</th><th class="r num">${tot('reqs')}</th><th class="r num">${otH(tot('ap'))}</th><th class="r num">${otH(tot('actAp'))}</th><th class="r num">${otH(tot('pay'))}</th><th></th><th class="r num">${otH(tot('extra'))}</th><th class="r num">${otH(tot('pend'))}</th><th></th><th></th></tr></tfoot></table></div>`}
   return h+'</section>';
 };
 function otrepView(empId){
@@ -1168,17 +1171,18 @@ function otrepView(empId){
   openModal({title:`Overtime · ${esc(fullName(e))} · ${fmtS(UI.otrep.from)} – ${fmt(UI.otrep.to)}`,wide:1,
     body:`<p class="help" style="margin:0;color:var(--muted)">${esc(e.empNo)} · ${esc(e.client||'')} · Schedule ${fmtTime(sc.start)} – ${fmtTime(sc.end)}</p>
     <div class="dchips"><span class="chip">Approved ${otH(s.ap)}</span><span class="chip">Actual on approved days ${otH(s.actAp)}</span><span class="chip ok">Payable ${otH(s.pay)}</span>${s.extra?`<span class="chip bad">Without approval ${otH(s.extra)}</span>`:''}${s.pend?`<span class="chip info">Pending ${otH(s.pend)}</span>`:''}</div>
-    <div class="tw" style="margin:0"><table class="tbl" style="min-width:640px"><thead><tr><th>Date</th><th class="r">Approved</th><th class="r">Pending</th><th>Time in – out</th><th class="r">Actual OT</th><th class="r">Payable</th><th>Note</th></tr></thead><tbody>
+    <div class="tw" style="margin:0"><table class="tbl" style="min-width:860px"><thead><tr><th>Date</th><th class="r">Approved</th><th class="r">Pending</th><th>Time in – out</th><th class="r">Actual OT</th><th class="r">Payable</th><th>Reason for Overtime</th><th>Note</th></tr></thead><tbody>
     ${days.map(x=>`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="r num">${otH(x.ap)}</td><td class="r num">${otH(x.pend)}</td>
       <td class="num">${x.r&&x.r.in?`${fmtTime(x.r.in)} – ${x.r.out?fmtTime(x.r.out):'?'}`:'<span class="att-muted">No record</span>'}${x.r&&(x.r.status==='holiday'||x.r.status==='restday'||(parse(x.d).getDay()===0&&!x.r.status))?' <span class="sub">rest day / holiday</span>':''}</td>
       <td class="r num">${otH(x.act)}</td><td class="r num">${otH(x.pay)}</td>
+      <td style="max-width:280px">${x.reqs.filter(o=>o.status!=='Declined'&&String(o.reason||'').trim()).map(o=>`<div class="sub" style="color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere">${esc(String(o.reason).trim())}</div>`).join('')||'<span class="sub">—</span>'}</td>
       <td>${x.noOut?'<span class="chip">No time out</span>':x.ap&&x.act<x.ap?'<span class="chip warn">Short</span>':!x.ap&&x.act?`<span class="chip bad">No approved OT</span>`:''}</td></tr>`).join('')}
     </tbody></table></div>`,
     foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="button" class="btn ghost" data-close data-act="att-edit" data-id="${e.id}" data-k="${UI.otrep.from}|${UI.otrep.to}">${ic('clock')}Open attendance</button>`});
 }
 const otrepTitle=()=>`Overtime Summary · ${fmt(UI.otrep.from)} – ${fmt(UI.otrep.to)}${UI.otrep.client?' · '+UI.otrep.client:''}${UI.otrep.tab!=='All'?' · '+UI.otrep.tab:''}`;
-const OTREP_COLS=['ID Number','Name','Client Company','Approved Requests','Approved OT (hours)','Actual OT on Approved Days (hours)','Payable OT (hours)','Difference (hours)','OT Without Approval (hours)','Pending OT (hours)','Days Without Time Out'];
-const otrepLine=({e,s})=>[e.empNo||'',fullName(e),e.client||'',s.reqs,otDec(s.ap),otDec(s.actAp),otDec(s.pay),otDec(s.actAp-s.ap),otDec(s.extra),otDec(s.pend),s.noOut];
+const OTREP_COLS=['ID Number','Name','Client Company','Approved Requests','Approved OT (hours)','Actual OT on Approved Days (hours)','Payable OT (hours)','Difference (hours)','OT Without Approval (hours)','Pending OT (hours)','Days Without Time Out','Reason for Overtime'];
+const otrepLine=({e,s})=>[e.empNo||'',fullName(e),e.client||'',s.reqs,otDec(s.ap),otDec(s.actAp),otDec(s.pay),otDec(s.actAp-s.ap),otDec(s.extra),otDec(s.pend),s.noOut,s.reasons.map(x=>`${fmtS(x.d)}${x.st==='Pending'?' (pending)':''}: ${x.t.replace(/\s+/g,' ')}`).join(' | ')];
 const otrepList=()=>otrepRows().filter(r=>otrepTest[UI.otrep.tab](r.s));
 function otrepCopy(){
   const rows=otrepList();const txt=[otrepTitle(),OTREP_COLS.join('\t')].concat(rows.map(r=>otrepLine(r).join('\t'))).join('\n');
@@ -1190,7 +1194,7 @@ async function otrepXlsx(){
   if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
   let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const aoa=[[otrepTitle()],[],OTREP_COLS].concat(rows.map(otrepLine));
-  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,28,30,10,12,14,12,12,14,12,12].map(w=>({wch:w}));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,28,30,10,12,14,12,12,14,12,12,60].map(w=>({wch:w}));
   ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:OTREP_COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Overtime Summary');
   wb.Props={Title:'Overtime Summary',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
