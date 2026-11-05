@@ -106,62 +106,9 @@ Human Resources Department
 Golden Bear Manpower Agency`;
   return { key: `${e.id}_${k}`, kind: reminder ? "reminder" : "invite", employeeId: e.id, period: k, to: s(e.supervisorEmail), subject, body };
 }
-// ---------- overtime decisions emailed to the employee ----------
-// When the final decision on an overtime request is made (the Owner's approval, or a decline, in the HRIS or in
-// Jotform), the employee gets an email at the address on the request (else the 201 file's). HR's first approval sends
-// nothing. Only decisions made from OT_MAIL_FROM on are emailed; overtimeEmail on the record keeps it to one email.
-const OT_MAIL_FROM = "2026-11-05T00:00:00Z";
-const OT_MAX = 40; // per run (the Gmail account can send about 100 emails a day)
-const okMail = (v: unknown) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s(v));
-function otMail(o: Doc, e: Doc | undefined) {
-  const to = okMail(o.jotform?.email) ? s(o.jotform.email) : s(e?.email);
-  const first = s(e?.firstName) || s(o.jotform?.firstName) || s(o.jotform?.name);
-  const ok = o.status === "Approved", day = o.date ? longDate(o.date) : "—", hrs = o.hours ? `${o.hours} hour${Number(o.hours) === 1 ? "" : "s"}` : "";
-  const subject = `Overtime request ${ok ? "APPROVED" : "DECLINED"}: ${day}${hrs ? ` (${hrs})` : ""}`;
-  const body = `Dear ${first || "Employee"},
-
-Good day! Your overtime request has been ${ok ? "APPROVED" : "DECLINED"}.
-
-Date of overtime: ${day}${hrs ? `
-Hours requested: ${hrs}` : ""}${o.reason ? `
-Reason: ${s(o.reason)}` : ""}${s(o.remarks) ? `
-${ok ? "Remarks" : "Reason for declining"}: ${s(o.remarks)}` : ""}
-
-${ok ? "Please render only the approved overtime." : "If you have questions, please coordinate with the HR Department."}
-
-This is an automatic email from the GBMA HRIS.
-
-Human Resources Department
-Golden Bear Manpower Agency`;
-  return { key: `ot_${o.id}`, kind: "overtime", employeeId: s(o.employeeId), period: o.status, to, subject, body };
-}
-async function otDue() {
-  const [ots, emps] = await Promise.all([docsOf("overtime"), docsOf("employees")]);
-  const byId = new Map(emps.map((e) => [e.id, e]));
-  return ots
-    .filter((o) => (o.status === "Approved" || o.status === "Declined") && !o.overtimeEmail && s(o.decidedAt) >= OT_MAIL_FROM)
-    .map((o) => otMail(o, byId.get(o.employeeId)))
-    .filter((m) => okMail(m.to))
-    .slice(0, OT_MAX);
-}
-// the record's jotform data is sent back unchanged: hris_upsert_jotform rewrites it on decided records
-async function otMarkSent(list: { key: string; to: string; period: string }[]) {
-  const ots = new Map((await docsOf("overtime")).map((o) => [o.id, o]));
-  const at = new Date().toISOString();
-  const rows = list.map((x) => ots.get(s(x.key).slice(3))).filter(Boolean).map((o) => {
-    const x = list.find((y) => y.key === `ot_${o!.id}`)!;
-    return { id: o!.id, sync: { jotform: o!.jotform ?? null }, set: { overtimeEmail: { to: x.to, status: x.period, at } } };
-  });
-  if (!rows.length) return 0;
-  const { data, error } = await sb.rpc("hris_upsert_jotform", { col: "overtime", rows });
-  if (error) throw new Error(error.message);
-  return Number(data ?? 0);
-}
-
 async function due() {
   const ph = new Date(Date.now() + 8 * 36e5), today = iso(ph);
-  const ot = await otDue();
-  if (ph.getUTCHours() < SEND_FROM_HOUR) return { today, items: ot };
+  if (ph.getUTCHours() < SEND_FROM_HOUR) return { today, items: [] };
   const [emps, invites, answers] = await Promise.all([docsOf("employees"), docsOf("evalinvites"), docsOf("clientevals")]);
   const inv = new Map(invites.map((x) => [x.id, x]));
   const items = [];
@@ -176,20 +123,18 @@ async function due() {
       else if (!sent.reminderAt && today >= addDays(iso(new Date(new Date(sent.sentAt).getTime() + 8 * 36e5)), REMIND_AFTER)) items.push(mail(e, k, label, d, true));
     }
   }
-  return { today, items: [...ot, ...items] };
+  return { today, items };
 }
-async function markSent(all: { key: string; kind: string; to: string; employeeId: string; period: string }[]) {
-  const list = all.filter((x) => x && x.kind !== "overtime");
-  const ot = await otMarkSent(all.filter((x) => x && x.kind === "overtime" && x.key));
+async function markSent(list: { key: string; kind: string; to: string; employeeId: string; period: string }[]) {
   const at = new Date().toISOString();
   const rows = list.filter((x) => x && x.key).map((x) => ({
     id: x.key,
     data: { employeeId: x.employeeId, period: x.period, to: x.to, ...(x.kind === "reminder" ? { reminderAt: at } : { sentAt: at }) },
   }));
-  if (!rows.length) return ot;
+  if (!rows.length) return 0;
   const { data, error } = await sb.rpc("hris_merge_evalinvites", { rows });
   if (error) throw new Error(error.message);
-  return ot + Number(data ?? 0);
+  return Number(data ?? 0);
 }
 
 Deno.serve(async (req) => {

@@ -1094,7 +1094,7 @@ function viewOvertime(id){
     <dl class="kv"><div><dt>Employee</dt><dd>${esc(reqName(o))}${e?` · ${esc(e.empNo)}`:''}</dd></div><div><dt>Position</dt><dd>${esc(e?e.position:'—')}</dd></div>${siteKv(o)}
     <div><dt>Date of overtime</dt><dd><b>${fmt(o.date)}</b></dd></div><div><dt>Hours requested</dt><dd><b>${otHours(o)}</b></dd></div>
     <div><dt>Department</dt><dd>${esc(o.department||(e&&e.department)||'—')}</dd></div><div><dt>Filed on</dt><dd>${fmtDT(o.filedAt)}</dd></div>
-    <div><dt>Status</dt><dd>${esc(o.status)}${o.decidedAt?` by ${decider(o)} · ${fmtTs(o.decidedAt)}`:''}</dd></div>${o.status!=='Pending'&&(o.overtimeEmail||(o.decidedAt||'')>='2026-11-05')?`<div><dt>Email to employee</dt><dd>${o.overtimeEmail?`Sent to ${esc(o.overtimeEmail.to)} · ${fmtTs(o.overtimeEmail.at)}`:'Not sent yet (goes out automatically within about 10 minutes)'}</dd></div>`:''}
+    <div><dt>Status</dt><dd>${esc(o.status)}${o.decidedAt?` by ${decider(o)} · ${fmtTs(o.decidedAt)}`:''}</dd></div>${o.status!=='Pending'&&(o.overtimeEmail||(o.decidedAt||'')>='2026-11-05')?`<div><dt>Email to employee</dt><dd>${o.overtimeEmail?`Sent to ${esc(o.overtimeEmail.to)} · ${fmtTs(o.overtimeEmail.at)}`:'Not sent yet (goes out automatically within about 5 minutes)'}</dd></div>`:''}
     <div style="grid-column:1/-1"><dt>Reason for overtime</dt><dd style="white-space:pre-wrap">${esc(o.reason||'—')}</dd></div>
     ${hrRemarks(o)?`<div style="grid-column:1/-1"><dt>HR remarks</dt><dd style="white-space:pre-wrap">${esc(hrRemarks(o))}</dd></div>`:''}
     ${o.remarks?`<div style="grid-column:1/-1"><dt>${o.decidedName==='Owner'?'Owner remarks':'HR remarks'}</dt><dd style="white-space:pre-wrap">${esc(o.remarks)}</dd></div>`:''}</dl>
