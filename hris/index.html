@@ -720,7 +720,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',tab:'Active',type:'',tag:''},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -836,6 +836,7 @@ function evalQueue(days){
 /* ---------------- routing ---------------- */
 const ROUTES={
   dashboard:{t:'Head Office Dashboard',nav:'Dashboard',icon:'home'},
+  approvals:{t:'For Approvals',nav:'For Approvals',icon:'check'},
   applicants:{t:'Applicants',nav:'Applicants',icon:'clip'},
   employees:{t:'201 Files',nav:'201 Files',icon:'users'},
   leaves:{t:'Leave Management',nav:'Leave Approvals',icon:'cal'},
@@ -876,7 +877,7 @@ function renderNav(){
   const tot=c.leaves+c.permits+c.overtime+c.evals+c.memos;
   const link=(r,n)=>!canView(PART_OF[r])?'':`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
-  $('#nav').innerHTML=link('dashboard')+
+  $('#nav').innerHTML=link('dashboard')+(canView('leaves')||canView('attendance')?link('approvals',c.leaves+c.permits+c.overtime):'')+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
     <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
@@ -923,6 +924,45 @@ const STATUS_BTNS=[['All','users',''],['Pending','clock','warn'],['Approved','ch
 const searchBox=(id,key,val,ph)=>`<div class="srch">${ic('search')}<label class="sr" for="${id}">${ph}</label><input id="${id}" type="search" data-filter="${key}" value="${esc(val)}" placeholder="${ph}" autocomplete="off"></div>`;
 
 const VIEWS={};
+
+/* ---- For Approvals: every request still waiting for a decision (leave, Permit to Work, overtime) in one list ---- */
+function approvalItems(){
+  const out=[];
+  if(canView('leaves')){
+    S.leaves.filter(l=>l.status==='Pending').forEach(l=>out.push({kind:'Leave',col:'leaves',r:l,open:'view-leave',act:'decide',ok:'Approve',
+      what:`<div class="nm">${esc(l.type)} leave</div><div class="sub">${fmtS(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}</div>`,when:l.from,txt:[l.type,l.reason].join(' ')}));
+    S.permits.filter(p=>p.status==='Pending').forEach(p=>out.push({kind:'Permit to Work',col:'permits',r:p,open:'view-permit',act:'decide',ok:'Issue permit',
+      what:`<div class="nm">${esc(p.no||'Permit to Work')}</div><div class="sub">Back to work ${fmt(p.returnDate)} · after ${esc(p.leaveType||'—')} leave</div>`,when:p.returnDate,txt:[p.no,p.leaveType,p.note].join(' ')}));
+  }
+  if(canView('attendance'))
+    S.overtime.filter(o=>o.status==='Pending').forEach(o=>out.push({kind:'Overtime',col:'overtime',r:o,open:'view-ot',act:'decide-ot',ok:'Approve',
+      what:`<div class="nm">Overtime · ${otHours(o)}</div><div class="sub">${fmt(o.date)}${o.reason?' · '+esc(o.reason.slice(0,70))+(o.reason.length>70?'…':''):''}</div>`,when:o.date,txt:[o.department,o.reason].join(' ')}));
+  return out;
+}
+const APR_KINDS=[['All','check'],['Leave','cal'],['Permit to Work','hat'],['Overtime','ot']];
+VIEWS.approvals=function(){
+  const f=UI.apr,q=f.q.trim().toLowerCase(),step=myStep();
+  const all=approvalItems();
+  // whose turn: no HR approval yet = HR's step; HR approved = waiting for the Owner
+  const mine=x=>step==='Owner'?!!hrStep(x.r):!hrStep(x.r);
+  const byStep=all.filter(x=>f.step!=='mine'||mine(x));
+  let list=byStep.filter(x=>f.tab==='All'||x.kind===f.tab);
+  if(q)list=list.filter(x=>[reqName(x.r),x.kind,x.txt,siteClient(x.r),siteLoc(x.r)].join(' ').toLowerCase().includes(q));
+  list.sort((a,b)=>(a.r.filedAt||'')<(b.r.filedAt||'')?-1:1);
+  let h=ph('For Approvals','Every leave, Permit to Work and overtime request still waiting for a decision, in one place. HR approves first, then the Owner. Open a request to see its details, or approve or decline it here.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  h+=fbtnsHtml('apr','Show requests',APR_KINDS.filter(([k])=>k==='All'||(k==='Overtime'?canView('attendance'):canView('leaves'))).map(([k,i])=>[k,k==='All'?byStep.length:byStep.filter(x=>x.kind===k).length,i,'',k==='All'?'All requests':k]),f.tab);
+  const nMine=all.filter(mine).length;
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-apr-q','apr.q',f.q,'Search employee, request, site, reason')}
+    <div class="fbtns" role="group" aria-label="Whose step" style="margin:0 0 0 auto">
+      <button class="fbtn" data-act="fset" data-id="apr.step" data-k="all" aria-pressed="${f.step!=='mine'}">${ic('users')}<span>All waiting</span><b class="num">${all.length}</b></button>
+      <button class="fbtn warn" data-act="fset" data-id="apr.step" data-k="mine" aria-pressed="${f.step==='mine'}">${ic('clock')}<span>Waiting for ${step==='Owner'?'Owner (me)':'HR (me)'}</span><b class="num">${nMine}</b></button></div></div>`;
+  if(!list.length)h+=emptyBlock('Nothing waiting for approval',all.length?'Try another filter or search.':'New leave, Permit to Work and overtime requests appear here as soon as they are filed.');
+  else h+=`<div class="tw"><table class="tbl" style="min-width:1050px"><thead><tr><th>Request</th><th>Employee</th><th>Site Location</th><th>Details</th><th>Filed</th><th>Stage</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
+    ${list.map(x=>{const r=x.r,i=APR_KINDS.find(k=>k[0]===x.kind)[1];return`<tr class="click" data-act="${x.open}" data-id="${r.id}" tabindex="0"><td style="white-space:nowrap"><span class="chip">${ic(i)}${esc(x.kind)}</span></td><td><div class="nm">${esc(reqName(r))}</div>${sampleChip(r)}${r.source==='jotform'?` <span class="chip info" title="Filed on Jotform">Jotform</span>`:''}${!EMP[r.employeeId]?` <span class="chip warn" title="Link this request to the employee's 201 file">${ic('alert')}No 201 match</span>`:''}</td><td>${siteCell(r)}</td><td style="max-width:280px;overflow-wrap:anywhere">${x.what}</td><td class="num" style="white-space:nowrap">${fmtDT(r.filedAt)}</td><td>${hrStep(r)?`<span class="chip info">${ic('check')}HR approved · waiting for Owner</span>`:`<span class="chip warn">${ic('clock')}Waiting for HR</span>`}</td>
+      <td><div class="acts" data-write><button class="btn sm ok" data-act="${x.act}" data-id="${r.id}" data-k="${x.col}:Approved">${x.ok}</button><button class="btn sm bad-ghost" data-act="${x.act}" data-id="${r.id}" data-k="${x.col}:Declined">Decline</button></div></td></tr>`}).join('')}
+  </tbody></table></div>`;
+  return h+'</section>';
+};
 
 /* ---- Dashboard ---- */
 VIEWS.dashboard=function(){
