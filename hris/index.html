@@ -667,15 +667,17 @@ let ME={role:'',approver:'',access:null}; // the signed-in account's access (Set
 // Admins see and change everything. Other accounts get, per part, View / Edit and the sites they may see
 // (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
 // ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
-const PARTS={applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications'};
-const PART_OF={applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'comms',cmemos:'comms',holidays:'comms',settings:'admin'};
+const PARTS={approvals:'For Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications'};
+const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'comms',cmemos:'comms',holidays:'comms',settings:'admin'};
 const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
 const acc=p=>{
   if(ME.role==='admin')return{view:true,edit:true,sites:null};
   if(p==='admin')return{view:false,edit:false,sites:null};
   if(!ME.access)return{view:true,edit:ME.role!=='viewer',sites:null};
-  return ME.access[p]||{view:false,edit:false,sites:null};
+  return ME.access[p]||(p==='approvals'?apprFallback(ME.access):{view:false,edit:false,sites:null});
 };
+// accounts saved before "For Approvals" was a part: it follows their Leave Management / Attendance access
+const apprFallback=a=>{const l=a.leaves||{},t=a.attendance||{};return{view:!!(l.view||t.view),edit:!!(l.edit||t.edit),sites:l.view&&t.view&&l.sites&&t.sites?[...new Set([...l.sites,...t.sites])]:l.view&&!t.view?l.sites||null:t.view&&!l.view?t.sites||null:null}};
 const canView=p=>!p||acc(p).view;
 const canEdit=p=>!p||(acc(p).view&&acc(p).edit);
 // the site of a record: the employee's site, the memo's addressee, or none (company-wide, always shown)
@@ -688,7 +690,7 @@ function siteOf(c,r){
 const siteOK=(p,site)=>{const s=acc(p).sites;return!s||site==null||s.includes(site)};
 const recOK=(p,c,r)=>canView(p)&&siteOK(p,siteOf(c,r));
 // which records each page lists, so every page only shows the sites its part allows
-const PAGE_COLS={employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees']};
+const PAGE_COLS={approvals:['leaves','permits','overtime','employees'],employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees']};
 // run fn with S limited to what the account may see: on a page, by that page's part; on the dashboard and in the
 // menu counts, each kind of record by its own part
 function scoped(rt,fn){
@@ -708,7 +710,7 @@ const mayWrite=col=>canEdit(COL_PART[col]||'')||pageEdit();
 // buttons that change records, by part; hidden when the account cannot edit that part
 const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees','del-file':'employees','import-201':'employees','change-status':'employees','cross-check':'employees',
   'set-eoc':'evaluations','eop-notice':'evaluations','reg-contract':'evaluations',
-  'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves',
+  'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves','apr-decide':'approvals',
   'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
   'issue-memo':'comms','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants',
@@ -877,7 +879,7 @@ function renderNav(){
   const tot=c.leaves+c.permits+c.overtime+c.evals+c.memos;
   const link=(r,n)=>!canView(PART_OF[r])?'':`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
-  $('#nav').innerHTML=link('dashboard')+(canView('leaves')||canView('attendance')?link('approvals',c.leaves+c.permits+c.overtime):'')+
+  $('#nav').innerHTML=link('dashboard')+link('approvals',canView('approvals')?scoped('approvals',()=>S.leaves.filter(l=>l.status==='Pending').length+S.permits.filter(p=>p.status==='Pending').length+S.overtime.filter(o=>o.status==='Pending').length):0)+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
     <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
@@ -928,15 +930,16 @@ const VIEWS={};
 /* ---- For Approvals: every request still waiting for a decision (leave, Permit to Work, overtime) in one list ---- */
 function approvalItems(){
   const out=[];
-  if(canView('leaves')){
-    S.leaves.filter(l=>l.status==='Pending').forEach(l=>out.push({kind:'Leave',col:'leaves',r:l,open:'view-leave',act:'decide',ok:'Approve',
+  {
+    S.leaves.filter(l=>l.status==='Pending').forEach(l=>out.push({kind:'Leave',col:'leaves',r:l,open:'view-leave',act:'apr-decide',ok:'Approve',
       what:`<div class="nm">${esc(l.type)} leave</div><div class="sub">${fmtS(l.from)} – ${fmt(l.to)} · ${l.days} day${l.days===1?'':'s'}</div>`,when:l.from,txt:[l.type,l.reason].join(' ')}));
-    S.permits.filter(p=>p.status==='Pending').forEach(p=>out.push({kind:'Permit to Work',col:'permits',r:p,open:'view-permit',act:'decide',ok:'Issue permit',
+    S.permits.filter(p=>p.status==='Pending').forEach(p=>out.push({kind:'Permit to Work',col:'permits',r:p,open:'view-permit',act:'apr-decide',ok:'Issue permit',
       what:`<div class="nm">${esc(p.no||'Permit to Work')}</div><div class="sub">Back to work ${fmt(p.returnDate)} · after ${esc(p.leaveType||'—')} leave</div>`,when:p.returnDate,txt:[p.no,p.leaveType,p.note].join(' ')}));
   }
-  if(canView('attendance'))
-    S.overtime.filter(o=>o.status==='Pending').forEach(o=>out.push({kind:'Overtime',col:'overtime',r:o,open:'view-ot',act:'decide-ot',ok:'Approve',
+  {
+    S.overtime.filter(o=>o.status==='Pending').forEach(o=>out.push({kind:'Overtime',col:'overtime',r:o,open:'view-ot',act:'apr-decide',ok:'Approve',
       what:`<div class="nm">Overtime · ${otHours(o)}</div><div class="sub">${fmt(o.date)}${o.reason?' · '+esc(o.reason.slice(0,70))+(o.reason.length>70?'…':''):''}</div>`,when:o.date,txt:[o.department,o.reason].join(' ')}));
+  }
   return out;
 }
 const APR_KINDS=[['All','check'],['Leave','cal'],['Permit to Work','hat'],['Overtime','ot']];
@@ -950,7 +953,7 @@ VIEWS.approvals=function(){
   if(q)list=list.filter(x=>[reqName(x.r),x.kind,x.txt,siteClient(x.r),siteLoc(x.r)].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>(a.r.filedAt||'')<(b.r.filedAt||'')?-1:1);
   let h=ph('For Approvals','Every leave, Permit to Work and overtime request still waiting for a decision, in one place. HR approves first, then the Owner. Open a request to see its details, or approve or decline it here.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
-  h+=fbtnsHtml('apr','Show requests',APR_KINDS.filter(([k])=>k==='All'||(k==='Overtime'?canView('attendance'):canView('leaves'))).map(([k,i])=>[k,k==='All'?byStep.length:byStep.filter(x=>x.kind===k).length,i,'',k==='All'?'All requests':k]),f.tab);
+  h+=fbtnsHtml('apr','Show requests',APR_KINDS.map(([k,i])=>[k,k==='All'?byStep.length:byStep.filter(x=>x.kind===k).length,i,'',k==='All'?'All requests':k]),f.tab);
   const nMine=all.filter(mine).length;
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-apr-q','apr.q',f.q,'Search employee, request, site, reason')}
     <div class="fbtns" role="group" aria-label="Whose step" style="margin:0 0 0 auto">
@@ -1693,7 +1696,7 @@ VIEWS.holidays=()=>memoPage('hol');
 /* ---------------- settings: user access ---------------- */
 // Accounts are made here by an admin (no sign-up). The server function hris-admin does the work and checks that
 // the caller is an admin; the database rules stop view-only and turned-off accounts from changing records.
-const SITE_PARTS=['employees','leaves','attendance','evaluations','comms'];
+const SITE_PARTS=['approvals','employees','leaves','attendance','evaluations','comms'];
 const allSites=()=>[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
 // one line per part the account can use, e.g. "201 Files: View + Edit · Sanno"
 function accessSummary(u){
@@ -1731,7 +1734,7 @@ const accessOpts=[['custom','Custom – choose the parts and sites below'],['adm
 function accessGrid(a){
   const sites=allSites();
   // an account from before per-part access starts with what it has now
-  const cur=p=>a?(a[p]||{view:false,edit:false,sites:null}):{view:true,edit:true,sites:null};
+  const cur=p=>a?(a[p]||(p==='approvals'?apprFallback(a):{view:false,edit:false,sites:null})):{view:true,edit:true,sites:null};
   return`<div class="field full" id="us-grid"><label>Parts of the HRIS</label>
     <div class="tw"><table class="tbl acc-tbl"><thead><tr><th>Part</th><th class="c">View</th><th class="c">Edit</th><th>Sites</th></tr></thead><tbody>
     ${Object.keys(PARTS).map(p=>{const x=cur(p);return`<tr><td class="nm">${PARTS[p]}</td>
@@ -3731,6 +3734,7 @@ const ACT={
   'issue-hol':(el,id,k)=>memoForm('hol',null,k,id),
   decide:(el,id,k)=>decide(id,k),
   'decide-ot':(el,id,k)=>decide(id,k),
+  'apr-decide':(el,id,k)=>decide(id,k),
   'view-ot':(el,id)=>viewOvertime(id),
   'view-permit':(el,id)=>viewPermit(id),
   'view-memo':(el,id)=>viewMemo(id),
