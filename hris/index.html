@@ -1025,17 +1025,19 @@ VIEWS.dashboard=function(){
 };
 
 /* ---- 201 Files ---- */
+/* active employee still missing some 201 requirements (same rule as the dashboard card) */
+const incomplete201=e=>isActive(e)&&docCount(e)<docTotal(e);
 VIEWS.employees=function(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
-  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
+  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||(f.tab==='Incomplete'?incomplete201(e):empStatus(e)===f.tab)));
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.biometricId,e.position,e.department,e.client].join(' ').toLowerCase().includes(q));
   list.sort(sortName);
   const depts=deptList(DEPTS);
   const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
   const clCount=c=>S.employees.filter(e=>e.client===c&&isActive(e)).length;
   let h=ph('201 Files',`${S.employees.length} employee record${S.employees.length===1?'':'s'} across ${CLIENTS.length} client companies · personal data, deployment, government IDs and scanned requirements.`,`<button class="btn ghost" data-act="import-201" data-write>${ic('upload')}Import from Excel</button><button class="btn ghost" data-act="export-201">${ic('download')}Export to Excel</button><button class="btn" data-act="add-emp" data-write>${ic('plus')}Add Employee</button>`);
-  const stc=s=>s==='All'?S.employees.length:S.employees.filter(e=>empStatus(e)===s).length;
-  h+=fbtnsHtml('emp','Show employees',[['All','users',''],['Active','check','ok'],['Separated','arrow','warn'],['Blocklisted','alert','bad']].map(([v,i,t])=>[v,stc(v),i,t]),f.tab);
+  const stc=s=>s==='All'?S.employees.length:s==='Incomplete'?S.employees.filter(incomplete201).length:S.employees.filter(e=>empStatus(e)===s).length;
+  h+=fbtnsHtml('emp','Show employees',[['All','users',''],['Active','check','ok'],['Separated','arrow','warn'],['Blocklisted','alert','bad'],['Incomplete','pclip','warn','Incomplete 201 File']].map(([v,i,t,x])=>[v,stc(v),i,t,x]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 12px">
     ${searchBox('f-emp-q','emp.q',f.q,'Search name, employee no., position, client')}
     <label class="sr" for="f-emp-client">Client company</label><select id="f-emp-client" data-filter="emp.client" style="flex:1 1 260px;max-width:340px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)} (${clCount(c)})</option>`).join('')}</select>
@@ -1918,7 +1920,7 @@ function loadXLSX(){
 }
 function empFiltered(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
-  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||empStatus(e)===f.tab));
+  let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&(!f.type||e.employmentType===f.type)&&(f.tab==='All'||(f.tab==='Incomplete'?incomplete201(e):empStatus(e)===f.tab)));
   if(q)list=list.filter(e=>[fullName(e),e.empNo,e.biometricId,e.position,e.department,e.client].join(' ').toLowerCase().includes(q));
   return list.sort(sortName);
 }
