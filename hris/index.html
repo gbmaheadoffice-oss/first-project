@@ -665,8 +665,8 @@ const susDays=label=>{const r=/^(\d+) Days/.exec(label||'');return r?+r[1]:0};
 function susEnd(from,days){let d=from,k=1;while(parse(d).getDay()===0)d=addDays(d,1);const start=d;while(k<days){d=addDays(d,1);if(parse(d).getDay()!==0)k++}return{from:start,to:d,resume:nextWorkday(d)}}
 
 /* ---------------- state + storage ---------------- */
-const COLS=['employees','leaves','permits','overtime','memos','attendance','applicants','clientevals','evalinvites'];
-const S={employees:[],leaves:[],permits:[],overtime:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[]};
+const COLS=['employees','leaves','permits','overtime','memos','attendance','applicants','clientevals','evalinvites','grievances'];
+const S={employees:[],leaves:[],permits:[],overtime:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[],grievances:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 let ME={role:'',approver:'',access:null}; // the signed-in account's access (Settings → User access)
@@ -675,14 +675,14 @@ let ME={role:'',approver:'',access:null}; // the signed-in account's access (Set
 // Admins see and change everything. Other accounts get, per part, View / Edit and the sites they may see
 // (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
 // ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
-const PARTS={approvals:'For Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications'};
-const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'comms',cmemos:'comms',holidays:'comms',settings:'admin'};
-const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
+const PARTS={approvals:'For Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications',da:'DA & Grievances'};
+const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'da',grievances:'da',cmemos:'comms',settings:'admin'};
+const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',grievances:'da',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
 const acc=p=>{
   if(ME.role==='admin')return{view:true,edit:true,sites:null};
   if(p==='admin')return{view:false,edit:false,sites:null};
   if(!ME.access)return{view:true,edit:ME.role!=='viewer',sites:null};
-  return ME.access[p]||(p==='approvals'?apprFallback(ME.access):{view:false,edit:false,sites:null});
+  return ME.access[p]||(p==='approvals'?apprFallback(ME.access):p==='da'&&ME.access.comms?ME.access.comms:{view:false,edit:false,sites:null});
 };
 // accounts saved before "For Approvals" was a part: it follows their Leave Management / Attendance access
 const apprFallback=a=>{const l=a.leaves||{},t=a.attendance||{};return{view:!!(l.view||t.view),edit:!!(l.edit||t.edit),sites:l.view&&t.view&&l.sites&&t.sites?[...new Set([...l.sites,...t.sites])]:l.view&&!t.view?l.sites||null:t.view&&!l.view?t.sites||null:null}};
@@ -698,7 +698,7 @@ function siteOf(c,r){
 const siteOK=(p,site)=>{const s=acc(p).sites;return!s||site==null||s.includes(site)};
 const recOK=(p,c,r)=>canView(p)&&siteOK(p,siteOf(c,r));
 // which records each page lists, so every page only shows the sites its part allows
-const PAGE_COLS={approvals:['leaves','permits','overtime','employees'],employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees']};
+const PAGE_COLS={approvals:['leaves','permits','overtime','employees'],employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees'],da:['memos','employees','grievances']};
 // run fn with S limited to what the account may see: on a page, by that page's part; on the dashboard and in the
 // menu counts, each kind of record by its own part
 function scoped(rt,fn){
@@ -706,7 +706,7 @@ function scoped(rt,fn){
   const p=PART_OF[rt],keep={};
   const cols=p&&PAGE_COLS[p]?PAGE_COLS[p]:Object.keys(COL_PART).filter(c=>S[c]);
   if(!SCOPE_DEPTH++)ALL_EMPLOYEES=S.employees;
-  for(const c of cols){keep[c]=S[c];const q=p&&PAGE_COLS[p]?p:COL_PART[c];S[c]=S[c].filter(r=>recOK(q,c,r))}
+  for(const c of cols){keep[c]=S[c];const q=p&&PAGE_COLS[p]?p:COL_PART[c];S[c]=S[c].filter(r=>recOK(!(p&&PAGE_COLS[p])&&c==='memos'&&memoCat(r)==='disc'?'da':q,c,r))}
   try{return fn()}finally{Object.assign(S,keep);if(!--SCOPE_DEPTH)ALL_EMPLOYEES=null}
 }
 // names are looked up in every employee, also while a page is limited to some sites
@@ -714,14 +714,14 @@ let SCOPE_DEPTH=0,ALL_EMPLOYEES=null;
 // may this account save to a collection? Its part's Edit, or the Edit of the page it is working on
 // (an evaluation saved from the Evaluations page is stored on the employee's 201 record)
 const pageEdit=()=>!!PART_OF[route]&&PART_OF[route]!=='admin'&&canEdit(PART_OF[route]);
-const mayWrite=col=>canEdit(COL_PART[col]||'')||pageEdit();
+const mayWrite=col=>canEdit(COL_PART[col]||'')||(col==='memos'&&canEdit('da'))||pageEdit();
 // buttons that change records, by part; hidden when the account cannot edit that part
 const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees','del-file':'employees','import-201':'employees','change-status':'employees','cross-check':'employees',
   'set-eoc':'evaluations','eop-notice':'evaluations','reg-contract':'evaluations',
   'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves','apr-decide':'approvals',
   'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
-  'issue-memo':'comms','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants',
+  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants',
   'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
 const actOK=a=>!ACT_PART[a]||canEdit(ACT_PART[a]);
 function applyAccessCss(){
@@ -730,7 +730,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -860,13 +860,14 @@ const ROUTES={
   permits:{t:'Leave Management',nav:'Permit to Work Approvals',icon:'hat'},
   leavereport:{t:'Leave Management',nav:'Leave Summary Report',icon:'clip'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
-  memos:{t:'Company Communications',nav:'DA Memos',icon:'memo'},
+  memos:{t:'DA & Grievances',nav:'DA Memos',icon:'memo'},
   cmemos:{t:'Company Communications',nav:'Inter-office Memo',icon:'send'},
+  grievances:{t:'DA & Grievances',nav:'Grievances',icon:'users'},
   settings:{t:'Settings',nav:'Settings',icon:'gear'}
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'send',routes:['cmemos']},dag:{name:'DA & Grievances',icon:'memo',routes:['memos','grievances']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -881,17 +882,18 @@ function counts(){
     permits:S.permits.filter(p=>p.status==='Pending').length,
     overtime:S.overtime.filter(o=>o.status==='Pending').length,
     evals:evalQueue(14).filter(x=>x.k!=='reg').length,
-    memos:S.memos.filter(m=>memoCat(m)==='disc'&&m.status==='Open').length
+    memos:S.memos.filter(m=>memoCat(m)==='disc'&&m.status==='Open').length,
+    grievances:S.grievances.filter(grvOpen).length
   };
 }
 function renderNav(){
-  const c=scoped('dashboard',counts);if(!canView('applicants'))c.applicants=0;if(!canView('leaves'))c.leaves=c.permits=0;if(!canView('attendance'))c.overtime=0;if(!canView('evaluations'))c.evals=0;if(!canView('comms'))c.memos=0;
-  const tot=c.leaves+c.permits+c.overtime+c.evals+c.memos;
+  const c=scoped('dashboard',counts);if(!canView('applicants'))c.applicants=0;if(!canView('leaves'))c.leaves=c.permits=0;if(!canView('attendance'))c.overtime=0;if(!canView('evaluations'))c.evals=0;if(!canView('da'))c.memos=c.grievances=0;
+  const tot=c.leaves+c.permits+c.overtime+c.evals+c.memos+c.grievances;
   const link=(r,n)=>!canView(PART_OF[r])?'':`<a href="#${r}" data-act="nav" data-id="${r}" ${route===r?'aria-current="page"':''}>${ic(ROUTES[r].icon)}<span>${ROUTES[r].nav}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`;
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+link('approvals',canView('approvals')?scoped('approvals',()=>S.leaves.filter(l=>l.status==='Pending').length+S.permits.filter(p=>p.status==='Pending').length+S.overtime.filter(o=>o.status==='Pending').length):0)+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm')}${glink('dag',c.memos+c.grievances)}</div>`;
 }
 function render(focus){
   EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>{normRecs(e);EMP[e.id]=e});
@@ -925,7 +927,7 @@ const SUB_PAGES={overtime:[['overtime','Requests','ot'],['otreport','Summary','c
 const PARENT_OF={otreport:'overtime'};
 const subTabs=()=>{const p=PARENT_OF[route]||route;const L=SUB_PAGES[p];if(!L)return'';
   return`<div class="subtabs" role="tablist" aria-label="${ROUTES[p].nav}">${L.map(([r,l,i])=>`<button role="tab" aria-selected="${route===r}" data-act="nav" data-id="${r}">${ic(i)}${l}</button>`).join('')}</div>`};
-const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,overtime:c.overtime,memos:c.memos};
+const groupTabs=()=>{const g=groupOf(route);if(!g)return'';const c=counts(),n={leaves:c.leaves,permits:c.permits,overtime:c.overtime,memos:c.memos,grievances:c.grievances};
   return`<div class="tabs" role="tablist" aria-label="${NAV_GROUPS[g].name}" style="margin:-4px 0 18px">${NAV_GROUPS[g].routes.filter(r=>!PARENT_OF[r]).map(r=>`<button role="tab" aria-selected="${route===r||PARENT_OF[route]===r}" data-act="nav" data-id="${r}">${ic(ROUTES[r].icon)}${ROUTES[r].nav}${n[r]!=null?`<span class="n">${n[r]}</span>`:''}</button>`).join('')}</div>`+subTabs()};
 const ph=(title,sub,actions='')=>`<div class="ph"><div><h2>${title}</h2><p>${sub}</p></div>${actions?`<div class="qa">${actions}</div>`:''}</div>`;
 const empOpts=(sel,all)=>{const list=S.employees.filter(e=>all||isActive(e)).sort(sortName);return`<option value="">Select employee</option>`+list.map(e=>`<option value="${e.id}" ${e.id===sel?'selected':''}>${esc(e.lastName)}, ${esc(e.firstName)} · ${esc(e.empNo)}</option>`).join('')};
@@ -1748,10 +1750,81 @@ function daPage(all){
 VIEWS.memos=()=>memoPage('disc');
 VIEWS.cmemos=()=>memoPage('co');
 
+/* ---------------- Grievances (DA & Grievances; the Grievance Committee works here) ---------------- */
+const GRV_STATUS=['Filed','Under investigation','For hearing','Resolved','Dismissed'];
+const GRV_CHIP={Filed:'info','Under investigation':'warn','For hearing':'warn',Resolved:'ok',Dismissed:''};
+const GRV_CATS=['Working conditions','Pay and benefits','Unfair treatment','Harassment or bullying','Conflict with a supervisor or co-worker','Company policy','Safety','Other'];
+const grvOpen=g=>g.status!=='Resolved'&&g.status!=='Dismissed';
+const grvName=g=>EMP[g.employeeId]?fullName(EMP[g.employeeId]):(g.complainant||'—');
+const grvChip=g=>`<span class="chip ${GRV_CHIP[g.status]||''}">${esc(g.status||'Filed')}</span>`;
+function grvNo(date,selfId){const d=parse(date||today()),y=d.getFullYear();const re=new RegExp('^GRV'+y+'-\\d{2}-(\\d{4})$');let max=0;
+  S.grievances.forEach(x=>{if(x.id===selfId)return;const m=re.exec(x.no||'');if(m)max=Math.max(max,+m[1])});return`GRV${y}-${pad(d.getMonth()+1)}-${String(max+1).padStart(4,'0')}`}
+VIEWS.grievances=function(){
+  const f=UI.grv,q=f.q.trim().toLowerCase();const tabs=['Open','Resolved','Dismissed','All'];
+  const inT=(g,t)=>t==='All'||(t==='Open'?grvOpen(g):g.status===t);
+  let list=S.grievances.filter(g=>inT(g,f.tab));
+  if(q)list=list.filter(g=>[g.no,grvName(g),g.against,g.category,g.details].join(' ').toLowerCase().includes(q));
+  list.sort((a,b)=>(b.filedOn||'')<(a.filedOn||'')?-1:1);
+  let h=groupTabs()+ph('Grievances','Complaints raised by employees, handled by the Grievance Committee: what the complaint is about, the investigation and hearing, and how it was resolved.',`<button class="btn" data-act="grv-new" data-write>${ic('plus')}New Grievance</button>`);
+  const LOOK={Open:['clock','warn'],Resolved:['check','ok'],Dismissed:['x',''],All:['users','']};
+  h+=fbtnsHtml('grv.tab','Show grievances',tabs.map(t=>[t,S.grievances.filter(g=>inT(g,t)).length,...LOOK[t]]),f.tab);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-grv-q','grv.q',f.q,'Search grievance no., employee, details')}</div>`;
+  if(!list.length)h+=emptyBlock('No grievances here','Grievances filed by employees appear here.',`<div data-write><button class="btn" data-act="grv-new">${ic('plus')}New Grievance</button></div>`);
+  else h+=`<div class="tw"><table class="tbl" style="min-width:900px"><thead><tr><th>Grievance No.</th><th>Employee</th><th>About</th><th>Filed</th><th>Hearing</th><th>Status</th></tr></thead><tbody>
+    ${list.map(g=>`<tr class="click" data-act="grv-view" data-id="${g.id}" tabindex="0"><td class="num nm" style="white-space:nowrap">${esc(g.no||'')}</td>
+      <td><div class="nm">${esc(grvName(g))}</div><div class="sub">${esc(EMP[g.employeeId]?EMP[g.employeeId].empNo+' · '+(EMP[g.employeeId].client||'—'):'Not in the 201 files')}</div></td>
+      <td style="max-width:320px"><div>${esc(g.category||'')}</div>${g.against?`<div class="sub">Against: ${esc(g.against)}</div>`:''}</td>
+      <td class="num" style="white-space:nowrap">${fmt(g.filedOn)}</td><td class="num" style="white-space:nowrap">${g.hearingOn?fmt(g.hearingOn):'—'}</td><td>${grvChip(g)}</td></tr>`).join('')}</tbody></table></div>`;
+  return h+'</section>';
+};
+function grvForm(id){
+  const g=id?clone(S.grievances.find(x=>x.id===id)):{filedOn:today(),status:'Filed',employeeId:'',complainant:'',against:'',category:GRV_CATS[0],details:'',committee:'',hearingOn:'',findings:'',resolution:'',resolvedOn:''};
+  if(!g)return;
+  openModal({title:id?`Edit ${esc(g.no)}`:'New Grievance',wide:1,body:`<div class="fg">
+    <div class="field"><label for="gv-emp">Employee filing the grievance</label><select id="gv-emp" name="employeeId">${empOpts(g.employeeId,!!id)}</select><p class="help">Leave blank if the person is not in the 201 files, and type the name below.</p></div>
+    ${field({id:'gv-name',name:'complainant',label:'Name (if not in the 201 files)',value:g.complainant})}
+    ${field({id:'gv-date',name:'filedOn',label:'Date filed',type:'date',req:1,value:g.filedOn})}
+    ${field({id:'gv-cat',name:'category',label:'About',type:'select',req:1,opts:GRV_CATS,value:g.category,blank:false})}
+    ${field({id:'gv-against',name:'against',label:'Against (person, department or policy)',full:1,value:g.against})}
+    ${field({id:'gv-det',name:'details',label:'Details of the grievance',type:'textarea',req:1,full:1,value:g.details,attrs:'style="min-height:110px" placeholder="What happened, when and where, and what the employee is asking for"'})}
+    </div>
+    <fieldset style="margin-top:12px"><legend>Grievance Committee</legend><div class="fg">
+    ${field({id:'gv-st',name:'status',label:'Status',type:'select',req:1,opts:GRV_STATUS,value:g.status,blank:false})}
+    ${field({id:'gv-hear',name:'hearingOn',label:'Hearing date',type:'date',value:g.hearingOn})}
+    ${field({id:'gv-com',name:'committee',label:'Committee members handling it',full:1,value:g.committee})}
+    ${field({id:'gv-find',name:'findings',label:'Findings',type:'textarea',full:1,value:g.findings,attrs:'style="min-height:80px"'})}
+    ${field({id:'gv-res',name:'resolution',label:'Resolution / action taken',type:'textarea',full:1,value:g.resolution,attrs:'style="min-height:80px"'})}
+    ${field({id:'gv-resd',name:'resolvedOn',label:'Date resolved or dismissed',type:'date',value:g.resolvedOn})}
+    </div></fieldset>`,submitLabel:id?'Save changes':'Save grievance',
+    onSubmit:async(fd,f)=>{
+      const emp=String(fd.get('employeeId')||''),name=String(fd.get('complainant')||'').trim();
+      if(!emp&&!name){setErr(f.querySelector('#gv-emp'),'Choose the employee, or type the name of the person filing.');return false}
+      const st=String(fd.get('status'));
+      if((st==='Resolved'||st==='Dismissed')&&!String(fd.get('resolution')||'').trim()){setErr(f.querySelector('#gv-res'),'Write the resolution or the reason for dismissing it.');return false}
+      const o=id?clone(g):{id:uid()};
+      ['filedOn','category','against','details','status','hearingOn','committee','findings','resolution','resolvedOn'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      o.employeeId=emp;o.complainant=emp?'':name;
+      if((st==='Resolved'||st==='Dismissed')&&!o.resolvedOn)o.resolvedOn=today();
+      if(!o.no)o.no=grvNo(o.filedOn,o.id);
+      o.history=(o.history||[]);if(!id||st!==g.status)o.history=o.history.concat({status:st,at:new Date().toISOString(),by:MEID});
+      await save('grievances',o);toast(id?`${o.no} updated.`:`${o.no} saved.`);
+    }});
+}
+function grvView(id){
+  const g=S.grievances.find(x=>x.id===id);if(!g)return;const e=EMP[g.employeeId];
+  const kv=(l,v)=>`<div><dt>${l}</dt><dd>${v?esc(v):'—'}</dd></div>`;const wide=(l,v)=>`<div style="grid-column:1/-1"><dt>${l}</dt><dd style="white-space:pre-wrap">${v?esc(v):'—'}</dd></div>`;
+  openModal({title:`${esc(g.no)} · Grievance`,wide:1,body:`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${grvChip(g)}<span class="chip">${ic('cal')}Filed ${fmt(g.filedOn)}</span>${g.hearingOn?`<span class="chip">Hearing ${fmt(g.hearingOn)}</span>`:''}</div>
+    <section class="sect"><h4>Grievance</h4><dl class="kv">${kv('Employee',grvName(g))}${kv('ID number · site',e?`${e.empNo} · ${e.client||'—'}`:'')}${kv('About',g.category)}${kv('Against',g.against)}${wide('Details',g.details)}</dl></section>
+    <section class="sect"><h4>Grievance Committee</h4><dl class="kv">${kv('Committee members',g.committee)}${kv('Hearing date',g.hearingOn&&fmt(g.hearingOn))}${wide('Findings',g.findings)}${wide('Resolution / action taken',g.resolution)}${kv('Resolved / dismissed on',g.resolvedOn&&fmt(g.resolvedOn))}</dl></section>
+    ${(g.history||[]).length?`<section class="sect"><h4>History</h4><div class="rows">${g.history.map(x=>`<div class="row"><div class="grow"><span class="nm">${esc(x.status)}</span><div class="meta">${fmtTs(x.at)}</div></div></div>`).join('')}</div></section>`:''}`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button>${e?`<button type="button" class="btn ghost" id="gv-201">${ic('users')}Open 201 file</button>`:''}<button type="button" class="btn" data-write id="gv-edit">${ic('edit')}Edit</button>`,
+    onOpen:f=>{const b=f.querySelector('#gv-edit');if(b)b.onclick=()=>{MD.close();grvForm(id)};const o=f.querySelector('#gv-201');if(o)o.onclick=()=>{MD.close();openEmp(e.id,'history')}}});
+}
+
 /* ---------------- settings: user access ---------------- */
 // Accounts are made here by an admin (no sign-up). The server function hris-admin does the work and checks that
 // the caller is an admin; the database rules stop view-only and turned-off accounts from changing records.
-const SITE_PARTS=['approvals','employees','leaves','attendance','evaluations','comms'];
+const SITE_PARTS=['approvals','employees','leaves','attendance','evaluations','comms','da'];
 const allSites=()=>[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
 // one line per part the account can use, e.g. "201 Files: View + Edit · Sanno"
 function accessSummary(u){
@@ -3808,6 +3881,8 @@ const ACT={
   'file-leave':(el,id)=>{if(!S.employees.some(isActive))return toast('Add an active employee first.',{kind:'bad'});leaveForm(id)},
   'req-permit':(el,id)=>permitForm(id),
   'issue-memo':(el,id,k)=>memoForm('disc',null,k,id),
+  'grv-new':()=>grvForm(),
+  'grv-view':(el,id)=>grvView(id),
   'issue-cmemo':(el,id,k)=>memoForm('co',null,k,id),
   'issue-hol':(el,id,k)=>memoForm('hol',null,k,id),
   decide:(el,id,k)=>decide(id,k),
