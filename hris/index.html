@@ -1332,6 +1332,7 @@ const lateUnitOf=client=>{const v=+((ATTSET.lateUnits||{})[client]);return unitO
 const unitShort=u=>u>1?`per ${u===60?'hour':u+' minutes'}`:'actual minutes';
 const lateCharge=(m,u)=>m>0&&u>1?Math.ceil(m/u)*u:m;
 const lateMax=()=>Math.max(0,parseInt(ATTSET.lateMax,10)||0),utMax=()=>Math.max(0,parseInt(ATTSET.utMax,10)||0);
+const halfMax=()=>{const v=parseInt(ATTSET.halfMax,10);return v>=0?v:3};
 const lateSteps=()=>(Array.isArray(ATTSET.steps)&&ATTSET.steps.filter(x=>String(x).trim()).length?ATTSET.steps:LATE_STEPS).filter(x=>String(x).trim());
 let ATTSET={...ATT_DEF};
 const tmin=t=>{if(!t)return null;const p=String(t).split(':').map(Number);return p[0]*60+(p[1]||0)};
@@ -1350,10 +1351,13 @@ function dayInfo(e,d,rec,sc){
   const rest=parse(d).getDay()===0;
   if(r.status==='restday'||(rest&&!r.status))return r.in?{st:'restwork',in:r.in,out:r.out}:{st:'restday'};
   const lv=leaveOn(e.id,d);
-  if(lv&&!r.in&&r.status!=='absent')return{st:'leave',leave:lv.type};
+  if(lv&&!r.in&&r.status!=='absent')return{st:'leave',leave:lv.type,half:lv.type==='Half Day'};
   if(r.status==='absent')return{st:'absent'};
   if(r.in){let i=tmin(r.in),o=r.out?tmin(r.out):null,s=tmin(sc.start),en=tmin(sc.end);
     if(en<=s){en+=1440;if(o!=null&&o<=s)o+=1440;if(i<s-360)i+=1440}
+    /* half day: an approved Half Day leave, or worked half the shift or less; it is not also counted as late or undertime */
+    const half=(lv&&lv.type==='Half Day')||(o!=null&&(Math.min(o,en)-Math.max(i,s))*2<=en-s);
+    if(half)return{st:'present',in:r.in,out:r.out,late:0,ut:0,half:true,incomplete:false};
     return{st:'present',in:r.in,out:r.out,late:i>s+sc.grace?i-s:0,ut:o!=null&&o<en?en-o:0,incomplete:o==null}}
   return{st:'norecord'};
 }
@@ -1400,18 +1404,19 @@ function payDate(sp,p){
 const periodPay=(client,a,b)=>{const sp=cutoffSpec(client);return specPeriods(sp,a,a).some(p=>p[0]===a&&p[1]===b)?payDate(sp,[a,b]):''};
 function attSummaryRange(e,a,b){
   const sc=schedOf(e);const docs={};const get=m=>docs[m]!==undefined?docs[m]:(docs[m]=attDoc(e.id,m)||null);
-  const lu=lateUnitOf(e.client);const s={lateUnit:lu,lateChg:0,present:0,late:0,lateMin:0,ut:0,utMin:0,absent:0,leave:0,norecord:0,incomplete:0,workdays:0,restwork:0,holiday:0,hasDoc:false};
+  const lu=lateUnitOf(e.client);const s={lateUnit:lu,lateChg:0,present:0,late:0,lateMin:0,ut:0,utMin:0,absent:0,leave:0,half:0,norecord:0,incomplete:0,workdays:0,restwork:0,holiday:0,hasDoc:false};
   rangeDays(a,b).forEach(d=>{const doc=get(d.slice(0,7));if(doc)s.hasDoc=true;const x=dayInfo(e,d,doc&&doc.days?doc.days[d]:null,sc);
+    if(x.half)s.half++;
     if(x.st==='present'){s.present++;s.workdays++;if(x.late){s.late++;s.lateMin+=x.late;s.lateChg+=lateCharge(x.late,lu)}if(x.ut){s.ut++;s.utMin+=x.ut}if(x.incomplete)s.incomplete++}
     else if(x.st==='absent'){s.absent++;s.workdays++}else if(x.st==='leave'){s.leave++;s.workdays++}
     else if(x.st==='norecord'){s.norecord++;s.workdays++}else if(x.st==='restwork')s.restwork++;else if(x.st==='holiday')s.holiday++});
-  s.perfect=s.present>0&&!s.late&&!s.ut&&!s.absent&&!s.leave&&!s.norecord&&!s.incomplete;
+  s.perfect=s.present>0&&!s.late&&!s.ut&&!s.absent&&!s.leave&&!s.half&&!s.norecord&&!s.incomplete;
   return s;
 }
 const attSummary=(e,m)=>attSummaryRange(e,...monthRange(m));
-const ATT_TABS=['All','More than 3 lates','Perfect attendance','More than 3 undertime','With absences'];
-const attTest={'All':()=>true,'More than 3 lates':s=>s.late>lateMax(),'Perfect attendance':s=>s.perfect,'More than 3 undertime':s=>s.ut>utMax(),'With absences':s=>s.absent>0};
-const attTabLabel=x=>x==='More than 3 lates'?`More than ${lateMax()} late${lateMax()===1?'':'s'}`:x==='More than 3 undertime'?`More than ${utMax()} undertime`:x;
+const ATT_TABS=['All','More than 3 lates','Perfect attendance','More than 3 undertime','More than 3 half days','With absences'];
+const attTest={'All':()=>true,'More than 3 lates':s=>s.late>lateMax(),'Perfect attendance':s=>s.perfect,'More than 3 undertime':s=>s.ut>utMax(),'More than 3 half days':s=>s.half>halfMax(),'With absences':s=>s.absent>0};
+const attTabLabel=x=>x==='More than 3 lates'?`More than ${lateMax()} late${lateMax()===1?'':'s'}`:x==='More than 3 undertime'?`More than ${utMax()} undertime`:x==='More than 3 half days'?`More than ${halfMax()} half day${halfMax()===1?'':'s'}`:x;
 
 /* Cut-off periods that overlap a month, for the selected site */
 const monthPeriods=(client,m)=>specPeriods(cutoffSpec(client),...monthRange(m));
@@ -1444,8 +1449,8 @@ VIEWS.attendance=function(){
   const curKey=`${a}|${b}`,sel=f.custom?'custom':(opts.some(o=>o[0]===curKey)?curKey:'custom');
   let h=groupTabs()+ph('Attendance',`Attendance per payroll cut-off. Schedule ${fmtTime(ATTSET.start)} – ${fmtTime(ATTSET.end)}${+ATTSET.grace?`, ${ATTSET.grace}-minute grace period`:''}, Sunday rest day.`,
     `<button class="btn ghost" data-act="nav" data-id="attpolicy">${ic('cal')}Cut-offs &amp; late counting</button><button class="btn ghost" data-act="att-copy">${ic('copy')}Copy list</button><button class="btn" data-act="att-import" data-write>${ic('upload')}Import attendance</button>`);
-  const tone={'All':'','More than 3 lates':'bad','Perfect attendance':'ok','More than 3 undertime':'warn','With absences':'bad'};
-  h+=`<div class="fbtns" role="group" aria-label="Show employees">${ATT_TABS.map(x=>{const n=all.filter(r=>attTest[x](r.s)).length;return`<button class="fbtn ${tone[x]}" data-act="tab" data-id="att" data-k="${x}" aria-pressed="${f.tab===x}">${x==='Perfect attendance'?ic('award'):x==='All'?ic('users'):x==='More than 3 lates'?ic('clock'):x==='More than 3 undertime'?ic('arrow'):ic('alert')}<span>${attTabLabel(x)}${x==='Perfect attendance'&&cur?' (so far)':''}</span><b class="num">${n}</b></button>`}).join('')}</div>`;
+  const tone={'All':'','More than 3 lates':'bad','Perfect attendance':'ok','More than 3 undertime':'warn','More than 3 half days':'warn','With absences':'bad'};
+  h+=`<div class="fbtns" role="group" aria-label="Show employees">${ATT_TABS.map(x=>{const n=all.filter(r=>attTest[x](r.s)).length;return`<button class="fbtn ${tone[x]}" data-act="tab" data-id="att" data-k="${x}" aria-pressed="${f.tab===x}">${x==='Perfect attendance'?ic('award'):x==='All'?ic('users'):x==='More than 3 lates'?ic('clock'):x==='More than 3 undertime'?ic('arrow'):x==='More than 3 half days'?ic('clock'):ic('alert')}<span>${attTabLabel(x)}${x==='Perfect attendance'&&cur?' (so far)':''}</span><b class="num">${n}</b></button>`}).join('')}</div>`;
   h+=`<section class="card">
   <div class="toolbar att-tb" style="margin:0 0 8px">
     <label class="sr" for="f-att-month">Month</label><input id="f-att-month" type="month" data-filter="att.month" value="${f.month}" style="flex:0 1 190px">
@@ -1457,20 +1462,20 @@ VIEWS.attendance=function(){
   <p class="help" style="margin:0 0 10px;color:var(--muted)">Showing <b>${fmt(a)} – ${fmt(b)}</b> · ${rangeDays(a,b).length} days${periodPay(f.client,a,b)?` · Payday <b>${fmt(periodPay(f.client,a,b))}</b>`:''}${f.client?` · ${esc(f.client)} cut-off: ${cutoffLabel(f.client)}`:` · Default cut-off: ${cutoffLabel('')}`} · Late counted ${unitShort(lateUnitOf(f.client))} · Late after ${fmtTime(ATTSET.start)}${+ATTSET.grace?` + ${ATTSET.grace} min grace`:''} · Flagged at more than ${lateMax()} late${lateMax()===1?'':'s'} per cut-off · <a href="#attpolicy" data-act="nav" data-id="attpolicy">Cut-off settings</a></p>`;
   if(!docs)h+=`<div class="banner" style="margin-bottom:10px">${ic('info')}<span class="grow">No attendance records for <b>${fmt(a)} – ${fmt(b)}</b> yet. Import the timekeeping file, or click an employee to encode their time in and time out.</span><button class="btn sm" data-act="att-import" data-write>${ic('upload')}Import attendance</button></div>`;
   if(!list.length)h+=emptyBlock('No employees in this list',f.tab==='All'?'Try another cut-off period or site.':`No one matches “${f.tab}” for ${fmt(a)} – ${fmt(b)}.`);
-  else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th class="r">Present</th><th class="r">Lates</th><th class="r">Undertime</th><th class="r">Absences</th><th class="r">Leave</th><th>Remarks</th></tr></thead><tbody>
+  else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th class="r">Present</th><th class="r">Lates</th><th class="r">Undertime</th><th class="r">Half days</th><th class="r">Absences</th><th class="r">Leave</th><th>Remarks</th></tr></thead><tbody>
     ${list.map(({e,s})=>`<tr class="click" data-act="att-edit" data-id="${e.id}" data-k="${a}|${b}" tabindex="0"><td><div class="nm">${esc(fullName(e))}</div><div class="sub">${esc(e.empNo)} · ${esc(e.client||'—')}</div></td>
       <td class="r num">${s.present}${s.restwork?`<div class="sub">+${s.restwork} rest day</div>`:''}</td>
       <td class="r num ${s.late>lateMax()?'att-bad':''}">${s.late}${s.lateMin?`<div class="sub">${hm(s.lateMin)}${s.lateUnit>1?` · counted ${hm(s.lateChg)}`:''}</div>`:''}</td>
       <td class="r num ${s.ut>utMax()?'att-warn':''}">${s.ut}${s.utMin?`<div class="sub">${hm(s.utMin)}</div>`:''}</td>
-      <td class="r num ${s.absent?'att-bad':''}">${s.absent}</td><td class="r num">${s.leave}</td>
-      <td><div class="dchips">${s.perfect?`<span class="chip ok">${ic('award')}Perfect${cur?' so far':''}</span>`:''}${s.late>lateMax()?`<span class="chip bad">${s.late} lates</span>`:''}${s.ut>utMax()?`<span class="chip warn">${s.ut} undertime</span>`:''}${s.absent?`<span class="chip bad">${s.absent} absent</span>`:''}${s.incomplete?`<span class="chip">${s.incomplete} no time out</span>`:''}</div></td></tr>`).join('')}
+      <td class="r num ${s.half>halfMax()?'att-warn':''}">${s.half}</td><td class="r num ${s.absent?'att-bad':''}">${s.absent}</td><td class="r num">${s.leave}</td>
+      <td><div class="dchips">${s.perfect?`<span class="chip ok">${ic('award')}Perfect${cur?' so far':''}</span>`:''}${s.late>lateMax()?`<span class="chip bad">${s.late} lates</span>`:''}${s.ut>utMax()?`<span class="chip warn">${s.ut} undertime</span>`:''}${s.half>halfMax()?`<span class="chip warn">${s.half} half days</span>`:''}${s.absent?`<span class="chip bad">${s.absent} absent</span>`:''}${s.incomplete?`<span class="chip">${s.incomplete} no time out</span>`:''}</div></td></tr>`).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 };
 function attCopy(){
   const[a,b]=attPeriod();const rows=attRows().filter(r=>attTest[UI.att.tab](r.s));
-  const txt=[`${UI.att.tab} · ${fmt(a)} – ${fmt(b)}${UI.att.client?' · '+UI.att.client:''}`,['ID Number','Name','Site','Present','Lates','Late minutes','Late minutes counted','Undertime','Undertime minutes','Absences','Leave'].join('\t')]
-    .concat(rows.map(({e,s})=>[e.empNo,fullName(e),e.client||'',s.present,s.late,s.lateMin,s.lateChg,s.ut,s.utMin,s.absent,s.leave].join('\t'))).join('\n');
+  const txt=[`${UI.att.tab} · ${fmt(a)} – ${fmt(b)}${UI.att.client?' · '+UI.att.client:''}`,['ID Number','Name','Site','Present','Lates','Late minutes','Late minutes counted','Undertime','Undertime minutes','Half days','Absences','Leave'].join('\t')]
+    .concat(rows.map(({e,s})=>[e.empNo,fullName(e),e.client||'',s.present,s.late,s.lateMin,s.lateChg,s.ut,s.utMin,s.half,s.absent,s.leave].join('\t'))).join('\n');
   navigator.clipboard.writeText(txt).then(()=>toast(`${rows.length} row${rows.length===1?'':'s'} copied. Paste into Excel or Google Sheets.`),()=>toast('Copy is blocked in this view. Select the table and press Ctrl+C.',{kind:'bad'}));
 }
 function attEdit(empId,spec){
@@ -1480,12 +1485,12 @@ function attEdit(empId,spec){
   const docOf={};months.forEach(m=>docOf[m]=attDoc(empId,m)||null);
   const days={};months.forEach(m=>Object.assign(days,clone((docOf[m]&&docOf[m].days)||{})));
   const sc=schedOf(e);const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
-  const cell=x=>x.st==='present'?`${x.late?`<span class="chip bad">Late ${hm(x.late)}${lateUnitOf(e.client)>1?` · counted ${hm(lateCharge(x.late,lateUnitOf(e.client)))}`:''}</span>`:''}${x.ut?`<span class="chip warn">UT ${hm(x.ut)}</span>`:''}${x.incomplete?`<span class="chip">No time out</span>`:''}${!x.late&&!x.ut&&!x.incomplete?`<span class="chip ok">On time</span>`:''}`
+  const cell=x=>x.st==='present'&&x.half?`<span class="chip warn">Half day</span>`:x.st==='present'?`${x.late?`<span class="chip bad">Late ${hm(x.late)}${lateUnitOf(e.client)>1?` · counted ${hm(lateCharge(x.late,lateUnitOf(e.client)))}`:''}</span>`:''}${x.ut?`<span class="chip warn">UT ${hm(x.ut)}</span>`:''}${x.incomplete?`<span class="chip">No time out</span>`:''}${!x.late&&!x.ut&&!x.incomplete?`<span class="chip ok">On time</span>`:''}`
     :x.st==='leave'?`<span class="chip info">${esc(x.leave)} leave</span>`:x.st==='absent'?`<span class="chip bad">Absent</span>`:x.st==='restday'?`<span class="att-muted">Rest day</span>`:x.st==='restwork'?`<span class="chip">Worked on rest day</span>`:x.st==='holiday'?`<span class="chip info">Holiday</span>`:x.st==='norecord'?`<span class="att-muted">No record</span>`:x.st==='na'?`<span class="att-muted">Not employed</span>`:`<span class="att-muted">—</span>`;
   const s=attSummaryRange(e,a,b);
   openModal({title:`Attendance · ${esc(fullName(e))} · ${fmtRange(a,b)}`,wide:1,
     body:`<p class="help" style="margin:0;color:var(--muted)">${esc(e.empNo)} · ${esc(e.client||'')}${e.site?' · '+esc(e.site):''} · Schedule ${fmtTime(sc.start)} – ${fmtTime(sc.end)}${sc.grace?`, ${sc.grace}-min grace`:''}${e.shiftStart?' (employee’s own schedule)':''} · Cut-off ${cutoffLabel(e.client)} · Late counted ${unitShort(lateUnitOf(e.client))}</p>
-    <div class="dchips">${s.perfect?`<span class="chip ok">${ic('award')}Perfect attendance</span>`:''}<span class="chip">${s.present} present</span><span class="chip ${s.late>lateMax()?'bad':''}">${s.late} late · ${hm(s.lateMin)}${s.lateUnit>1?` (counted ${hm(s.lateChg)})`:''}</span><span class="chip ${s.ut>utMax()?'warn':''}">${s.ut} undertime · ${hm(s.utMin)}</span><span class="chip ${s.absent?'bad':''}">${s.absent} absent</span><span class="chip">${s.leave} leave</span></div>
+    <div class="dchips">${s.perfect?`<span class="chip ok">${ic('award')}Perfect attendance</span>`:''}<span class="chip">${s.present} present</span><span class="chip ${s.late>lateMax()?'bad':''}">${s.late} late · ${hm(s.lateMin)}${s.lateUnit>1?` (counted ${hm(s.lateChg)})`:''}</span><span class="chip ${s.ut>utMax()?'warn':''}">${s.ut} undertime · ${hm(s.utMin)}</span><span class="chip ${s.half>halfMax()?'warn':''}">${s.half} half day${s.half===1?'':'s'}</span><span class="chip ${s.absent?'bad':''}">${s.absent} absent</span><span class="chip">${s.leave} leave</span></div>
     <div class="tw" style="margin:0"><table class="tbl att-days" style="min-width:640px"><thead><tr><th>Date</th><th>Mark as</th><th>Time in</th><th>Time out</th><th>Result</th></tr></thead><tbody>
     ${range.map(d=>{const r=days[d]||{};const x=dayInfo(e,d,r,sc);const off=x.st==='future'&&d>today()||x.st==='na';
       return`<tr class="${parse(d).getDay()===0?'sun':''}"><td class="num" style="white-space:nowrap"><b>${wd(d)}</b> ${fmtS(d)}</td>
