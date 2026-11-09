@@ -1083,7 +1083,7 @@ VIEWS.leaves=function(){
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending requests':'No leave records here',f.tab==='Pending'?'Leave requests filed by employees appear here for your approval.':'Try another tab or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:1080px"><thead><tr><th>Employee</th><th>Site Location</th><th>Leave</th><th>Dates</th><th class="r">Days</th><th>Attachment</th><th>Status</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>
     ${list.map(l=>{const e=EMP[l.employeeId];return`<tr class="click" data-act="view-leave" data-id="${l.id}" tabindex="0"><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${l.employeeId}"><span class="nm">${esc(reqName(l))}</span></button>${sampleChip(l)}${reqChips(l)}<div class="sub">Filed ${fmtDT(l.filedAt)}</div></td><td>${siteCell(l)}</td><td style="max-width:240px"><div class="nm">${esc(l.type)}</div><div class="sub" style="overflow-wrap:anywhere">${esc((l.reason||'').length>70?l.reason.slice(0,70)+'…':(l.reason||''))}</div></td><td class="num" style="white-space:nowrap">${fmtS(l.from)} – ${fmt(l.to)}</td><td class="r num">${l.days}${usesCredits(l)?(()=>{const sh=POOL_SHORT[creditPool(EMP[l.employeeId],l.type)];if(l.status==='Approved'&&l.creditDays!=null)return`<div class="sub">${sh} −${f2(l.creditDays)}${l.unpaidDays?` · ${l.unpaidDays} unpaid`:''}</div>`;if(l.status!=='Pending')return'';const s=leaveCredit(l);return`<div class="sub ${s&&s.eligible&&s.available>=l.days?'':'lowc'}">${s&&s.eligible?`${f2(s.available)} ${sh} left`:`No ${sh} yet`}</div>`})():''}</td><td>${attCell(l)}</td><td>${statusChip(l.status)}${l.decidedAt?`<div class="sub">by ${byName(l)} · ${fmtTs(l.decidedAt)}</div>`:''}${l.status==='Approved'?`<div style="margin-top:4px">${ptwChip(l)}</div>`:''}</td>
-      <td><div class="acts" data-write>${l.status==='Pending'?`<button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined">Decline</button>`:''}<button class="icon-btn" data-act="del" data-id="${l.id}" data-k="leaves" aria-label="Delete leave record">${ic('trash')}</button></div></td></tr>`}).join('')}
+      <td><div class="acts" data-write>${l.status==='Pending'?`<button class="btn sm ok" data-act="decide" data-id="${l.id}" data-k="leaves:Approved">Approve</button><button class="btn sm bad-ghost" data-act="decide" data-id="${l.id}" data-k="leaves:Declined">Decline</button>`:''}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 };
@@ -3760,7 +3760,7 @@ const ACT={
   'client-eval':(el,id,k)=>clientEvalShare(id,k),
   'link-ceval':(el,id)=>linkClientEval(id,($('#cl-e-'+CSS.escape(id))||{}).value,($('#cl-k-'+CSS.escape(id))||{}).value),
   regularize:(el,id)=>regularizeForm(id),
-  del:(el,id,k)=>{const r=S[k].find(x=>x.id===id);const n=((r&&r.attachments)||[]).length;confirmBox('Delete this record?',`This permanently deletes the leave record${n?` and its ${n} attachment${n===1?'':'s'}`:''}.`,'Delete',async()=>{await remove(k,id);if(ASSETS&&r)for(const f of r.attachments||[]){try{await ASSETS.delete(f.id)}catch(e){}}toast('Record deleted.')})},
+  /* leave records cannot be deleted; decline a request instead */
   'clear-sample':clearSample,
   'me-settings':()=>{meMenu(false);go('settings')},
   'me-account':()=>{meMenu(false);myAccount()},
