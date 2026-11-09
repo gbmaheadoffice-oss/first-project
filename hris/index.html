@@ -1965,35 +1965,26 @@ function empColumns(){
   const extra=[
     ['Plant / Branch / Area',e=>e.site],['Allowance Details',e=>e.allowanceNote],['Sex',e=>e.gender],['Age',e=>e.birthDate?Math.floor(diff(e.birthDate,today())/365.25):''],['Email',e=>e.email],['No. of Dependents',e=>e.dependents],
     ['Shift Start',e=>e.shiftStart||ATTSET.start],['Shift End',e=>e.shiftEnd||ATTSET.end],
-    ['Eligible for Rehire',e=>e.rehireEligible||''],['Blocklist Reason',e=>empStatus(e)==='Blocklisted'?e.blocklistReason:''],['Blocklist Date',e=>empStatus(e)==='Blocklisted'?e.blocklistDate:''],['Blocklist Details',e=>empStatus(e)==='Blocklisted'?e.blocklistDetails:''],
     ['Bank',e=>e.bank&&e.bank.accountNo?BANK:''],['Account Name',e=>e.bank&&e.bank.accountName],['AUB Account No.',e=>e.bank&&e.bank.accountNo],
-    ['AUB Validation',e=>({ok:'Verified',bad:'Does not match',pending:'Not yet verified',none:''})[bankState(e)]],
     ['Solo Parent',e=>yn(e.soloParent)],['Solo Parent ID No.',e=>e.soloParent?e.soloParentId:''],['Solo Parent ID Valid Until',e=>e.soloParent?e.soloParentValidUntil:''],
     ['PWD',e=>yn(e.pwd)],['Type of Disability',e=>e.pwd?e.pwdType:''],['PWD ID No.',e=>e.pwd?e.pwdId:''],['PWD ID Valid Until',e=>e.pwd?e.pwdValidUntil:''],
-    ['201 Requirements Submitted',e=>`${docCount(e)} of ${docTotal(e)}`],['Scanned Files Uploaded',e=>fileCount(e)],
-    ...DOCS.filter(([k])=>!['covid','application','exam','photo','brgy','police','nbi','psa','marriage','dependents'].includes(k)).map(([k,l])=>[l,req(k)]),
-    ...MS.flatMap(m=>[[`${m.label} Client Score`,ev(m.k,r=>r.client?Number(r.client.avg):'')],[`${m.label} HR Score`,ev(m.k,r=>r.hr?Number(r.hr.avg):'')],[`${m.label} Final Score`,ev(m.k,r=>r.final!=null?r.final:Number(r.rating)||r.rating)]]),
-    ['SIL Credits Available',e=>{if(isOffice(e))return'';const s=silInfo(e);return s&&s.eligible?r2(s.available):s?0:''}],
-    ['VL Credits Available (Head Office)',e=>{if(!isOffice(e))return'';const s=hoInfo(e,'Vacation');return s.eligible?r2(s.available):0}],
-    ['SL Credits Available (Head Office)',e=>{if(!isOffice(e))return'';const s=hoInfo(e,'Sick');return s.eligible?r2(s.available):0}],
-    ['Paternity Leave Credits Available',e=>e.gender==='Female'?'':r2(fixedInfo(e,'Paternity').available)],
-    ['Solo Parent Leave Credits Available',e=>e.soloParent?r2(fixedInfo(e,'Solo Parent').available):''],
   ];
   return main.concat(extra);
 }
 function export201(){
   const cur=empFiltered();const all=S.employees.slice().sort(sortName);
   openModal({title:'Export 201 Files to Excel',
-    body:`<p style="margin:0">Creates an Excel workbook (.xlsx) with every detail in the 201 files: personal information, employment, status and reasons, government IDs, AUB account, emergency contact, solo parent details, every requirement, contracts and orientation, salary, medical, evaluations and leave credits. Columns follow the GBMA 201 masterlist order.</p>
+    body:`<p style="margin:0">Creates an Excel workbook (.xlsx) of the 201 files in the GBMA 201 masterlist order: personal information, employment, status, government IDs, emergency contact, requirements, contracts and orientation, salary, medical and evaluations, then plant, shift, AUB account, solo parent and PWD details.</p>
     <fieldset><legend>Employees to include</legend>
-      <label class="ck"><input type="radio" name="scope" value="current" checked>Current list on screen · <b>${cur.length}</b> employee${cur.length===1?'':'s'} (${esc(UI.emp.tab)}${UI.emp.client?' · '+esc(UI.emp.client):''}${UI.emp.q?' · search “'+esc(UI.emp.q)+'”':''})</label>
+      <label class="ck"><input type="radio" name="scope" value="current" checked>Current list on screen · <b>${cur.length}</b> employee${cur.length===1?'':'s'} (${esc(UI.emp.type?UI.emp.type.replace(/^st:/,''):'All types')}${UI.emp.inc?' · Incomplete 201 Files':''}${UI.emp.client?' · '+esc(UI.emp.client):''}${UI.emp.q?' · search “'+esc(UI.emp.q)+'”':''})</label>
+      ${EMP_STATUSES.map(([v])=>{const n=all.filter(e=>empStatus(e)===v).length;return`<label class="ck"><input type="radio" name="scope" value="st:${v}">${v} employees only · <b>${n}</b></label>`}).join('')}
       <label class="ck"><input type="radio" name="scope" value="all">All employees · <b>${all.length}</b> (Active, Separated and Blocklisted)</label>
     </fieldset>
     <p class="help" style="margin:0">The workbook has three sheets: <b>201 Files</b> (one row per employee), <b>Uploaded Documents</b> (one row per scanned file) and <b>Status History</b>.</p>
     <div class="silline warn">${ic('alert')}<span>The file contains government ID numbers and bank account numbers. Store and share it carefully.</span></div>`,
     submitLabel:'Export to Excel',
     onSubmit:async(fd,f)=>{
-      const list=fd.get('scope')==='all'?all:cur;if(!list.length){toast('There are no employees to export.',{kind:'bad'});return false}
+      const sc=String(fd.get('scope')||'current');const list=sc==='all'?all:sc.startsWith('st:')?all.filter(e=>empStatus(e)===sc.slice(3)):cur;if(!list.length){toast('There are no employees to export.',{kind:'bad'});return false}
       const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
       if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return false}
       const sb=f.querySelector('button[type=submit]');sb.textContent='Preparing workbook…';
@@ -2015,7 +2006,7 @@ function export201(){
       const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'201 Files');X.utils.book_append_sheet(wb,ws2,'Uploaded Documents');X.utils.book_append_sheet(wb,ws3,'Status History');
       wb.Props={Title:'201 Files',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
       const buf=X.write(wb,{bookType:'xlsx',type:'array'});
-      const name=`GBMA 201 Files${fd.get('scope')==='all'?'':' - '+(UI.emp.type?UI.emp.type.replace(/^st:/,''):'All')+(UI.emp.inc?' - Incomplete 201':'')+(UI.emp.client?' - '+UI.emp.client:'')} - ${today()}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
+      const name=`GBMA 201 Files${sc==='all'?'':sc.startsWith('st:')?' - '+sc.slice(3):' - '+(UI.emp.type?UI.emp.type.replace(/^st:/,''):'All')+(UI.emp.inc?' - Incomplete 201':'')+(UI.emp.client?' - '+UI.emp.client:'')} - ${today()}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
       sb.textContent='Waiting for you to save…';
       try{await dl.save({filename:name,data:new Blob([buf])});toast(`Exported ${list.length} employee${list.length===1?'':'s'} to ${name}.`)}
       catch(err){sb.textContent='Export to Excel';const c=err&&err.code;
