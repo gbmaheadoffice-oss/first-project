@@ -172,6 +172,7 @@ button.row:hover .nm{text-decoration:underline}
 .toolbar .srch svg{position:absolute;left:12px;top:12px;color:var(--muted)}
 .toolbar .srch input{padding-left:42px}
 .toolbar select{flex:0 1 200px}
+.att-tb .att-dl{align-self:center;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
 .att-tb .srch{flex:1 1 150px;min-width:0}
 @media (min-width:901px){.att-tb{flex-wrap:nowrap}.att-tb>input,.att-tb>select{min-width:0}}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}
@@ -1421,16 +1422,12 @@ const attTabLabel=x=>x==='More than 3 lates'?`More than ${lateMax()} late${lateM
 /* Cut-off periods that overlap a month, for the selected site */
 const monthPeriods=(client,m)=>specPeriods(cutoffSpec(client),...monthRange(m));
 function attPeriod(){
+  /* From – To chosen by HR; the first time it opens on the current cut-off period */
   const f=UI.att,ok=v=>/^\d{4}-\d{2}-\d{2}$/.test(v||'');
-  if(!/^\d{4}-\d{2}$/.test(f.month||''))f.month=today().slice(0,7);
-  if(f.preset){if(f.preset==='custom')f.custom=true;else{const[x,y]=f.preset.split('|');if(x&&y){f.from=x;f.to=y;f.custom=false}}f.preset=''}
-  if(f.month!==f.lastMonth||f.client!==f.lastClient||!ok(f.from)||!ok(f.to)){
-    const ps=monthPeriods(f.client,f.month),t=today();
-    const p=ps.find(q=>q[0]<=t&&t<=q[1])||ps.find(q=>q[0].slice(0,7)===f.month)||ps[0];
-    f.from=p[0];f.to=p[1];f.custom=false;f.lastMonth=f.month;f.lastClient=f.client;
-  }
+  if(!ok(f.from)||!ok(f.to)){const t=today();const ps=specPeriods(cutoffSpec(f.client),t,t);const p=ps.find(q=>q[0]<=t&&t<=q[1])||monthRange(t.slice(0,7));f.from=p[0];f.to=p[1]}
   if(f.to<f.from){const x=f.from;f.from=f.to;f.to=x}
   if(diff(f.from,f.to)>92)f.to=addDays(f.from,92);
+  f.month=f.from.slice(0,7);
   return[f.from,f.to];
 }
 function attRows(){
@@ -1445,17 +1442,14 @@ VIEWS.attendance=function(){
   const months=[...new Set(rangeDays(a,b).map(d=>d.slice(0,7)))];
   const docs=S.attendance.filter(x=>months.includes(x.month)&&Object.keys(x.days||{}).some(d=>d>=a&&d<=b)).length;
   const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
-  const sp=cutoffSpec(f.client);const opts=monthPeriods(f.client,f.month).map(p=>{const pd=payDate(sp,p);return[p.join('|'),`${fmtS(p[0])} – ${fmtS(p[1])}${pd?` · payday ${fmtS(pd)}`:''}`]});const mr=monthRange(f.month);if(!opts.some(o=>o[0]===mr.join('|')))opts.push([mr.join('|'),`Whole month · ${fmtS(mr[0])} – ${fmtS(mr[1])}`]);
-  const curKey=`${a}|${b}`,sel=f.custom?'custom':(opts.some(o=>o[0]===curKey)?curKey:'custom');
   let h=groupTabs()+ph('Attendance',`Attendance per payroll cut-off. Schedule ${fmtTime(ATTSET.start)} – ${fmtTime(ATTSET.end)}${+ATTSET.grace?`, ${ATTSET.grace}-minute grace period`:''}, Sunday rest day.`,
     `<button class="btn ghost" data-act="nav" data-id="attpolicy">${ic('cal')}Cut-offs &amp; late counting</button><button class="btn ghost" data-act="att-copy">${ic('copy')}Copy list</button><button class="btn" data-act="att-import" data-write>${ic('upload')}Import attendance</button>`);
   const tone={'All':'','More than 3 lates':'bad','Perfect attendance':'ok','More than 3 undertime':'warn','More than 3 half days':'warn','With absences':'bad'};
   h+=`<div class="fbtns" role="group" aria-label="Show employees">${ATT_TABS.map(x=>{const n=all.filter(r=>attTest[x](r.s)).length;return`<button class="fbtn ${tone[x]}" data-act="tab" data-id="att" data-k="${x}" aria-pressed="${f.tab===x}">${x==='Perfect attendance'?ic('award'):x==='All'?ic('users'):x==='More than 3 lates'?ic('clock'):x==='More than 3 undertime'?ic('arrow'):x==='More than 3 half days'?ic('clock'):ic('alert')}<span>${attTabLabel(x)}${x==='Perfect attendance'&&cur?' (so far)':''}</span><b class="num">${n}</b></button>`}).join('')}</div>`;
   h+=`<section class="card">
   <div class="toolbar att-tb" style="margin:0 0 8px">
-    <label class="sr" for="f-att-month">Month</label><input id="f-att-month" type="month" data-filter="att.month" value="${f.month}" style="flex:0 1 190px">
-    <label class="sr" for="f-att-preset">Period covered</label><select id="f-att-preset" data-filter="att.preset" style="flex:0 0 360px;width:360px;max-width:100%" title="Period covered">${opts.map(([v,l])=>`<option value="${v}" ${v===sel?'selected':''}>Period covered: ${esc(l)}</option>`).join('')}<option value="custom" ${sel==='custom'?'selected':''}>Period covered: Custom dates…</option></select>
-    ${f.custom?`<label class="sr" for="f-att-from">From</label><input id="f-att-from" type="date" data-filter="att.from" value="${a}" style="flex:0 1 165px" title="From"><label class="sr" for="f-att-to">To</label><input id="f-att-to" type="date" data-filter="att.to" value="${b}" style="flex:0 1 165px" title="To">`:''}
+    <label for="f-att-from" class="att-dl">From</label><input id="f-att-from" type="date" data-filter="att.from" value="${a}" style="flex:0 1 165px" title="From">
+    <label for="f-att-to" class="att-dl">To</label><input id="f-att-to" type="date" data-filter="att.to" value="${b}" style="flex:0 1 165px" title="To">
     ${searchBox('f-att-q','att.q',f.q,'Search employee, client')}
     <label class="sr" for="f-att-client">Client company</label><select id="f-att-client" data-filter="att.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
   </div>
