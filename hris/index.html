@@ -226,7 +226,7 @@ legend{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.0
 .fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 .field{display:flex;flex-direction:column;gap:6px;min-width:0}
 .field.full{grid-column:1/-1}
-.field label{font-weight:600;font-size:14px}
+.field label{font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.03em}
 .field label .req{color:var(--bad)}
 .field .help{color:var(--muted);font-size:13px;margin:0}
 input,select,textarea{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:9px 12px;font-size:15.5px}
@@ -238,7 +238,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--focus);outline-o
 .ck{display:flex;gap:10px;align-items:center;min-height:40px;font-size:15px;cursor:pointer}
 .ck input{width:20px;height:20px;min-height:0;accent-color:var(--bar);flex:none}
 .summary{background:var(--surface-2);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:15px}
-.summary dt{color:var(--muted)} .summary dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.summary dt{color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-size:13.5px} .summary dd{margin:0;font-weight:600;overflow-wrap:anywhere}
 .formerr{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:10px 14px;font-weight:600}
 
 /* drawer */
@@ -286,8 +286,8 @@ svg.i.sm{width:14px;height:14px}
 .fn span{color:var(--muted);font-size:13px}
 @media (max-width:720px){.files{padding-left:0}}
 
-.flabel{font-weight:600;font-size:14px}
-.addr-lbl{display:block;font-weight:600;margin-bottom:6px}
+.flabel{font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.03em}
+.addr-lbl{display:block;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em}
 .addr-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .addr-g input{grid-column:1/-1}
 .addr-g select:disabled{opacity:.6}
@@ -952,7 +952,7 @@ VIEWS.approvals=function(){
   let list=byStep.filter(x=>f.tab==='All'||x.kind===f.tab);
   if(q)list=list.filter(x=>[reqName(x.r),x.kind,x.txt,siteClient(x.r),siteLoc(x.r)].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>(a.r.filedAt||'')<(b.r.filedAt||'')?-1:1);
-  let h=ph('For Approvals','Every leave, Permit to Work and overtime request still waiting for a decision, in one place. HR approves first, then the Owner. Open a request to see its details, or approve or decline it here.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  let h=ph('For Approvals','Every leave, Permit to Work and overtime request still waiting for a decision, in one place. HR approves first, then the Owner. Open a request to see its details, or approve or decline it here.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}REFRESH</button>`:'');
   h+=fbtnsHtml('apr','Show requests',APR_KINDS.map(([k,i])=>[k,k==='All'?byStep.length:byStep.filter(x=>x.kind===k).length,i,'',k==='All'?'All requests':k]),f.tab);
   const nMine=all.filter(mine).length;
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-apr-q','apr.q',f.q,'Search employee, request, site, reason')}
@@ -1067,7 +1067,7 @@ VIEWS.leaves=function(){
   let list=S.leaves.filter(l=>f.tab==='All'||l.status===f.tab);
   if(q)list=list.filter(l=>[reqName(l),l.type,l.reason,siteClient(l),siteLoc(l)].join(' ').toLowerCase().includes(q));
   list.sort(f.tab==='Pending'?(a,b)=>a.from<b.from?-1:1:(a,b)=>(b.filedAt||'')<(a.filedAt||'')?-1:1);
-  let h=groupTabs()+ph('Leave Approvals','Leave requests from the GBMA Leave Form on Jotform, which appear here within 5 minutes, and requests filed here. Review each one, then approve or decline it. Day count excludes Sundays.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  let h=groupTabs()+ph('Leave Approvals','Leave requests from the GBMA Leave Form on Jotform, which appear here within 5 minutes, and requests filed here. Review each one, then approve or decline it. Day count excludes Sundays.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}REFRESH</button>`:'');
   h+=fbtnsHtml('leave','Show leave requests',STATUS_BTNS.map(([v,i,t])=>[v,cnt(v),i,t]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-leave-q','leave.q',f.q,'Search employee, leave type, site, reason')}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No pending requests':'No leave records here',f.tab==='Pending'?'Leave requests filed by employees appear here for your approval.':'Try another tab or search.');
@@ -1098,7 +1098,7 @@ VIEWS.permits=function(){
   if(q)list=list.filter(p=>[p.no,reqName(p),p.leaveType,siteClient(p),siteLoc(p),p.note].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>f.tab==='Pending'?((a.returnDate||'')<(b.returnDate||'')?-1:1):((b.returnDate||'')<(a.returnDate||'')?-1:1));
   const waiting=S.leaves.filter(l=>l.status==='Approved'&&!permitFor(l)&&diff(today(),l.to)<=7&&diff(l.to,today())<=30).sort((a,b)=>a.to<b.to?-1:1);
-  let h=groupTabs()+ph('Permit to Work Approvals','Return-to-work clearance. An employee who filed a leave must secure a Permit to Work before reporting back. Requests from the GBMA Permit to Work form on Jotform appear here within 5 minutes. Review each request and issue the permit.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  let h=groupTabs()+ph('Permit to Work Approvals','Return-to-work clearance. An employee who filed a leave must secure a Permit to Work before reporting back. Requests from the GBMA Permit to Work form on Jotform appear here within 5 minutes. Review each request and issue the permit.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}REFRESH</button>`:'');
   if(waiting.length)h+=`<section class="card"><div class="card-h"><h3>Approved leaves awaiting a permit</h3><span class="help" style="color:var(--muted)">These employees have not yet requested their Permit to Work.</span></div><div class="rows">${waiting.map(l=>{const back=nextWorkday(l.to);const late=diff(today(),back)<0;return`<button class="row" data-act="view-leave" data-id="${l.id}"><div class="grow"><span class="nm">${esc(reqName(l))}</span> <span class="meta">· ${esc(l.type)} leave ${fmtS(l.from)} – ${fmtS(l.to)} · ${esc(siteClient(l))}</span></div>${late?`<span class="chip bad">${ic('alert')}Was due back ${fmtS(back)}</span>`:`<span class="chip warn">Back ${fmtS(back)}</span>`}</button>`}).join('')}</div></section>`;
   h+=fbtnsHtml('permit','Show permits',STATUS_BTNS.map(([v,i,t])=>[v,cnt(v),v==='All'?'hat':i,t,v==='Approved'?'Issued':v]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-permit-q','permit.q',f.q,'Search permit no., employee, leave, site')}</div>`;
@@ -1119,7 +1119,7 @@ VIEWS.overtime=function(){
   if(q)list=list.filter(o=>[reqName(o),o.department,o.reason,siteClient(o),siteLoc(o)].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>f.tab==='Pending'?((a.date||'')<(b.date||'')?-1:1):((b.date||'')<(a.date||'')?-1:1));
   const hrs=list.filter(o=>o.status==='Approved').reduce((t,o)=>t+(Number(o.hours)||0),0);
-  let h=groupTabs()+ph('Overtime Requests','Overtime requests from the Overtime Request Form on Jotform appear here within 5 minutes. Review each request and approve or decline it.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}Check Jotform now</button>`:'');
+  let h=groupTabs()+ph('Overtime Requests','Overtime requests from the Overtime Request Form on Jotform appear here within 5 minutes. Review each request and approve or decline it.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('download')}REFRESH</button>`:'');
   h+=fbtnsHtml('ot','Show overtime requests',STATUS_BTNS.map(([v,i,t])=>[v,cnt(v),v==='All'?'ot':i,t,v==='Pending'?'For Approvals':v]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-ot-q','ot.q',f.q,'Search employee, department, reason, site')}${hrs?`<span class="help" style="margin-left:auto">Approved in this list: <b class="num">${r4(hrs)}</b> hour${hrs===1?'':'s'}</span>`:''}</div>`;
   if(!list.length)h+=emptyBlock(f.tab==='Pending'?'No overtime requests for approval':'No overtime requests here',f.tab==='Pending'?'Overtime requests filed on Jotform appear here for approval.':'Try another tab or search.');
@@ -3553,7 +3553,7 @@ VIEWS.applicants=function(){
   const poss=[...new Set(S.applicants.map(a=>titleCase(a.form&&a.form.position)).filter(Boolean))].sort();
   const canSync=!!window.HRIS_SB;
   let h=ph('Applicants',`${S.applicants.length} job application${S.applicants.length===1?'':'s'} from the GBMA Online Job Application Form on Jotform. New applications appear here automatically within 5 minutes.`,
-    canSync?`<button class="btn ghost" data-act="app-sync" data-write>${ic('download')}Check Jotform now</button>`:'');
+    canSync?`<button class="btn ghost" data-act="app-sync" data-write>${ic('download')}REFRESH</button>`:'');
   const APP_LOOK={All:['users',''],New:['plus',''],Shortlisted:['award',''],'For interview':['cal','warn'],Hired:['check','ok'],'Not hired':['x','bad'],Blocklisted:['alert','bad']};
   h+=fbtnsHtml('app','Show applicants',['All'].concat(APP_STATUS).map(s=>[s,cnt(s),...APP_LOOK[s]]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 12px">
@@ -3708,7 +3708,7 @@ async function markHired(appId,empId){
   o.status='Hired';o.hiredEmployeeId=empId;try{await save('applicants',o)}catch(e){}
 }
 async function syncJotform(el){
-  if(!window.HRIS_SB)return;el.disabled=true;const t=el.innerHTML;el.textContent='Checking Jotform…';
+  if(!window.HRIS_SB)return;el.disabled=true;const t=el.innerHTML;el.textContent='Refreshing…';
   const req=el.dataset.k==='requests';
   try{const{data,error}=await window.HRIS_SB.functions.invoke('jotform-sync',{body:req?{only:'requests'}:{only:'applicants'}});if(error)throw error;
     if(req){const w=k=>(data[k]||{}).written||0,dd=k=>(data[k]||{}).decided||0,n=w('leaves')+w('permits')+w('overtime'),dn=dd('leaveDecisions')+dd('permitDecisions')+dd('overtimeDecisions');toast(n||dn?`${n} leave, permit or overtime request${n===1?'':'s'} added or updated${dn?`, ${dn} decided in Jotform`:''}.`:'No new leave, permit or overtime requests.')}
