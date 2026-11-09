@@ -116,7 +116,7 @@ async function due() {
     if (e.employmentType !== "Probationary" || SEPARATED.includes(e.status) || !e.hireDate || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s(e.supervisorEmail))) continue;
     for (const [k, label, n] of MS) {
       const rec = e.evals?.[k];
-      if (rec?.date) { if (rec.recommendation === "Not recommended") break; continue; } // a Not recommended evaluation stops the later ones
+      if (rec?.date) { if (rec.recommendation === "For End of Contract" || rec.recommendation === "Not recommended") break; continue; } // a For End of Contract evaluation stops the later ones
       if (answers.some((a) => a.employeeId === e.id && a.period === k)) continue;
       const d = addMonths(e.hireDate, n), sent = inv.get(`${e.id}_${k}`);
       if (!sent?.sentAt) { if (today >= addDays(d, -INVITE_DAYS) && today <= d) items.push(mail(e, k, label, d, false)); }

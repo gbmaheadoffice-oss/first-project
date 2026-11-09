@@ -595,7 +595,8 @@ const acctMask=n=>n?'•••• •••• '+String(n).slice(-4):'—';
 function bankState(e){const b=e.bank||{};if(!b.accountNo)return'none';if(b.verified)return'ok';if(b.mismatch)return'bad';return'pending'}
 function bankChip(e){const s=bankState(e);return s==='ok'?`<span class="chip ok">${ic('check')}AUB verified</span>`:s==='bad'?`<span class="chip bad">${ic('alert')}AUB does not match</span>`:s==='pending'?`<span class="chip warn">${ic('clock')}AUB not yet verified</span>`:`<span class="chip">No AUB account</span>`}
 const RATINGS=[['5','Outstanding (5)'],['4','Very Satisfactory (4)'],['3','Satisfactory (3)'],['2','Needs Improvement (2)'],['1','Poor (1)']];
-const RECS=['Continue probation','Recommended for regularization','Not recommended'];
+const RECS=['For Continue Probation','For Regularization','For End of Contract'];
+/* older evaluations were saved with the previous wording; show them with the current one */const OLD_RECS={'Continue probation':'For Continue Probation','Recommended for regularization':'For Regularization','Not recommended':'For End of Contract'};const normRecs=e=>{if(e&&e.evals)Object.values(e.evals).forEach(r=>{if(r&&OLD_RECS[r.recommendation])r.recommendation=OLD_RECS[r.recommendation]})};
 const MS=[{k:'m1',label:'1st Month',short:'1st',n:1},{k:'m3',label:'3rd Month',short:'3rd',n:3},{k:'m5',label:'5th Month',short:'5th',n:5}];
 const NTE_TEMPLATE=`You are hereby directed to explain in writing, within five (5) calendar days from receipt of this notice, why no disciplinary action should be taken against you for the following:
 
@@ -753,7 +754,7 @@ function milestones(e){
   let stop=null;
   const items=MS.map(m=>{const due=addMonths(e.hireDate,m.n);const rec=e.evals&&e.evals[m.k];const done=!!(rec&&rec.date);
     const it={...m,due,rec,state:done?'done':stop?'stopped':(prob?msState(due,false,14):'na'),stopBy:done?null:stop};
-    if(done&&rec.recommendation==='Not recommended'&&!stop)stop=m;return it});
+    if(done&&rec.recommendation==='For End of Contract'&&!stop)stop=m;return it});
   const regDue=addMonths(e.hireDate,6);
   const regDone=!!e.regularizedOn||e.employmentType==='Regular';
   return{items,reg:{due:regDue,done:regDone,on:e.regularizedOn,state:regDone?'done':(prob?msState(regDue,false,30):'na')}};
@@ -763,7 +764,7 @@ function stateChip(state,due){
   if(state==='overdue'){const d=-diff(today(),due);return`<span class="chip bad">${ic('alert')}Overdue ${d}d</span>`}
   if(state==='soon'){const d=diff(today(),due);return`<span class="chip warn">${ic('clock')}${d===0?'Due today':'Due in '+d+'d'}</span>`}
   if(state==='na')return`<span class="chip">Not recorded</span>`;
-  if(state==='stopped')return`<span class="chip bad" title="An earlier evaluation is Not recommended">${ic('x2')}Stopped</span>`;
+  if(state==='stopped')return`<span class="chip bad" title="An earlier evaluation is marked For End of Contract">${ic('x2')}Stopped</span>`;
   return`<span class="chip">Upcoming</span>`;
 }
 const statusChip=s=>{const m={Pending:'warn',Approved:'ok',Declined:'bad',Closed:'',Open:'warn',Acknowledged:'info',Draft:''}[s];const i={Pending:'clock',Approved:'check',Declined:'x2',Open:'clock',Acknowledged:'check',Draft:'edit'}[s];if(s==='Draft')return`<span class="chip">${ic('edit')}Draft · not sent</span>`;if(s==='Sent')return`<span class="chip info">${ic('send')}Sent</span>`;if(s==='Issued')return`<span class="chip ok">${ic('check')}Issued</span>`;return`<span class="chip ${m||''}">${i?ic(i):''}${esc(s)}</span>`};
@@ -887,7 +888,7 @@ function renderNav(){
     <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm',c.memos)}</div>`;
 }
 function render(focus){
-  EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>EMP[e.id]=e);
+  EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>{normRecs(e);EMP[e.id]=e});
   if(groupOf(route))lastOf[groupOf(route)]=route;
   applyAccessCss();
   renderNav();
@@ -1650,7 +1651,7 @@ VIEWS.evaluations=function(){
   list.sort((a,b)=>a.hireDate<b.hireDate?1:-1);
   let h=ph('Evaluations & Regularization','Evaluations fall due 1, 3 and 5 months after the hire date. Regularization is due at 6 months.');
   const pendE=S.employees.filter(e=>isProb(e)&&notRecommended(e)).map(e=>({e,n:eopNotice(e)})).filter(x=>!x.n||x.n.status==='Draft');
-  if(pendE.length)h+=`<section class="card" data-write style="border-color:color-mix(in srgb,var(--bad) 35%,var(--line))"><div class="card-h"><h3>Not recommended · Notices of End of Probationary Employment</h3><span class="help" style="color:var(--muted)">Final score below 3.00. Review each notice before it is sent.</span></div><div class="rows">${pendE.map(({e,n})=>{const lo=MS.map(m=>e.evals&&e.evals[m.k]).filter(r=>r&&r.final!=null&&r.final<3).map(r=>r.final.toFixed(2));return`<div class="row"><div class="grow"><span class="nm">${esc(fullName(e))}</span><div class="meta">${esc(e.client||'')} · hired ${fmt(e.hireDate)}${lo.length?` · final score ${lo.join(', ')}`:''}</div></div>${n?`<span class="chip">${ic('edit')}Draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button>`:`<span class="chip bad">Not prepared</span><button class="btn sm bad" data-act="eop-notice" data-id="${e.id}">Prepare &amp; review</button>`}</div>`}).join('')}</div></section>`;
+  if(pendE.length)h+=`<section class="card" data-write style="border-color:color-mix(in srgb,var(--bad) 35%,var(--line))"><div class="card-h"><h3>For End of Contract · Notices of End of Probationary Employment</h3><span class="help" style="color:var(--muted)">Final score below 3.00. Review each notice before it is sent.</span></div><div class="rows">${pendE.map(({e,n})=>{const lo=MS.map(m=>e.evals&&e.evals[m.k]).filter(r=>r&&r.final!=null&&r.final<3).map(r=>r.final.toFixed(2));return`<div class="row"><div class="grow"><span class="nm">${esc(fullName(e))}</span><div class="meta">${esc(e.client||'')} · hired ${fmt(e.hireDate)}${lo.length?` · final score ${lo.join(', ')}`:''}</div></div>${n?`<span class="chip">${ic('edit')}Draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button>`:`<span class="chip bad">Not prepared</span><button class="btn sm bad" data-act="eop-notice" data-id="${e.id}">Prepare &amp; review</button>`}</div>`}).join('')}</div></section>`;
   const lost=S.clientevals.filter(r=>!EMP[r.employeeId]||!r.period).sort((a,b)=>(b.submittedAt||'')<(a.submittedAt||'')?-1:1);
   if(lost.length)h+=`<section class="card" data-write><div class="card-h"><h3>Client evaluations to link</h3><span class="help" style="color:var(--muted)">Google Form answers whose name or evaluation period did not match. Choose the employee and period.</span></div><div class="rows">${lost.map(r=>`<div class="row" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:220px"><span class="nm">${esc(r.name||'No name')}</span><div class="meta">${esc(r.periodText||'No period')} · ${esc(r.site||'')}${r.dateHired?' · hired '+fmt(r.dateHired):''} · ${esc(r.email||'')} · ${fmtTs(r.submittedAt)}${r.avg!=null?' · average '+Number(r.avg).toFixed(2):''}</div></div><select aria-label="Employee" id="cl-e-${esc(r.id)}">${empOpts(r.employeeId)}</select><select aria-label="Evaluation period" id="cl-k-${esc(r.id)}"><option value="">Period</option>${MS.map(m=>`<option value="${m.k}" ${m.k===r.period?'selected':''}>${m.label}</option>`).join('')}</select><button class="btn sm" data-act="link-ceval" data-id="${esc(r.id)}">Link</button></div>`).join('')}</div></section>`;
   const refused=S.clientevals.filter(r=>EMP[r.employeeId]&&r.period&&!okRater(EMP[r.employeeId],r)).sort((a,b)=>(b.submittedAt||'')<(a.submittedAt||'')?-1:1);
@@ -1660,7 +1661,7 @@ VIEWS.evaluations=function(){
   if(!list.length)h+=scope[0]==='prob'?emptyBlock('No probationary employees','Employees with the Probationary employment type appear here with their evaluation schedule.'):emptyBlock('No employees here','No employees match this filter. Try another button or search.');
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th>Date Hired</th>${MS.map(m=>`<th>${m.label}</th>`).join('')}<th>Regularization</th></tr></thead><tbody>
     ${list.map(e=>{const m=milestones(e);return`<tr><td><button class="link" style="padding:0;color:var(--ink);text-align:left" data-act="open-emp" data-id="${e.id}" data-k="evals"><span class="nm">${esc(fullName(e))}</span></button>${sampleChip(e)}<div class="sub">${esc(e.position)}${e.client?' · '+esc(e.client):''}</div><button class="link" style="padding:0;font-size:13px" data-act="client-eval" data-id="${e.id}">${ic('send')}Client evaluation form</button>${isProb(e)&&!e.supervisorEmail?`<div class="sub" style="color:var(--warn)">No supervisor email, so links are not emailed</div>`:''}</td><td class="num">${fmt(e.hireDate)}</td>
-      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='Not recommended'?`<span class="chip bad">${ic('alert')}Not recommended</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`${(()=>{const r=x.state!=='stopped'&&clientResp(e,x.k);if(r)return`<span class="chip info" title="Answered on the Google Form by ${esc(r.email||'the client')}">${ic('check')}Client answered${r.avg!=null?' · '+Number(r.avg).toFixed(2):''}</span>`;const v=x.state!=='stopped'&&evalInvite(e,x.k);return v&&v.sentAt?`<span class="sub" title="Emailed to ${esc(v.to||'')}">${ic('send')}Link emailed ${fmtS(v.sentAt.slice(0,10))}${v.reminderAt?` · reminded ${fmtS(v.reminderAt.slice(0,10))}`:''}</span>`:''})()}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: Not recommended</span>`:''}`}</div></td>`).join('')}
+      ${m.items.map(x=>`<td><div class="ms"><span class="d">${fmt(x.due)}</span>${stateChip(x.state,x.due)}${x.rec&&x.rec.date?(x.rec.final!=null?`<span class="sub"><b style="color:${x.rec.final<3?'var(--bad)':'var(--ink)'}">${x.rec.final.toFixed(2)}</b> ${scoreLabel(x.rec.final)}</span>${x.rec.recommendation==='For End of Contract'?`<span class="chip bad">${ic('alert')}For End of Contract</span>`:''}<span class="sub">Client ${Number(x.rec.client.avg).toFixed(2)} · HR ${Number(x.rec.hr.avg).toFixed(2)}</span>`:`<span class="sub">${x.rec.rating?`Rating ${esc(x.rec.rating)}/5`:'Done'}</span>`):`${(()=>{const r=x.state!=='stopped'&&clientResp(e,x.k);if(r)return`<span class="chip info" title="Answered on the Google Form by ${esc(r.email||'the client')}">${ic('check')}Client answered${r.avg!=null?' · '+Number(r.avg).toFixed(2):''}</span>`;const v=x.state!=='stopped'&&evalInvite(e,x.k);return v&&v.sentAt?`<span class="sub" title="Emailed to ${esc(v.to||'')}">${ic('send')}Link emailed ${fmtS(v.sentAt.slice(0,10))}${v.reminderAt?` · reminded ${fmtS(v.reminderAt.slice(0,10))}`:''}</span>`:''})()}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is marked For End of Contract"`:''}>Record</button>${x.state==='stopped'?`<span class="sub">${x.stopBy.short} month: For End of Contract</span>`:''}`}</div></td>`).join('')}
       <td><div class="ms"><span class="d">${fmt(m.reg.on||m.reg.due)}</span>${m.reg.done?`<span class="chip ok">${ic('award')}Regular</span>`:stateChip(m.reg.state,m.reg.due)}${!m.reg.done&&isProb(e)?(notRecommended(e)?(()=>{const n=eopNotice(e);return!n?`<button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">End of probation notice</button>`:n.status==='Draft'?`<button class="link" style="padding:0" data-act="view-memo" data-id="${n.id}">Notice draft · review</button>`:`<span class="sub">${esc(n.no)} sent</span>`})():`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}">Set as Regular</button>`):''}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
@@ -2036,7 +2037,7 @@ const IMP_COLS=[
   ['END OF PROBATIONARY CONTRACT','','skip',IMP_CALC+' (six months from the date hired)',''],
   ['DATE OF REGULARIZATION','regularizedOn','date','Leave blank while on probation.',''],
   ...MS.flatMap(m=>[[`${m.short.toUpperCase()} MONTH EVALUATION`,'ev_'+m.k,'eval','Date of the evaluation. You may type the score (1 to 5) instead, or Done.',''],
-    ['RESULT/RECOMMENDATION','ev_'+m.k+'_rec','evrec','Continue probation, Recommended for regularization or Not recommended.','']]),
+    ['RESULT/RECOMMENDATION','ev_'+m.k+'_rec','evrec','For Continue Probation, For Regularization or For End of Contract.','']]),
   ['RECOMMENDATION','','skip',IMP_CALC,''],
   ['EMPLOYMENT STATUS','employmentType','pickfree','Blank = Probationary','Probationary',0,EMP_TYPES],
   ['BIOMETRIC ID NO.','biometricId','id','','1023'],
@@ -2143,7 +2144,7 @@ function impStatus(v){
 function impSep(v){const k=impKey(v);return IMP_SEP[k]||impPick(v,SEP_REASONS)||(/RESIGN/.test(k)?'Resigned':/TERMINAT|DISMISS/.test(k)?'Terminated (just cause)':/ENDOFCONTRACT|EOC/.test(k)?'End of Contract':null)}
 function impRec(v){
   const k=impKey(v);if(!k)return'';
-  return /NOT|FAIL|TERMINAT|ENDOF/.test(k)?'Not recommended':/REGULAR|PASS/.test(k)?'Recommended for regularization':/CONTINU|PROB|EXTEN/.test(k)?'Continue probation':String(v).trim();
+  return /NOT|FAIL|TERMINAT|ENDOF|EOC|CONTRACT/.test(k)?'For End of Contract':/REGULAR|PASS/.test(k)?'For Regularization':/CONTINU|PROB|EXTEN/.test(k)?'For Continue Probation':String(v).trim();
 }
 /* Requirement cells: anything except blank, No, None, N/A, Missing, Pending, W/O, X or - counts as submitted */
 const impHas=v=>!/^(no|none|n\/?a|missing|pending|lacking|incomplete|without|w\/?o|x|0|-+|false)$/i.test(String(v).trim());
@@ -2886,7 +2887,7 @@ function clientEvalShare(id,k0){
 }
 function evalForm(id,k){
   const e=EMP[id];const m=MS.find(x=>x.k===k);
-  const st=((milestones(e)||{}).items||[]).find(x=>x.k===k);if(st&&st.state==='stopped')return toast(`The ${st.stopBy.label.toLowerCase()} evaluation is Not recommended, so the ${m.label.toLowerCase()} evaluation is not needed. Change that recommendation to open this one.`,{kind:'bad'});const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
+  const st=((milestones(e)||{}).items||[]).find(x=>x.k===k);if(st&&st.state==='stopped')return toast(`The ${st.stopBy.label.toLowerCase()} evaluation is marked For End of Contract, so the ${m.label.toLowerCase()} evaluation is not needed. Change that recommendation to open this one.`,{kind:'bad'});const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
   const cl=rec.client||{},hr=rec.hr||{};const haveScan=(cl.files||[]).length;let staged=[];
   const resp=clientResp(e,k),gform=(resp?{responseId:resp.responseId,ratings:resp.ratings,avg:resp.avg,remarks:resp.remarks,email:resp.email,at:resp.submittedAt}:null)||cl.form||null;
   const gLock=!!(gform&&gform.avg!=null); // a score from the Google Form cannot be changed here
@@ -2919,14 +2920,14 @@ function evalForm(id,k){
     <div class="calc" aria-live="polite" id="ev-calc"></div>
     <div class="fg">${field({id:'ev-date',name:'date',label:'Date of evaluation',type:'date',req:1,value:rec.date||today()})}
     ${field({id:'ev-by',name:'evaluator',label:'GBMA representative',req:1,value:rec.evaluator||'',attrs:'placeholder="HR officer name"'})}
-    ${field({id:'ev-rec',name:'recommendation',label:'Recommendation',type:'select',req:1,opts:RECS,value:rec.recommendation||(k==='m5'?'Recommended for regularization':'Continue probation')})}
+    ${field({id:'ev-rec',name:'recommendation',label:'Recommendation',type:'select',req:1,opts:RECS,value:rec.recommendation||(k==='m5'?'For Regularization':'For Continue Probation')})}
     ${field({id:'ev-rem',name:'remarks',label:'Remarks',type:'textarea',full:1,value:rec.remarks||''})}</div>`,
     submitLabel:'Save evaluation',
     onOpen:f=>{
       const calc=()=>{const c=parseFloat(f.clientAvg.value);const vals=HR_FACTORS.map(([key])=>{const r=f.querySelector(`[name="hr_${key}"]:checked`);return r?+r.value:null});
         const hrOk=vals.every(v=>v!=null);const h=hrOk?r2(vals.reduce((s,v)=>s+v,0)/vals.length):null;const cOk=c>=1&&c<=5;const fin=hrOk&&cOk?r2((c+h)/2):null;
-        f.querySelector('#ev-calc').innerHTML=`<div><span>Client average</span><b>${cOk?c.toFixed(2):'—'}</b></div><div class="op">+</div><div><span>HR average (Section I)</span><b>${hrOk?h.toFixed(2):'—'}</b>${hrOk?`<small>${HR_FACTORS.map(([,t],i)=>`${t} ${vals[i]}`).join(' · ')}</small>`:''}</div><div class="op">÷ 2 =</div><div class="fin ${fin!=null&&fin<3?'low':''}"><span>Final score</span><b>${fin!=null?fin.toFixed(2):'—'}</b><small>${fin!=null?scoreLabel(fin):'Complete Part A and Part B'}</small></div>${fin!=null&&fin<3?`<p class="calc-note">${ic('alert')}Final score is below 3.00. <b>Not recommended</b> is suggested, but you can choose any recommendation. If you save it as Not recommended, you will review the Notice of End of Probationary Employment next.</p>`:''}`;
-        const sel=f.recommendation;const lowNow=fin!=null&&fin<3;if(sel&&lowNow&&!wasLow&&!picked)sel.value='Not recommended';wasLow=lowNow};
+        f.querySelector('#ev-calc').innerHTML=`<div><span>Client average</span><b>${cOk?c.toFixed(2):'—'}</b></div><div class="op">+</div><div><span>HR average (Section I)</span><b>${hrOk?h.toFixed(2):'—'}</b>${hrOk?`<small>${HR_FACTORS.map(([,t],i)=>`${t} ${vals[i]}`).join(' · ')}</small>`:''}</div><div class="op">÷ 2 =</div><div class="fin ${fin!=null&&fin<3?'low':''}"><span>Final score</span><b>${fin!=null?fin.toFixed(2):'—'}</b><small>${fin!=null?scoreLabel(fin):'Complete Part A and Part B'}</small></div>${fin!=null&&fin<3?`<p class="calc-note">${ic('alert')}Final score is below 3.00. <b>For End of Contract</b> is suggested, but you can choose any recommendation. If you save it as For End of Contract, you will review the Notice of End of Probationary Employment next.</p>`:''}`;
+        const sel=f.recommendation;const lowNow=fin!=null&&fin<3;if(sel&&lowNow&&!wasLow&&!picked)sel.value='For End of Contract';wasLow=lowNow};
       let wasLow=false,picked=!!rec.recommendation;f.recommendation&&f.recommendation.addEventListener('change',()=>{picked=true});
       f.addEventListener('input',calc);f.addEventListener('change',calc);calc();
       const gc=f.querySelector('#ev-gcopy');if(gc)gc.onclick=()=>copyText(clientEvalLink(e),'Link copied. Paste it in your message to the client.');
@@ -2951,17 +2952,17 @@ function evalForm(id,k){
       const o=clone(EMP[id]);o.evals=o.evals||{};
       o.evals[k]={date:fd.get('date'),evaluator:String(fd.get('evaluator')).trim(),recommendation:fd.get('recommendation'),remarks:String(fd.get('remarks')||'').trim(),recordedBy:MEID,
         client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),method:gform?'gform':paper?'paper':'gform',files:(cl.files||[]).concat(files),...(gform?{form:gform,remarks:gform.remarks||''}:{})},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
-      await save('employees',o);const notRec=fd.get('recommendation')==='Not recommended';toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)}) · ${fd.get('recommendation')}.`);
+      await save('employees',o);const notRec=fd.get('recommendation')==='For End of Contract';toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)}) · ${fd.get('recommendation')}.`);
       if(errs.length)toast('Not uploaded: '+errs.join(' · '),{kind:'bad'});
       if(notRec){const ex=eopNotice(e);MD.close();waitFor(()=>{const x=EMP[id];return x&&x.evals&&x.evals[k]&&x.evals[k].final===fin},()=>ex?viewMemo(ex.id):eopForm(id));return false}
     }});
 }
 function regularizeForm(id){
   const e=EMP[id];const ms=milestones(e);const missing=ms.items.filter(x=>x.state!=='done');
-  const last=e.evals&&e.evals.m5;const notRec=last&&last.recommendation==='Not recommended';
+  const last=e.evals&&e.evals.m5;const notRec=last&&last.recommendation==='For End of Contract';
   openModal({title:'Regularize Employee',body:`<dl class="summary"><dt>Employee</dt><dd>${esc(fullName(e))}</dd><dt>Date hired</dt><dd>${fmt(e.hireDate)}</dd><dt>6th month</dt><dd>${fmt(ms.reg.due)}</dd><dt>Evaluations</dt><dd>${ms.items.map(x=>`${x.short}: ${x.state==='done'?(x.rec.final!=null?x.rec.final.toFixed(2)+' '+scoreLabel(x.rec.final):x.rec.rating?esc(x.rec.rating)+'/5':'Done'):'Not done'}`).join(' · ')}</dd></dl>
     ${missing.length?`<div class="formerr" role="alert">${missing.map(x=>x.label).join(', ')} evaluation${missing.length>1?'s are':' is'} not recorded yet. You can still regularize, but record them first to keep the 201 file complete.</div>`:''}
-    ${notRec?`<div class="formerr" role="alert">The 5th month evaluation says “Not recommended”.</div>`:''}
+    ${notRec?`<div class="formerr" role="alert">The 5th month evaluation says “For End of Contract”.</div>`:''}
     ${field({id:'rg-date',name:'date',label:'Effective date of regularization',type:'date',req:1,value:ms.reg.due})}
     <p class="help" style="margin:0;color:var(--muted)">After you set the employee as Regular, the regularization contract opens so you can download or email it.</p>`,
     submitLabel:'Set as Regular',submitClass:'ok',
@@ -2970,7 +2971,7 @@ function regularizeForm(id){
 }
 function waitFor(cond,fn,n=0){if(cond())return fn();if(n<40)setTimeout(()=>waitFor(cond,fn,n+1),100)}
 /* ---- Notice of End of Probationary Employment (from the GBMA template) ---- */
-const notRecommended=e=>MS.some(m=>{const r=e.evals&&e.evals[m.k];return r&&r.date&&(r.recommendation?r.recommendation==='Not recommended':r.final!=null&&r.final<3)});
+const notRecommended=e=>MS.some(m=>{const r=e.evals&&e.evals[m.k];return r&&r.date&&(r.recommendation?r.recommendation==='For End of Contract':r.final!=null&&r.final<3)});
 function eopNotice(e){return S.memos.filter(m=>m.type===EOP_TYPE&&m.toType==='employee'&&m.toValue===e.id).sort((a,b)=>(b.createdAt||'')<(a.createdAt||'')?-1:1)[0]}
 /* Memo numbers: type code + year + "-" + month + "-" + 4-digit series per type per year, e.g. NTE2026-10-0001 */
 const MEMO_CODES={'Notice to Explain':'NTE','Written Warning':'WW','Notice of Decision':'NOD','Disciplinary':'DA','Policy & Procedures':'PP','General Announcement':'GA','Reminder':'REM','Commendation':'COM','Notice of End of Probationary Employment':'NEPE','Holiday Work Arrangement':'HWA','No Work Arrangement':'NWA','Advisory':'ADV','Announcement':'ANN','Endorsement':'END','Request':'REQ','Reply':'REP','Letter':'LTR','Billing / Statement':'BS','Other':'MEMO','Other Disciplinary Action':'DA','Company Policy':'POL','General Instruction':'GI','Regular Holiday':'HA','Special Non-Working Day':'HA','Holiday Work Schedule':'HA'};
@@ -3015,7 +3016,7 @@ function eopForm(empId,memoId){
   if(!m)return;
   const low=MS.map(x=>({x,r:e.evals&&e.evals[x.k]})).filter(o=>o.r&&o.r.final!=null&&o.r.final<3);
   openModal({title:'Review Notice of End of Probationary Employment',wide:1,
-    body:`<div class="banner" style="background:var(--bad-bg)">${ic('alert')}<span class="grow">${low.length?`${esc(fullName(e))}'s ${low.map(o=>`${o.x.label.toLowerCase()} final score is <b>${o.r.final.toFixed(2)}</b>`).join(' and ')}, below 3.00, and the recommendation is <b>Not recommended</b>.`:`${esc(fullName(e))} is marked <b>Not recommended</b>.`} Review the notice below. It goes to the employee only when you click <b>Send to employee</b>.</span></div>
+    body:`<div class="banner" style="background:var(--bad-bg)">${ic('alert')}<span class="grow">${low.length?`${esc(fullName(e))}'s ${low.map(o=>`${o.x.label.toLowerCase()} final score is <b>${o.r.final.toFixed(2)}</b>`).join(' and ')}, below 3.00, and the recommendation is <b>For End of Contract</b>.`:`${esc(fullName(e))} is marked <b>For End of Contract</b>.`} Review the notice below. It goes to the employee only when you click <b>Send to employee</b>.</span></div>
     <div class="fg">
       ${field({id:'ep-date',name:'issuedOn',label:'Date of notice',type:'date',req:1,value:m.issuedOn})}
       ${field({id:'ep-eff',name:'effectiveOn',label:'Probationary contract ends on',type:'date',req:1,value:m.effectiveOn,help:ms?`Probation started ${fmt(e.hireDate)}; six months ends ${fmt(endDefault)}.`:''})}
@@ -3043,7 +3044,7 @@ function eopStep(e){
   if(!notRecommended(e)||e.employmentType==='Regular')return'';
   const n=eopNotice(e);
   const end=empStatus(e)==='Separated'?`<span class="chip sep">Separated · ${esc(sepReason(e))}</span>`:(n&&n.status!=='Draft'?`<button class="btn sm ghost" data-write data-act="set-eoc" data-id="${e.id}">Set as Separated (End of Probationary Employment)</button>`:'');
-  if(!n)return`<div class="notice-step"><span class="chip bad">${ic('alert')}Not recommended</span><button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">Prepare end of probation notice</button></div>`;
+  if(!n)return`<div class="notice-step"><span class="chip bad">${ic('alert')}For End of Contract</span><button class="btn sm bad" data-write data-act="eop-notice" data-id="${e.id}">Prepare end of probation notice</button></div>`;
   if(n.status==='Draft')return`<div class="notice-step"><span class="chip">${ic('edit')}End of probation notice draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button></div>`;
   return`<div class="notice-step"><span class="chip bad">${ic('check')}${esc(n.no)} sent ${fmtTs(n.sentAt)}</span><button class="link" data-act="view-memo" data-id="${n.id}" style="padding-left:0">View notice</button>${end}</div>`;
 }
@@ -3442,7 +3443,7 @@ function renderDrawer(){
   }else if(drawerTab==='evals'){
     if(!ms)body=emptyBlock('No hire date','Add a hire date to build the evaluation schedule.');
     else body=`<div style="margin-bottom:12px"><button class="btn sm ghost" data-act="client-eval" data-id="${e.id}">${ic('send')}Client evaluation form (Google Form)</button></div><div class="tl">${ms.items.map((x,i)=>{const cls=x.state==='done'?'ok':x.state==='overdue'?'bad':x.state==='soon'?'warn':'';return`<div class="st"><div class="bub ${cls}">${x.state==='done'?ic('check'):x.short}</div><div><h5>${x.label} Evaluation ${stateChip(x.state,x.due)}</h5><p>Due ${fmt(x.due)}</p>
-      ${x.rec&&x.rec.date?`<p>Evaluated ${fmt(x.rec.date)} by ${esc(x.rec.evaluator)} · ${esc(x.rec.recommendation)}</p><p>${evalSummary(x.rec)}</p>${x.rec.hr?`<p>HR Section I: ${HR_FACTORS.map(([key,t])=>`${t} ${x.rec.hr[key]}`).join(' · ')}${x.rec.client&&x.rec.client.evaluator?` · Client evaluator: ${esc(x.rec.client.evaluator)}`:''}</p>`:''}${x.rec.client&&(x.rec.client.files||[]).length?`<p>${x.rec.client.files.map(f=>`<a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener">${ic('pclip','i sm')} ${esc(f.name)}</a>`).join(' ')}</p>`:''}${x.rec.remarks?`<p style="white-space:pre-wrap">“${esc(x.rec.remarks)}”</p>`:''}<button class="link" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="padding-left:0">Edit evaluation</button>`:`${x.state==='stopped'?`<p>Not needed: the ${x.stopBy.label.toLowerCase()} evaluation is Not recommended. If you change that recommendation, this evaluation opens again.</p>`:''}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="margin-top:6px" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is Not recommended"`:''}>Record evaluation</button>`}</div></div>`}).join('')}
+      ${x.rec&&x.rec.date?`<p>Evaluated ${fmt(x.rec.date)} by ${esc(x.rec.evaluator)} · ${esc(x.rec.recommendation)}</p><p>${evalSummary(x.rec)}</p>${x.rec.hr?`<p>HR Section I: ${HR_FACTORS.map(([key,t])=>`${t} ${x.rec.hr[key]}`).join(' · ')}${x.rec.client&&x.rec.client.evaluator?` · Client evaluator: ${esc(x.rec.client.evaluator)}`:''}</p>`:''}${x.rec.client&&(x.rec.client.files||[]).length?`<p>${x.rec.client.files.map(f=>`<a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener">${ic('pclip','i sm')} ${esc(f.name)}</a>`).join(' ')}</p>`:''}${x.rec.remarks?`<p style="white-space:pre-wrap">“${esc(x.rec.remarks)}”</p>`:''}<button class="link" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="padding-left:0">Edit evaluation</button>`:`${x.state==='stopped'?`<p>Not needed: the ${x.stopBy.label.toLowerCase()} evaluation is marked For End of Contract. If you change that recommendation, this evaluation opens again.</p>`:''}<button class="btn sm ghost" data-write data-act="eval" data-id="${e.id}" data-k="${x.k}" style="margin-top:6px" ${x.state==='stopped'?`disabled title="Not needed: the ${x.stopBy.short} month evaluation is marked For End of Contract"`:''}>Record evaluation</button>`}</div></div>`}).join('')}
       <div class="st"><div class="bub ${ms.reg.done?'ok':ms.reg.state==='overdue'?'bad':ms.reg.state==='soon'?'warn':''}">${ic('award')}</div><div><h5>Regularization ${ms.reg.done?`<span class="chip ok">${ic('check')}Regular</span>`:stateChip(ms.reg.state,ms.reg.due)}</h5><p>${e.regularizedOn?`Regularized ${fmt(e.regularizedOn)}`:`6th month: ${fmt(ms.reg.due)}`}</p>${!ms.reg.done&&isProb(e)&&!notRecommended(e)?`<button class="btn sm" data-write data-act="regularize" data-id="${e.id}" style="margin-top:6px">Set as Regular</button>`:''}${regContractStep(e)}${eopStep(e)}</div></div></div>`;
   }else if(drawerTab==='docs'){
     const n=docCount(e),fc=fileCount(e),ro=document.body.classList.contains('ro');
