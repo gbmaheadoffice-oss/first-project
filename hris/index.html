@@ -1364,7 +1364,7 @@ function dayInfo(e,d,rec,sc){
 }
 /* ---- Payroll cut-off periods ----
    Each site has cut-off start days, e.g. "11, 26" = 11th–25th and 26th–10th of the next month. Default "1, 16" = 1st–15th and 16th–end. */
-const rangeDays=(a,b)=>{const out=[];for(let d=a;d<=b&&out.length<400;d=addDays(d,1))out.push(d);return out};
+const rangeDays=(a,b)=>{const out=[];for(let d=a;d<=b&&out.length<800;d=addDays(d,1))out.push(d);return out};
 const monthRange=m=>{const ds=monthDays(m);return[ds[0],ds[ds.length-1]]};
 const fmtRange=(a,b)=>{const m=a.slice(0,7);const[f,l]=monthRange(m);return a===f&&b===l?fmtMonth(m):`${fmtS(a)} – ${fmt(b)}`};
 const parseStarts=raw=>{const v=[...new Set(String(raw||'').split(/[^\d]+/).map(Number).filter(n=>n>=1&&n<=28))].sort((x,y)=>x-y);return v};
@@ -1426,7 +1426,7 @@ function attPeriod(){
   const f=UI.att,ok=v=>/^\d{4}-\d{2}-\d{2}$/.test(v||'');
   if(!ok(f.from)||!ok(f.to)){const t=today();const ps=specPeriods(cutoffSpec(f.client),t,t);const p=ps.find(q=>q[0]<=t&&t<=q[1])||monthRange(t.slice(0,7));f.from=p[0];f.to=p[1]}
   if(f.to<f.from){const x=f.from;f.from=f.to;f.to=x}
-  if(diff(f.from,f.to)>92)f.to=addDays(f.from,92);
+  f.cut=diff(f.from,f.to)>730;if(f.cut)f.to=addDays(f.from,730); // up to 2 years at a time
   f.month=f.from.slice(0,7);
   return[f.from,f.to];
 }
@@ -1453,7 +1453,7 @@ VIEWS.attendance=function(){
     ${searchBox('f-att-q','att.q',f.q,'Search employee, client')}
     <label class="sr" for="f-att-client">Client company</label><select id="f-att-client" data-filter="att.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
   </div>
-  <p class="help" style="margin:0 0 10px;color:var(--muted)">Showing <b>${fmt(a)} – ${fmt(b)}</b> · ${rangeDays(a,b).length} days${periodPay(f.client,a,b)?` · Payday <b>${fmt(periodPay(f.client,a,b))}</b>`:''}${f.client?` · ${esc(f.client)} cut-off: ${cutoffLabel(f.client)}`:` · Default cut-off: ${cutoffLabel('')}`} · Late counted ${unitShort(lateUnitOf(f.client))} · Late after ${fmtTime(ATTSET.start)}${+ATTSET.grace?` + ${ATTSET.grace} min grace`:''} · Flagged at more than ${lateMax()} late${lateMax()===1?'':'s'} per cut-off · <a href="#attpolicy" data-act="nav" data-id="attpolicy">Cut-off settings</a></p>`;
+  <p class="help" style="margin:0 0 10px;color:var(--muted)">Showing <b>${fmt(a)} – ${fmt(b)}</b> · ${rangeDays(a,b).length} days${f.cut?' <b style="color:var(--warn)">(the longest range is 2 years, so the To date was moved)</b>':''}${periodPay(f.client,a,b)?` · Payday <b>${fmt(periodPay(f.client,a,b))}</b>`:''}${f.client?` · ${esc(f.client)} cut-off: ${cutoffLabel(f.client)}`:` · Default cut-off: ${cutoffLabel('')}`} · Late counted ${unitShort(lateUnitOf(f.client))} · Late after ${fmtTime(ATTSET.start)}${+ATTSET.grace?` + ${ATTSET.grace} min grace`:''} · Flagged at more than ${lateMax()} late${lateMax()===1?'':'s'} per cut-off · <a href="#attpolicy" data-act="nav" data-id="attpolicy">Cut-off settings</a></p>`;
   if(!docs)h+=`<div class="banner" style="margin-bottom:10px">${ic('info')}<span class="grow">No attendance records for <b>${fmt(a)} – ${fmt(b)}</b> yet. Import the timekeeping file, or click an employee to encode their time in and time out.</span><button class="btn sm" data-act="att-import" data-write>${ic('upload')}Import attendance</button></div>`;
   if(!list.length)h+=emptyBlock('No employees in this list',f.tab==='All'?'Try another cut-off period or site.':`No one matches “${f.tab}” for ${fmt(a)} – ${fmt(b)}.`);
   else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th class="r">Present</th><th class="r">Lates</th><th class="r">Undertime</th><th class="r">Half days</th><th class="r">Absences</th><th class="r">Leave</th><th>Remarks</th></tr></thead><tbody>
