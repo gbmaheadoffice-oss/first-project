@@ -545,6 +545,9 @@ const diff=(a,b)=>Math.round((parse(b)-parse(a))/864e5);
 const fmt=s=>s?parse(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
 const fmtS=s=>s?parse(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
 const fmtTs=s=>s?new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+/* amounts with thousands commas: 12,345.00 */
+const unComma=v=>String(v??'').replace(/[₱,\s]/g,'');
+const amt=v=>{const t=unComma(v);if(t===''||isNaN(+t))return v==null?'':String(v);return Number(t).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const fmtDT=s=>s?new Date(s).toLocaleString('en-US',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
 const fmtTime=t=>{if(!t)return'';const[h,m]=t.split(':').map(Number);return `${((h+11)%12)+1}:${pad(m)} ${h<12?'AM':'PM'}`};
 function leaveDays(f,t){if(!f||!t)return 0;let n=0;const e=parse(t);for(let d=parse(f);d<=e;d.setDate(d.getDate()+1))if(d.getDay()!==0)n++;return n}
@@ -1993,6 +1996,7 @@ function export201(){
       const rows=[cols.map(c=>c[0])].concat(list.map(e=>cols.map(c=>{const v=c[1](e);return v==null?'':v})));
       const ws=X.utils.aoa_to_sheet(rows);
       ws['!cols']=cols.map((c,i)=>({wch:Math.min(48,Math.max(c[0].length,...rows.slice(1).map(r=>String(r[i]).length))+2)}));
+      cols.forEach((c,ci)=>{if(!/SALARY|ALLOWANCE$/.test(c[0]))return;for(let r=1;r<rows.length;r++){const cell=ws[X.utils.encode_cell({r,c:ci})];if(cell&&cell.t==='n')cell.z='#,##0.00'}});
       ws['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:cols.length-1}})};
       const docRows=[['Employee No.','Employee Name','Client Company','Requirement','File Name','File Type','Size (KB)','Uploaded On']];
       list.forEach(e=>{DOCS.forEach(([k,l])=>docFiles(e,k).forEach(x=>docRows.push([e.empNo,fullName(e),e.client||'',l,x.name,x.type,Math.round((x.size||0)/1024),(x.at||'').slice(0,10)])));
@@ -2422,9 +2426,9 @@ function empForm(id,pre){
     ${F('clientMrNo','Client MR control no.',{help:'Client’s manpower request control number.'})}${F('endorsementNo','Endorsement no.')}
   </div></fieldset>
   <fieldset><legend>Compensation</legend><div class="fg">
-    ${F('dailySalary','Daily salary (₱)',{type:'number',attrs:'min="0" step="any" inputmode="decimal"'})}
-    <div class="field"><label for="ef-monthlySalary">Monthly salary (₱)</label><input id="ef-monthlySalary" name="monthlySalary" type="number" min="0" step="any" inputmode="decimal" value="${esc(e.monthlySalary??'')}"><button type="button" class="btn sm ghost" id="ef-calcm" style="margin-top:4px;align-self:flex-start">Compute: daily × 26 days</button></div>
-    ${F('allowance','Other allowance (₱)',{type:'number',attrs:'min="0" step="any" inputmode="decimal"'})}${F('allowanceNote','Allowance details',{attrs:'placeholder="e.g. rice, transportation"'})}
+    ${F('dailySalary','Daily salary (₱)',{value:amt(e.dailySalary),attrs:'inputmode="decimal" data-amt placeholder="0.00"'})}
+    <div class="field"><label for="ef-monthlySalary">Monthly salary (₱)</label><input id="ef-monthlySalary" name="monthlySalary" type="text" inputmode="decimal" data-amt placeholder="0.00" value="${esc(amt(e.monthlySalary))}"><button type="button" class="btn sm ghost" id="ef-calcm" style="margin-top:4px;align-self:flex-start">Compute: daily × 26 days</button></div>
+    ${F('allowance','Other allowance (₱)',{value:amt(e.allowance),attrs:'inputmode="decimal" data-amt placeholder="0.00"'})}${F('allowanceNote','Allowance details',{attrs:'placeholder="e.g. rice, transportation"'})}
   </div></fieldset>
   <fieldset><legend>Pre-employment medical</legend><div class="fg">
     ${F('medicalDate','Date of medical',{type:'date'})}${F('medicalClinic','Accredited clinic / hospital')}
@@ -2466,7 +2470,8 @@ function empForm(id,pre){
       const PA=wireAddr(f,'pa',()=>{if(same.checked)syncP()});PM=wireAddr(f,'pm');
       same.addEventListener('change',syncP);syncP();
       f._addr={PA,PM,same};
-      f.querySelector('#ef-calcm').onclick=()=>{const d=parseFloat(f.dailySalary.value);if(!(d>0)){setErr(f.dailySalary,'Enter the daily salary first.');return}f.monthlySalary.value=(Math.round(d*26*100)/100).toFixed(2)};
+      f.querySelector('#ef-calcm').onclick=()=>{const d=parseFloat(unComma(f.dailySalary.value));if(!(d>0)){setErr(f.dailySalary,'Enter the daily salary first.');return}f.monthlySalary.value=amt(Math.round(d*26*100)/100)};
+      f.querySelectorAll('[data-amt]').forEach(i=>i.addEventListener('blur',()=>{if(i.value.trim()&&!isNaN(+unComma(i.value)))i.value=amt(i.value)}));
       const draw=k=>{const box=f.querySelector('#ef-st-'+k);if(!box)return;const fl=staged[k]||[];
         box.innerHTML=fl.map((x,i)=>`<div class="file"><span class="fic" style="color:var(--info)">${ic(/^image\//.test(fileType(x)||'')?'pclip':'pdf')}</span><div class="fn"><b style="overflow-wrap:anywhere;font-weight:600">${esc(x.name)}</b><span>${fsize(x.size)} · uploads when you save</span></div><button type="button" class="icon-btn" data-unstage="${k}|${i}" aria-label="Remove ${esc(x.name)}">${ic('x')}</button></div>`).join('');
         const cb=f.querySelector(`[name="doc_${k}"]`);if(cb&&fl.length)cb.checked=true};
@@ -2505,6 +2510,7 @@ function empForm(id,pre){
       if(acct&&newProof&&!(ups.__bank||[]).length&&!(prevBank.proof||[]).length){sb.textContent=id?'Save changes':'Add employee';setErr(f.querySelector('#ef-bankproof'),'The account photo did not upload: '+errs.join(' · '));return false}
       const o=id?clone(EMP[id]):{id:uid(),evals:{},...(pre&&pre.applicantId?{applicantId:pre.applicantId}:{})};
       ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','supervisorName','supervisorEmail','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      for(const k of['dailySalary','monthlySalary','allowance']){const t=unComma(o[k]);if(t&&(isNaN(+t)||+t<0)){sb.textContent=id?'Save changes':'Add employee';setErr(f[k],'Enter an amount, e.g. 12,345.00');return false}o[k]=t}
       {const A=f._addr,pa=A.PA.get(),pm=A.same.checked?pa:A.PM.get();o.addr=pa;o.permAddr=pm;o.address=addrLine(pa);o.permanentAddress=addrLine(pm)}
       if(o.employmentType==='Regular'&&!o.regularizedOn&&EMP[id]&&EMP[id].employmentType==='Probationary')o.regularizedOn=today();
       if(!applyStatus(fd,f,'es',o,id?EMP[id]:null)){sb.textContent=id?'Save changes':'Add employee';return false}
@@ -3572,7 +3578,7 @@ VIEWS.applicants=function(){
   else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Date Applied</th><th>Name</th><th>Position</th><th>Contact</th><th>Address</th><th>Status</th></tr></thead><tbody>
     ${list.slice(0,APP_MAX).map(a=>{const x=a.form||{};const bl=appBl(a);return`<tr class="click" data-act="view-app" data-id="${esc(a.id)}" tabindex="0"><td class="num" style="white-space:nowrap">${fmt(appDate(a))}</td>
       <td><div class="nm">${esc(appName(a))}</div><div class="sub">${[x.age&&x.age+' yrs',x.gender,x.civilStatus].filter(Boolean).map(esc).join(' · ')}</div>${bl?`<span class="chip blk" style="margin-top:4px">${ic('alert')}Blocklisted match</span>`:''}</td>
-      <td style="max-width:220px"><div>${esc(x.position||'—')}</div>${x.desiredSalary?`<div class="sub">Expects ₱${esc(x.desiredSalary)}</div>`:''}</td>
+      <td style="max-width:220px"><div>${esc(x.position||'—')}</div>${x.desiredSalary?`<div class="sub">Expects ₱${esc(amt(x.desiredSalary))}</div>`:''}</td>
       <td><div class="num">${esc(x.mobile||'—')}</div><div class="sub" style="overflow-wrap:anywhere">${esc(x.email||'')}</div></td>
       <td style="max-width:260px"><div class="sub" style="overflow-wrap:anywhere">${esc(x.presentAddress||'—')}</div></td>
       <td>${appChip(a)}${a.hiredEmployeeId&&EMP[a.hiredEmployeeId]?`<div class="sub">${esc(EMP[a.hiredEmployeeId].empNo)}</div>`:''}</td></tr>`}).join('')}
@@ -3674,7 +3680,7 @@ function viewApplicant(id){
       ${field({id:'ap-status',name:'status',label:'Status',type:'select',opts:APP_STATUS,value:appStatus(a),blank:false})}
       ${field({id:'ap-notes',name:'notes',label:'HR notes',type:'textarea',value:a.notes||'',attrs:'style="min-height:70px"',help:'Interview schedule, results, reason for not hiring or blocklisting…'})}
     </div></fieldset>
-    <section class="sect"><h4>Position &amp; availability</h4><dl class="kv">${kv('Position applied for',x.position)}${kv('Desired salary',x.desiredSalary&&'₱'+x.desiredSalary)}${kv('Available from',x.availableFrom&&fmt(x.availableFrom))}${kv('Currently employed',x.currentlyEmployed)}
+    <section class="sect"><h4>Position &amp; availability</h4><dl class="kv">${kv('Position applied for',x.position)}${kv('Desired salary',x.desiredSalary&&'₱'+amt(x.desiredSalary))}${kv('Available from',x.availableFrom&&fmt(x.availableFrom))}${kv('Currently employed',x.currentlyEmployed)}
       ${kv('Willing to render overtime',yn(x.overtime,x.overtimeReason))}${kv('Willing to work Sundays / holidays',yn(x.sundays,x.sundaysReason))}
       ${kv('Worked here before',yn(x.formerEmployee,x.formerWhen))}${kv('Friends / relatives in company',x.hasRelatives)}${x.relatives?wide('Their names, positions, relationship',x.relatives):''}</dl></section>
     <section class="sect"><h4>Personal information</h4><dl class="kv">${kv('Full name',[x.firstName,x.middleName,x.lastName,x.suffix].filter(Boolean).join(' '))}${kv('Age',x.age)}${kv('Date of birth',x.birthDate&&fmt(x.birthDate))}${kv('Place of birth',x.birthPlace)}
