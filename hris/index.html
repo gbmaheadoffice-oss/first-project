@@ -1457,20 +1457,20 @@ VIEWS.attendance=function(){
   <p class="help" style="margin:0 0 10px;color:var(--muted)">Showing <b>${fmt(a)} – ${fmt(b)}</b> · ${rangeDays(a,b).length} days${periodPay(f.client,a,b)?` · Payday <b>${fmt(periodPay(f.client,a,b))}</b>`:''}${f.client?` · ${esc(f.client)} cut-off: ${cutoffLabel(f.client)}`:` · Default cut-off: ${cutoffLabel('')}`} · Late counted ${unitShort(lateUnitOf(f.client))} · Late after ${fmtTime(ATTSET.start)}${+ATTSET.grace?` + ${ATTSET.grace} min grace`:''} · Flagged at more than ${lateMax()} late${lateMax()===1?'':'s'} per cut-off · <a href="#attpolicy" data-act="nav" data-id="attpolicy">Cut-off settings</a></p>`;
   if(!docs)h+=`<div class="banner" style="margin-bottom:10px">${ic('info')}<span class="grow">No attendance records for <b>${fmt(a)} – ${fmt(b)}</b> yet. Import the timekeeping file, or click an employee to encode their time in and time out.</span><button class="btn sm" data-act="att-import" data-write>${ic('upload')}Import attendance</button></div>`;
   if(!list.length)h+=emptyBlock('No employees in this list',f.tab==='All'?'Try another cut-off period or site.':`No one matches “${f.tab}” for ${fmt(a)} – ${fmt(b)}.`);
-  else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th class="r">Present</th><th class="r">Lates</th><th class="r">Undertime</th><th class="r">Absences</th><th class="r">Leave</th><th class="r">No record</th><th>Remarks</th></tr></thead><tbody>
+  else h+=`<div class="tw"><table class="tbl" style="min-width:1000px"><thead><tr><th>Employee</th><th class="r">Present</th><th class="r">Lates</th><th class="r">Undertime</th><th class="r">Absences</th><th class="r">Leave</th><th>Remarks</th></tr></thead><tbody>
     ${list.map(({e,s})=>`<tr class="click" data-act="att-edit" data-id="${e.id}" data-k="${a}|${b}" tabindex="0"><td><div class="nm">${esc(fullName(e))}</div><div class="sub">${esc(e.empNo)} · ${esc(e.client||'—')}</div></td>
       <td class="r num">${s.present}${s.restwork?`<div class="sub">+${s.restwork} rest day</div>`:''}</td>
       <td class="r num ${s.late>lateMax()?'att-bad':''}">${s.late}${s.lateMin?`<div class="sub">${hm(s.lateMin)}${s.lateUnit>1?` · counted ${hm(s.lateChg)}`:''}</div>`:''}</td>
       <td class="r num ${s.ut>utMax()?'att-warn':''}">${s.ut}${s.utMin?`<div class="sub">${hm(s.utMin)}</div>`:''}</td>
-      <td class="r num ${s.absent?'att-bad':''}">${s.absent}</td><td class="r num">${s.leave}</td><td class="r num">${s.norecord?`<span class="att-muted">${s.norecord}</span>`:'0'}</td>
+      <td class="r num ${s.absent?'att-bad':''}">${s.absent}</td><td class="r num">${s.leave}</td>
       <td><div class="dchips">${s.perfect?`<span class="chip ok">${ic('award')}Perfect${cur?' so far':''}</span>`:''}${s.late>lateMax()?`<span class="chip bad">${s.late} lates</span>`:''}${s.ut>utMax()?`<span class="chip warn">${s.ut} undertime</span>`:''}${s.absent?`<span class="chip bad">${s.absent} absent</span>`:''}${s.incomplete?`<span class="chip">${s.incomplete} no time out</span>`:''}</div></td></tr>`).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 };
 function attCopy(){
   const[a,b]=attPeriod();const rows=attRows().filter(r=>attTest[UI.att.tab](r.s));
-  const txt=[`${UI.att.tab} · ${fmt(a)} – ${fmt(b)}${UI.att.client?' · '+UI.att.client:''}`,['ID Number','Name','Site','Present','Lates','Late minutes','Late minutes counted','Undertime','Undertime minutes','Absences','Leave','No record'].join('\t')]
-    .concat(rows.map(({e,s})=>[e.empNo,fullName(e),e.client||'',s.present,s.late,s.lateMin,s.lateChg,s.ut,s.utMin,s.absent,s.leave,s.norecord].join('\t'))).join('\n');
+  const txt=[`${UI.att.tab} · ${fmt(a)} – ${fmt(b)}${UI.att.client?' · '+UI.att.client:''}`,['ID Number','Name','Site','Present','Lates','Late minutes','Late minutes counted','Undertime','Undertime minutes','Absences','Leave'].join('\t')]
+    .concat(rows.map(({e,s})=>[e.empNo,fullName(e),e.client||'',s.present,s.late,s.lateMin,s.lateChg,s.ut,s.utMin,s.absent,s.leave].join('\t'))).join('\n');
   navigator.clipboard.writeText(txt).then(()=>toast(`${rows.length} row${rows.length===1?'':'s'} copied. Paste into Excel or Google Sheets.`),()=>toast('Copy is blocked in this view. Select the table and press Ctrl+C.',{kind:'bad'}));
 }
 function attEdit(empId,spec){
