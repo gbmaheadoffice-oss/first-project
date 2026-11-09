@@ -832,7 +832,7 @@ const CO_TYPES=['Announcement','Company Policy','General Instruction','Reminder'
 const HOL_TYPES=['Regular Holiday','Special Non-Working Day','Holiday Work Schedule'];
 const MEMO_CATS={disc:{route:'memos',name:'DA Memo',ui:'memo',act:'issue-memo',new:'New DA Memo'},
   co:{route:'cmemos',name:'Inter-office Memo',ui:'cmemo',act:'issue-cmemo',new:'New Inter-office Memo'},
-  hol:{route:'holidays',name:'Holiday Advisory',ui:'hol',act:'issue-hol',new:'New Holiday Advisory'}};
+  hol:{route:'cmemos',name:'Holiday Advisory',ui:'hol',act:'issue-hol',new:'New Holiday Advisory'}};
 const memoCat=m=>m.cat||(m.type===EOP_TYPE||DISC_TYPES.includes(m.type)?'disc':HOL_TYPES.includes(m.type)?'hol':'co');
 const isOffice=e=>!!e&&e.client===OFFICE;
 function recGroup(m){if(m.toType==='employee')return isOffice(EMP[m.toValue])?'GBMA office staff':'Deployed employee';if(m.toType==='all')return'All employees';return m.toType==='office'||m.toType==='department'?'GBMA office staff':'Deployed employees'}
@@ -862,12 +862,11 @@ const ROUTES={
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
   memos:{t:'Company Communications',nav:'DA Memos',icon:'memo'},
   cmemos:{t:'Company Communications',nav:'Inter-office Memo',icon:'send'},
-  holidays:{t:'Company Communications',nav:'Holiday Advisories',icon:'cal'},
   settings:{t:'Settings',nav:'Settings',icon:'gear'}
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos','holidays']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'memo',routes:['memos','cmemos']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -1002,7 +1001,6 @@ VIEWS.dashboard=function(){
     <button class="btn" data-act="nav" data-id="permits">Review Permits to Work</button>`:''}
     <button class="btn" data-act="issue-memo">DA Memo</button>
     <button class="btn" data-act="issue-cmemo">Inter-office Memo</button>
-    <button class="btn" data-act="issue-hol">Holiday Advisory</button>
   </div></section>`;
   if(!S.employees.length){
     h+=`<section class="card">${emptyBlock('No employee records yet','Start by adding your first employee. Their 201 file, evaluation schedule and regularization date are created automatically from the hire date.',`<div data-write><button class="btn" data-act="add-emp">${ic('plus')}Add first employee</button></div>`)}</section>`;
@@ -1684,13 +1682,13 @@ const memoTypeChip=m=>`<span class="chip ${m.type===EOP_TYPE?'bad':memoCat(m)===
 const memoSort=(a,b)=>(b.issuedOn||'')<(a.issuedOn||'')?-1:(b.issuedOn||'')>(a.issuedOn||'')?1:((b.no||'')<(a.no||'')?-1:1);
 const inTab=(m,tab)=>tab==='All'||m.status===tab;
 const holDay=m=>(m.event&&m.event.date)||m.issuedOn||'';
-function memoRow(m){const late=m.type==='Notice to Explain'&&m.status==='Open'&&m.responseDue&&diff(today(),m.responseDue)<0;const hol=memoCat(m)==='hol';
+function memoRow(m){const late=m.type==='Notice to Explain'&&m.status==='Open'&&m.responseDue&&diff(today(),m.responseDue)<0;const hol=false; // holiday advisories are now listed as inter-office memos, in the same columns
   return`<tr class="click" data-act="view-memo" data-id="${m.id}" tabindex="0"><td class="num nm" style="white-space:nowrap">${esc(m.no)}</td><td style="max-width:320px"><div class="nm" style="overflow-wrap:anywhere">${esc(m.subject)}${sampleChip(m)}</div>${m.offense&&m.offense.lvl?`<div class="sub">${esc(CRR[m.offense.lvl].name)} offense ${CRR[m.offense.lvl].sec}-${esc(m.offense.code)} · ${ord(m.offense.count||1)} offense${m.penalty?` · <b>${esc(m.penalty.label)}</b>`:''}</div>`:''}${m.type==='Notice to Explain'&&m.responseDue?`<div class="sub">Explanation due ${fmt(m.responseDue)}${late?' · <b style="color:var(--bad)">past due</b>':''}</div>`:''}</td><td>${memoTypeChip(m)}</td>${hol?`<td class="num" style="white-space:nowrap">${fmt(holDay(m))}</td>`:''}<td style="max-width:260px"><div style="overflow-wrap:anywhere">${esc(memoTo(m))}</div>${recGroup(m).toLowerCase()!==memoTo(m).toLowerCase()?`<div class="sub">${esc(recGroup(m))}</div>`:''}</td><td class="num" style="white-space:nowrap">${fmt(m.issuedOn)}</td>${hol?'':`<td>${statusChip(m.status)}</td>`}</tr>`}
 function memoPage(cat){
-  const C=MEMO_CATS[cat],f=UI[C.ui],q=f.q.trim().toLowerCase(),hol=cat==='hol',all=S.memos.filter(m=>memoCat(m)===cat);
+  const C=MEMO_CATS[cat],f=UI[C.ui],q=f.q.trim().toLowerCase(),hol=cat==='hol',all=S.memos.filter(m=>memoCat(m)===cat||(cat==='co'&&memoCat(m)==='hol'));
   const tabs=hol?['Upcoming','Past','All']:['Open','Draft','Acknowledged','Closed','All'];
   const inT=(m,t)=>hol?t==='All'||(t==='Upcoming')===(holDay(m)>=today()):inTab(m,t);
-  const types=cat==='disc'?DISC_TYPES.concat([EOP_TYPE]):cat==='co'?CO_TYPES:HOL_TYPES;
+  const types=cat==='disc'?DISC_TYPES.concat([EOP_TYPE]):cat==='co'?CO_TYPES.concat(HOL_TYPES.filter(t=>all.some(m=>m.type===t))):HOL_TYPES;
   if(cat==='disc')return daPage(all);
   let list=all.filter(m=>inT(m,f.tab)&&(!f.type||m.type===f.type));
   if(q)list=list.filter(m=>[m.no,m.subject,m.body,memoTo(m),m.type,m.event&&m.event.name].join(' ').toLowerCase().includes(q));
@@ -1749,7 +1747,6 @@ function daPage(all){
 }
 VIEWS.memos=()=>memoPage('disc');
 VIEWS.cmemos=()=>memoPage('co');
-VIEWS.holidays=()=>memoPage('hol');
 
 /* ---------------- settings: user access ---------------- */
 // Accounts are made here by an admin (no sign-up). The server function hris-admin does the work and checks that
