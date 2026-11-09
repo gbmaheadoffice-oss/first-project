@@ -730,7 +730,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'Open',type:'',q:''},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -824,11 +824,14 @@ const GBMA_DEPTS=['Human Resources','Recruitment','Operations','Admin','Payroll'
 /* Memos come in three kinds: Disciplinary Action Memo (an employee's violation, to that employee), Company Memorandum
    (official announcements, company policies, general instructions) and Holiday Advisory (regular holidays,
    special non-working days, holiday work schedules). */
-const DISC_TYPES=['Notice to Explain','Notice of Decision','Other Disciplinary Action'];
+const DISC_TYPES=['Notice to Explain','Disciplinary Action','Notice of Conference','Notice of Decision'];
+/* DA Memos page: one button per part; the end-of-probation notice is listed with the decisions */
+const DA_PARTS=['Notice to Explain','Disciplinary Action','Notice of Conference','Notice of Decision','Summary of Cases'];
+const daPartOf=m=>m.type===EOP_TYPE?'Notice of Decision':m.type;
 const CO_TYPES=['Announcement','Company Policy','General Instruction','Reminder','Commendation','Other'];
 const HOL_TYPES=['Regular Holiday','Special Non-Working Day','Holiday Work Schedule'];
-const MEMO_CATS={disc:{route:'memos',name:'Disciplinary Action Memo',ui:'memo',act:'issue-memo',new:'New Disciplinary Memo'},
-  co:{route:'cmemos',name:'Company Memorandum',ui:'cmemo',act:'issue-cmemo',new:'New Company Memo'},
+const MEMO_CATS={disc:{route:'memos',name:'DA Memo',ui:'memo',act:'issue-memo',new:'New DA Memo'},
+  co:{route:'cmemos',name:'Inter-office Memo',ui:'cmemo',act:'issue-cmemo',new:'New Inter-office Memo'},
   hol:{route:'holidays',name:'Holiday Advisory',ui:'hol',act:'issue-hol',new:'New Holiday Advisory'}};
 const memoCat=m=>m.cat||(m.type===EOP_TYPE||DISC_TYPES.includes(m.type)?'disc':HOL_TYPES.includes(m.type)?'hol':'co');
 const isOffice=e=>!!e&&e.client===OFFICE;
@@ -857,8 +860,8 @@ const ROUTES={
   permits:{t:'Leave Management',nav:'Permit to Work Approvals',icon:'hat'},
   leavereport:{t:'Leave Management',nav:'Leave Summary Report',icon:'clip'},
   evaluations:{t:'Evaluations & Regularization',nav:'Evaluations',icon:'clip'},
-  memos:{t:'Company Communications',nav:'Disciplinary Actions',icon:'memo'},
-  cmemos:{t:'Company Communications',nav:'Company Memoranda',icon:'send'},
+  memos:{t:'Company Communications',nav:'DA Memos',icon:'memo'},
+  cmemos:{t:'Company Communications',nav:'Inter-office Memo',icon:'send'},
   holidays:{t:'Company Communications',nav:'Holiday Advisories',icon:'cal'},
   settings:{t:'Settings',nav:'Settings',icon:'gear'}
 };
@@ -893,6 +896,7 @@ function renderNav(){
 }
 function render(focus){
   EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>{normRecs(e);EMP[e.id]=e});
+  S.memos.forEach(m=>{if(m.type==='Other Disciplinary Action')m.type='Disciplinary Action'});
   if(groupOf(route))lastOf[groupOf(route)]=route;
   applyAccessCss();
   renderNav();
@@ -996,8 +1000,8 @@ VIEWS.dashboard=function(){
     <button class="btn" data-act="add-emp">Add Employee</button>
     ${canView('leaves')?`<button class="btn" data-act="nav" data-id="leaves">Review Leave Requests</button>
     <button class="btn" data-act="nav" data-id="permits">Review Permits to Work</button>`:''}
-    <button class="btn" data-act="issue-memo">Disciplinary Memo</button>
-    <button class="btn" data-act="issue-cmemo">Company Memo</button>
+    <button class="btn" data-act="issue-memo">DA Memo</button>
+    <button class="btn" data-act="issue-cmemo">Inter-office Memo</button>
     <button class="btn" data-act="issue-hol">Holiday Advisory</button>
   </div></section>`;
   if(!S.employees.length){
@@ -1687,6 +1691,7 @@ function memoPage(cat){
   const tabs=hol?['Upcoming','Past','All']:['Open','Draft','Acknowledged','Closed','All'];
   const inT=(m,t)=>hol?t==='All'||(t==='Upcoming')===(holDay(m)>=today()):inTab(m,t);
   const types=cat==='disc'?DISC_TYPES.concat([EOP_TYPE]):cat==='co'?CO_TYPES:HOL_TYPES;
+  if(cat==='disc')return daPage(all);
   let list=all.filter(m=>inT(m,f.tab)&&(!f.type||m.type===f.type));
   if(q)list=list.filter(m=>[m.no,m.subject,m.body,memoTo(m),m.type,m.event&&m.event.name].join(' ').toLowerCase().includes(q));
   list.sort(hol&&f.tab==='Upcoming'?(a,b)=>holDay(a)<holDay(b)?-1:1:memoSort);
@@ -1699,8 +1704,47 @@ function memoPage(cat){
   h+=fbtnsHtml(C.ui,'Show memos',['All'].concat(tabs.filter(t=>t!=='All')).map(t=>[t,all.filter(m=>inT(m,t)).length,...MEMO_LOOK[t]]),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox(`f-${C.ui}-q`,`${C.ui}.q`,f.q,'Search memo no., subject, recipient')}
     <label class="sr" for="f-${C.ui}-type">Type</label><select id="f-${C.ui}-type" data-filter="${C.ui}.type"><option value="">All types</option>${types.map(d=>`<option ${d===f.type?'selected':''}>${esc(d)}</option>`).join('')}</select></div>`;
-  if(!list.length)h+=emptyBlock(`No ${hol?'holiday advisories':C.name.toLowerCase()+'s'} here`,{disc:'Disciplinary memos to employees appear here.',co:'Company memos appear here.',hol:'Holiday advisories appear here, upcoming holidays first.'}[cat],`<div data-write>${newBtn}</div>`);
+  if(!list.length)h+=emptyBlock(`No ${hol?'holiday advisories':C.name.toLowerCase()+'s'} here`,{disc:'Disciplinary memos to employees appear here.',co:'Inter-office memos appear here.',hol:'Holiday advisories appear here, upcoming holidays first.'}[cat],`<div data-write>${newBtn}</div>`);
   else h+=`<div class="tw"><table class="tbl"><thead><tr><th>Memo No.</th><th>Subject</th><th>Type</th>${hol?'<th>Holiday</th>':''}<th>To</th><th>Issued</th>${hol?'':'<th>Status</th>'}</tr></thead><tbody>${list.map(memoRow).join('')}</tbody></table></div>`;
+  return h+'</section>';
+}
+function daPage(all){
+  const f=UI.memo,q=f.q.trim().toLowerCase(),part=DA_PARTS.includes(f.part)?f.part:DA_PARTS[0];
+  const PART_ICON={'Notice to Explain':'memo','Disciplinary Action':'alert','Notice of Conference':'users','Notice of Decision':'check','Summary of Cases':'clip'};
+  const subs={'Notice to Explain':'The first step of due process: the employee is asked to explain in writing within 5 calendar days.',
+    'Disciplinary Action':'Other disciplinary memos to an employee.',
+    'Notice of Conference':'Calls the employee to an administrative conference about a Notice to Explain: date, time and place.',
+    'Notice of Decision':'Management’s decision on the case and the penalty, if any. Notices of End of Probationary Employment are listed here too.',
+    'Summary of Cases':'Every employee with a disciplinary case: how many notices, conferences and decisions, open cases and the latest penalty.'};
+  const real=all.filter(m=>m.status!=='Draft');
+  const cnt=p=>p==='Summary of Cases'?new Set(real.map(m=>m.toValue)).size:all.filter(m=>daPartOf(m)===p).length;
+  const newBtn=part==='Summary of Cases'?'':`<button class="btn" data-act="issue-memo" data-k="${esc(part)}" data-write>${ic('plus')}New ${esc(part)}</button>`;
+  let h=groupTabs()+ph('DA Memos',subs[part],newBtn);
+  h+=fbtnsHtml('memo.part','DA memo part',DA_PARTS.map(p=>[p,cnt(p),PART_ICON[p],p==='Notice of Decision'?'bad':p==='Notice to Explain'?'warn':'']),part);
+  if(part==='Summary of Cases'){
+    const by={};real.forEach(m=>{(by[m.toValue]=by[m.toValue]||[]).push(m)});
+    let rows=Object.entries(by).map(([id,ms])=>{const e=EMP[id];ms.sort(memoSort);const dec=ms.filter(m=>m.type==='Notice of Decision'&&m.penalty);
+      return{id,e,name:e?fullName(e):'Former employee',ms,n:t=>ms.filter(m=>daPartOf(m)===t).length,open:ms.filter(m=>m.status==='Open').length,last:dec[0],latest:ms[0]}});
+    if(q)rows=rows.filter(r=>[r.name,r.e&&r.e.empNo,r.e&&r.e.client].join(' ').toLowerCase().includes(q));
+    rows.sort((a,b)=>b.open-a.open||((b.latest.issuedOn||'')<(a.latest.issuedOn||'')?-1:1));
+    h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-memo-q','memo.q',f.q,'Search employee, ID number, client')}</div>`;
+    if(!rows.length)h+=emptyBlock('No cases yet','Employees with a Notice to Explain, conference, disciplinary memo or decision appear here.');
+    else h+=`<div class="tw"><table class="tbl" style="min-width:980px"><thead><tr><th>Employee</th><th class="r">Notice to Explain</th><th class="r">Disciplinary Action</th><th class="r">Conference</th><th class="r">Decision</th><th class="r">Open</th><th>Latest penalty</th><th>Latest memo</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr class="${r.e?'click':''}" ${r.e?`data-act="open-emp" data-id="${r.id}" data-k="history" tabindex="0"`:''}><td><div class="nm">${esc(r.name)}</div><div class="sub">${esc(r.e?r.e.empNo+' · '+(r.e.client||'—'):'')}</div></td>
+        <td class="r num">${r.n('Notice to Explain')}</td><td class="r num">${r.n('Disciplinary Action')}</td><td class="r num">${r.n('Notice of Conference')}</td><td class="r num">${r.n('Notice of Decision')}</td>
+        <td class="r num ${r.open?'att-warn':''}">${r.open}</td>
+        <td>${r.last?`<b>${esc(r.last.penalty.label)}</b><div class="sub">${esc(r.last.no)} · ${fmt(r.last.issuedOn)}</div>`:'<span class="sub">—</span>'}</td>
+        <td><div>${esc(r.latest.type)}</div><div class="sub">${esc(r.latest.no)} · ${fmt(r.latest.issuedOn)}</div></td></tr>`).join('')}</tbody></table></div>`;
+    return h+'</section>';
+  }
+  const ST=['All','Open','Draft','Acknowledged','Closed'];const st=ST.includes(f.tab)?f.tab:'All';
+  let list=all.filter(m=>daPartOf(m)===part&&inTab(m,st));
+  if(q)list=list.filter(m=>[m.no,m.subject,m.body,memoTo(m),m.type].join(' ').toLowerCase().includes(q));
+  list.sort(memoSort);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-memo-q','memo.q',f.q,'Search memo no., subject, employee')}
+    <label class="sr" for="f-memo-tab">Status</label><select id="f-memo-tab" data-filter="memo.tab">${ST.map(t=>`<option value="${t}" ${t===st?'selected':''}>${t==='All'?'All statuses':t} (${all.filter(m=>daPartOf(m)===part&&inTab(m,t)).length})</option>`).join('')}</select></div>`;
+  if(!list.length)h+=emptyBlock(`No ${part.toLowerCase()} memos here`,'Issued memos of this kind appear here.',newBtn?`<div data-write>${newBtn}</div>`:'');
+  else h+=`<div class="tw"><table class="tbl"><thead><tr><th>Memo No.</th><th>Subject</th><th>Type</th><th>To</th><th>Issued</th><th>Status</th></tr></thead><tbody>${list.map(memoRow).join('')}</tbody></table></div>`;
   return h+'</section>';
 }
 VIEWS.memos=()=>memoPage('disc');
@@ -2976,7 +3020,7 @@ function waitFor(cond,fn,n=0){if(cond())return fn();if(n<40)setTimeout(()=>waitF
 const notRecommended=e=>MS.some(m=>{const r=e.evals&&e.evals[m.k];return r&&r.date&&(r.recommendation?r.recommendation==='For End of Contract':r.final!=null&&r.final<3)});
 function eopNotice(e){return S.memos.filter(m=>m.type===EOP_TYPE&&m.toType==='employee'&&m.toValue===e.id).sort((a,b)=>(b.createdAt||'')<(a.createdAt||'')?-1:1)[0]}
 /* Memo numbers: type code + year + "-" + month + "-" + 4-digit series per type per year, e.g. NTE2026-10-0001 */
-const MEMO_CODES={'Notice to Explain':'NTE','Written Warning':'WW','Notice of Decision':'NOD','Disciplinary':'DA','Policy & Procedures':'PP','General Announcement':'GA','Reminder':'REM','Commendation':'COM','Notice of End of Probationary Employment':'NEPE','Holiday Work Arrangement':'HWA','No Work Arrangement':'NWA','Advisory':'ADV','Announcement':'ANN','Endorsement':'END','Request':'REQ','Reply':'REP','Letter':'LTR','Billing / Statement':'BS','Other':'MEMO','Other Disciplinary Action':'DA','Company Policy':'POL','General Instruction':'GI','Regular Holiday':'HA','Special Non-Working Day':'HA','Holiday Work Schedule':'HA'};
+const MEMO_CODES={'Notice to Explain':'NTE','Written Warning':'WW','Notice of Decision':'NOD','Disciplinary':'DA','Policy & Procedures':'PP','General Announcement':'GA','Reminder':'REM','Commendation':'COM','Notice of End of Probationary Employment':'NEPE','Holiday Work Arrangement':'HWA','No Work Arrangement':'NWA','Advisory':'ADV','Announcement':'ANN','Endorsement':'END','Request':'REQ','Reply':'REP','Letter':'LTR','Billing / Statement':'BS','Other':'MEMO','Other Disciplinary Action':'DA','Disciplinary Action':'DA','Notice of Conference':'NOC','Company Policy':'POL','General Instruction':'GI','Regular Holiday':'HA','Special Non-Working Day':'HA','Holiday Work Schedule':'HA'};
 const memoCode=t=>MEMO_CODES[t]||'MEMO';
 function memoNo(type,date,selfId){const code=memoCode(type);const d=parse(date||today());const y=d.getFullYear();const re=new RegExp('^'+code+y+'-\\d{2}-(\\d{4})$');let max=0;S.memos.forEach(x=>{if(x.id===selfId)return;const r=re.exec(x.no||'');if(r)max=Math.max(max,+r[1])});return`${code}${y}-${pad(d.getMonth()+1)}-${String(max+1).padStart(4,'0')}`}
 function assignNo(o,prev){const d=parse(o.issuedOn||today());const want=`${memoCode(o.type)}${d.getFullYear()}-${pad(d.getMonth()+1)}-`;if(o.no&&o.no.startsWith(want))return;if(!o.no||!prev||!prev.status||prev.status==='Draft')o.no=memoNo(o.type,o.issuedOn,o.id)}
@@ -3050,7 +3094,7 @@ function eopStep(e){
   if(n.status==='Draft')return`<div class="notice-step"><span class="chip">${ic('edit')}End of probation notice draft</span><button class="btn sm" data-act="view-memo" data-id="${n.id}">Review &amp; send</button></div>`;
   return`<div class="notice-step"><span class="chip bad">${ic('check')}${esc(n.no)} sent ${fmtTs(n.sentAt)}</span><button class="link" data-act="view-memo" data-id="${n.id}" style="padding-left:0">View notice</button>${end}</div>`;
 }
-function memoTitle(m){const cat=memoCat(m);return cat==='disc'&&m.type!=='Other Disciplinary Action'?m.type.toUpperCase():MEMO_CATS[cat].name.toUpperCase()}
+function memoTitle(m){const cat=memoCat(m);return cat==='disc'?m.type.toUpperCase():MEMO_CATS[cat].name.toUpperCase()}
 function memoDoc(m){
   if(m.type===EOP_TYPE)return eopDoc(m);
   return`<article class="memo-doc">${LETTERHEAD.startsWith('data:')?`<img class="lh-memo" src="${LETTERHEAD}" alt="Golden Bear Manpower Agency letterhead">`:`<div class="memo-org">GOLDEN BEAR MANPOWER AGENCY</div>`}<div class="memo-title">${esc(memoTitle(m))}</div>
@@ -3095,6 +3139,15 @@ This may be a violation of the GBMA Company Rules and Regulations (2025 Edition)
 You are hereby directed to explain in writing, within five (5) calendar days from receipt of this notice, why no disciplinary action should be taken against you.
 
 You may request an administrative conference if you wish to be heard in person. If you do not submit a written explanation within the period given, management will decide the matter based on the records available.`}
+function confBody(v){const o=v.offense||{},c=v.conference||{},nte=S.memos.find(x=>x.id===v.nteId);
+  const ref=nte?`This refers to the Notice to Explain ${nte.no} dated ${fmt(nte.issuedOn)}`:'This refers to the reported incident';
+  return`${ref}${o.incidentOn?` about the incident on ${longDate(o.incidentOn)}`:''}${o.text?`, a possible violation of the GBMA Company Rules and Regulations (2025 Edition), ${offRef(o)}: "${o.text}"`:''}.
+
+You are hereby required to attend an administrative conference on ${c.date?longDate(c.date):'[date]'} at ${c.time?fmtTime(c.time):'[time]'}, at ${c.venue||'[place]'}.
+
+The conference will give you the chance to explain your side, present evidence and answer questions about the incident. You may bring a representative or witness if you wish.
+
+If you do not attend without a valid reason, management will decide the matter based on the records available.`}
 function nodBody(v){const o=v.offense||{},c=CRR[o.lvl],p=v.penalty||{},nte=S.memos.find(x=>x.id===v.nteId);if(!c)return'';
   const ref=nte?`This refers to the Notice to Explain ${nte.no} dated ${fmt(nte.issuedOn)} about the following incident on ${longDate(o.incidentOn)}:`:`This refers to the following incident on ${longDate(o.incidentOn)}:`;
   const heard=v.explained==='yes'?`Management has reviewed your written explanation${v.explainedOn?` dated ${fmt(v.explainedOn)}`:''} and the records of the incident.`:'You did not submit a written explanation within the period given, so management decided the matter based on the records available.';
@@ -3142,6 +3195,11 @@ function discForm(id,presetType,empId,nteId){
     ${field({id:'df-det',name:'details',label:'What happened',type:'textarea',full:1,value:o.details||'',attrs:'style="min-height:80px" placeholder="Time, place and what the employee did, and who reported it"'})}
     <div class="field full" id="df-rec" aria-live="polite"></div>
     </div>
+    <fieldset id="df-conf" style="margin-top:12px"><legend>Conference</legend><div class="fg">
+      ${field({id:'df-cdate',name:'confDate',label:'Date of conference',type:'date',value:(m.conference||{}).date||addDays(m.issuedOn,3)})}
+      ${field({id:'df-ctime',name:'confTime',label:'Time',type:'time',value:(m.conference||{}).time||'10:00'})}
+      ${field({id:'df-cvenue',name:'confVenue',label:'Place',full:1,value:(m.conference||{}).venue||'GBMA Head Office',attrs:'placeholder="e.g. GBMA Head Office, HR office"'})}
+    </div></fieldset>
     <fieldset id="df-dec" style="margin-top:12px"><legend>Decision</legend><div class="fg">
       ${field({id:'df-exp',name:'explained',label:'Written explanation',type:'select',opts:[['yes','Received'],['no','Not submitted within the period']],value:m.explained||'yes',blank:false})}
       ${field({id:'df-expd',name:'explainedOn',label:'Explanation dated',type:'date',value:m.explainedOn||''})}
@@ -3163,12 +3221,12 @@ function discForm(id,presetType,empId,nteId){
       const penalty=()=>{const label=f.penalty.value,days=susDays(label);const from=f.penFrom.value||nextWorkday(f.issuedOn.value);
         return!label?null:days?{label,days,...susEnd(from,days)}:{label,days:0,from:label==='Dismissal'?from:'',to:'',resume:''}};
       const read=()=>{const x=offOf();const v={...m,cat:'disc',type:T(),issuedOn:f.issuedOn.value,toType:'employee',toValue:emp(),from:f.from.value,subject:f.subject.value,body:f.body.value,
-        responseDue:f.responseDue.value,nteId:T()==='Notice of Decision'&&f.nteId?f.nteId.value:'',
+        responseDue:f.responseDue.value,nteId:(T()==='Notice of Decision'||T()==='Notice of Conference')&&f.nteId?f.nteId.value:'',conference:T()==='Notice of Conference'?{date:f.confDate.value,time:f.confTime.value,venue:f.confVenue.value.trim()}:null,
         offense:x?{...x,count:count(),incidentOn:f.incidentOn.value,details:f.details.value.trim()}:null,
         explained:f.explained.value,explainedOn:f.explainedOn.value,penalty:T()==='Notice of Decision'?penalty():null};v.no=previewNo(v,m);return v};
-      const drawNte=()=>{const w=f.querySelector('#df-nte-wrap');if(T()!=='Notice of Decision'){w.hidden=true;w.innerHTML='';return}
+      const drawNte=()=>{const w=f.querySelector('#df-nte-wrap');if(T()!=='Notice of Decision'&&T()!=='Notice of Conference'){w.hidden=true;w.innerHTML='';return}
         const list=S.memos.filter(x=>x.type==='Notice to Explain'&&x.toValue===emp()&&x.status!=='Draft').sort(memoSort);const cur=f.nteId?f.nteId.value:m.nteId;w.hidden=false;
-        w.innerHTML=`<label for="df-nte">Notice to Explain being decided</label><select id="df-nte" name="nteId"><option value="">None (no Notice to Explain)</option>${list.map(x=>`<option value="${x.id}" ${x.id===cur?'selected':''}>${esc(x.no)} · ${fmt(x.issuedOn)} · ${esc(x.subject)}</option>`).join('')}</select>${list.length?'':'<p class="help" style="margin:4px 0 0">This employee has no Notice to Explain yet. Due process requires one before a decision.</p>'}`;
+        w.innerHTML=`<label for="df-nte">${T()==='Notice of Conference'?'Notice to Explain this conference is about':'Notice to Explain being decided'}</label><select id="df-nte" name="nteId"><option value="">None (no Notice to Explain)</option>${list.map(x=>`<option value="${x.id}" ${x.id===cur?'selected':''}>${esc(x.no)} · ${fmt(x.issuedOn)} · ${esc(x.subject)}</option>`).join('')}</select>${list.length?'':'<p class="help" style="margin:4px 0 0">This employee has no Notice to Explain yet. Due process requires one before a decision.</p>'}`;
         f.nteId.onchange=()=>{const n=S.memos.find(x=>x.id===f.nteId.value);if(n&&n.offense){f.offense.value=offKey(n.offense);f.incidentOn.value=n.offense.incidentOn||'';f.details.value=n.offense.details||''}drawRec();drawPen();autofill()}};
       const drawPen=()=>{const x=offOf();const sel=f.penalty,cur=sel.value||pen.label;
         const opts=x?CRR[x.lvl].ladder.slice():[];if(!x)opts.push(...new Set(Object.values(CRR).flatMap(c=>c.ladder)));opts.push(NOT_LIABLE);
@@ -3181,12 +3239,12 @@ function discForm(id,presetType,empId,nteId){
       const drawRec=()=>{const x=offOf(),w=f.querySelector('#df-rec');if(!x||!emp()){w.innerHTML='';return}
         const prior=priorOffenses(emp(),offKey(x),m.id,f.issuedOn.value),n=prior.length+1,e=EMP[emp()];
         w.innerHTML=`<div class="silline ${n>1?'warn':''}">${ic(n>1?'alert':'info')}<span>${prior.length?`${esc(e?e.firstName:'The employee')} was found liable for this offense ${prior.length} time${prior.length===1?'':'s'} before (${prior.map(p=>`${esc(p.no)}, ${fmt(p.issuedOn)}: ${esc(p.penalty.label)}`).join('; ')}). This is the <b>${ord(n)} offense</b>.`:`No earlier decision for this offense. This is the <b>1st offense</b>.`} Company Rules penalty: <b>${esc(crrPenalty(x.lvl,n))}</b>.</span></div>`};
-      const drawType=()=>{const t=T(),dec=t==='Notice of Decision';f.querySelector('#mf-due-wrap').hidden=t!=='Notice to Explain';f.querySelector('#df-dec').hidden=!dec;
-        f.offense.required=t!=='Other Disciplinary Action';f.querySelector('.df-oreq').hidden=!f.offense.required;f.incidentOn.required=f.details.required=f.offense.required;f.penalty.required=dec;
+      const drawType=()=>{const t=T(),dec=t==='Notice of Decision';f.querySelector('#mf-due-wrap').hidden=t!=='Notice to Explain';f.querySelector('#df-dec').hidden=!dec;f.querySelector('#df-conf').hidden=t!=='Notice of Conference';f.confDate.required=t==='Notice of Conference';
+        f.offense.required=t==='Notice to Explain'||t==='Notice of Decision';f.querySelector('.df-oreq').hidden=!f.offense.required;f.incidentOn.required=f.details.required=f.offense.required;f.penalty.required=dec;
         f.explainedOn.closest('.field').hidden=f.explained.value!=='yes';drawNte()};
       const fill=()=>{const v=read();if(!v.offense)return;const t=T();
-        f.subject.value=t==='Notice to Explain'?`Notice to Explain — ${v.offense.text}`:t==='Notice of Decision'?`Notice of Decision — ${v.penalty?v.penalty.label:'[penalty]'}`:f.subject.value;
-        f.body.value=t==='Notice to Explain'?nteBody(v):t==='Notice of Decision'?nodBody(v):f.body.value;auto=true;pv()};
+        f.subject.value=t==='Notice to Explain'?`Notice to Explain — ${v.offense.text}`:t==='Notice of Decision'?`Notice of Decision — ${v.penalty?v.penalty.label:'[penalty]'}`:t==='Notice of Conference'?`Notice of Conference — ${v.offense.text}`:f.subject.value;
+        f.body.value=t==='Notice to Explain'?nteBody(v):t==='Notice of Decision'?nodBody(v):t==='Notice of Conference'?confBody(v):f.body.value;auto=true;pv()};
       const autofill=()=>{if(auto||!f.body.value.trim())fill()};
       const pv=()=>{f.querySelector('#mf-prev').innerHTML=memoDoc(read())};
       f.type.addEventListener('change',()=>{drawType();drawPen();autofill()});
@@ -3195,6 +3253,7 @@ function discForm(id,presetType,empId,nteId){
       f.issuedOn.addEventListener('change',()=>{if(f.issuedOn.value)f.responseDue.value=addDays(f.issuedOn.value,5);drawRec();autofill()});
       f.explained.addEventListener('change',()=>{drawType();autofill()});
       f.penalty.addEventListener('change',()=>{drawPen();autofill()});
+      ['confDate','confTime','confVenue'].forEach(n=>f[n].addEventListener('change',autofill));
       ['incidentOn','details','explainedOn','penFrom'].forEach(n=>f[n].addEventListener('change',()=>{drawPen();autofill()}));
       f.body.addEventListener('input',()=>{auto=false});f.subject.addEventListener('input',()=>{auto=false});
       f.querySelector('#df-fill').onclick=fill;
@@ -3214,10 +3273,11 @@ function discForm(id,presetType,empId,nteId){
       if(t==='Notice of Decision'){const label=String(fd.get('penalty')),days=susDays(label),from=String(fd.get('penFrom')||'')||nextWorkday(o.issuedOn);
         o.penalty=days?{label,days,...susEnd(from,days)}:{label,days:0,from:label==='Dismissal'?from:'',to:'',resume:''};
         o.nteId=String(fd.get('nteId')||'');o.explained=String(fd.get('explained'));o.explainedOn=o.explained==='yes'?String(fd.get('explainedOn')||''):''}
-      else{delete o.penalty;delete o.nteId;delete o.explained;delete o.explainedOn}
+      else{delete o.penalty;delete o.explained;delete o.explainedOn;if(t!=='Notice of Conference')delete o.nteId}
+      if(t==='Notice of Conference'){o.nteId=String(fd.get('nteId')||'');o.conference={date:String(fd.get('confDate')||''),time:String(fd.get('confTime')||''),venue:String(fd.get('confVenue')||'').trim()};if(!o.conference.date){setErr(f.querySelector('#df-cdate'),'Enter the date of the conference.');return false}}else delete o.conference;
       assignNo(o,m);await save('memos',o);
       // the decision closes the Notice to Explain it answers
-      const n=o.nteId&&S.memos.find(y=>y.id===o.nteId);if(n&&n.status!=='Closed')await save('memos',{...clone(n),status:'Closed',statusAt:new Date().toISOString(),statusBy:MEID,decidedBy:o.id});
+      const n=t==='Notice of Decision'&&o.nteId&&S.memos.find(y=>y.id===o.nteId);if(n&&n.status!=='Closed')await save('memos',{...clone(n),status:'Closed',statusAt:new Date().toISOString(),statusBy:MEID,decidedBy:o.id});
       toast(id?`${o.no} updated.`:`${o.no} issued to ${memoTo(o)}.`);
       if(!id){MD.close();whenReady('memos',o.id,()=>viewMemo(o.id));return false}
     }});
@@ -3473,7 +3533,7 @@ function renderDrawer(){
   }
   DR.innerHTML=`<div class="dwrap"><header class="dhead">
     <div class="dtop"><div class="avatar" aria-hidden="true">${esc(initials(e))}</div><div style="flex:1;min-width:0"><h2>${esc(fullName(e))}</h2><p>${esc(e.position)} · ${esc(e.empNo)}</p><p style="color:var(--ink);font-weight:600">${esc(e.client||'No client assigned')}${e.site?` <span style="color:var(--muted);font-weight:400">· ${esc(e.site)}</span>`:''}</p><div class="dchips">${empStatusChip(e)}${typeChip(e.employmentType)}${soloChip(e)}${pwdChip(e)}${sampleChip(e)}</div></div><button class="icon-btn" id="dr-x" aria-label="Close 201 file">${ic('x')}</button></div>
-    <div class="dacts" data-write><button class="btn sm" data-act="edit-emp" data-id="${e.id}">${ic('edit')}Edit 201 file</button><button class="btn sm ghost" data-act="change-status" data-id="${e.id}">Change status</button><button class="btn sm ghost" data-act="issue-memo" data-id="${e.id}">Disciplinary memo</button></div>
+    <div class="dacts" data-write><button class="btn sm" data-act="edit-emp" data-id="${e.id}">${ic('edit')}Edit 201 file</button><button class="btn sm ghost" data-act="change-status" data-id="${e.id}">Change status</button><button class="btn sm ghost" data-act="issue-memo" data-id="${e.id}">DA memo</button></div>
     <div class="tabs" role="tablist" style="border-bottom:0">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${drawerTab===k}" data-act="dtab" data-id="${k}">${l}</button>`).join('')}</div>
   </header><div class="dbody">${statusBanner(e)}${body}${drawerTab==='overview'&&(e.statusHistory||[]).length?`<section class="sect"><h4>Status history</h4><div class="rows">${e.statusHistory.slice().reverse().map(h=>`<div class="row"><div class="grow"><span class="nm">${esc(h.status)}</span>${h.reason?` · ${esc(h.reason)}`:''}${h.details?`<div class="meta" style="overflow-wrap:anywhere">${esc(h.details)}</div>`:''}</div><span class="dt">${h.date?fmt(h.date):fmtTs(h.at)}</span></div>`).join('')}</div></section>`:''}</div></div>`;
   DR.querySelector('#dr-x').onclick=()=>DR.close();
