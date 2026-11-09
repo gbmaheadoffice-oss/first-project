@@ -3689,13 +3689,20 @@ function viewApplicant(id){
     <section class="sect"><h4>Employment history</h4>${tbl([['Employer','employer'],['Job title','title'],['Location','location'],['Industry','nature'],['Salary','salary'],['From','from'],['To','to']],x.employment)}</section>
     <section class="sect"><h4>Skills &amp; qualifications</h4><dl class="kv">${wide('Other qualifications',x.otherQualifications)}${wide('Computers, software, equipment',x.equipment)}${wide('Licenses / certifications',x.licenses)}${wide('Additional skills',x.skills)}</dl></section>
     <section class="sect"><h4>Character references</h4>${tbl([['Name','name'],['Occupation','occupation'],['Contact no.','phone'],['Address','address']],x.references)}</section>`,
-    foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="button" class="btn ghost" id="ap-form">${ic('download')}Application form</button>${hired?'':`<button type="button" class="btn ghost" data-write id="ap-hire">${ic('plus')}Hire · create 201 file</button>`}<button type="submit" class="btn" data-write>Save</button>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="button" class="btn ghost" id="ap-form">${ic('download')}Application form</button>${hired?`<button type="button" class="btn" id="ap-201" data-act="open-emp" data-id="${hired.id}">${ic('users')}Open 201 file</button>`:`<button type="button" class="btn" data-write id="ap-hire">${ic('plus')}201 File</button>`}<button type="submit" class="btn" data-write id="ap-save">Save</button>`,
     onSubmit:async fd=>{
       const o=clone(a);const st=String(fd.get('status'));
       if(st!==appStatus(a))o.statusHistory=(o.statusHistory||[]).concat({from:appStatus(a),to:st,at:new Date().toISOString(),by:MEID});
       o.status=st;o.notes=String(fd.get('notes')||'').trim();await save('applicants',o);toast(`${appName(a)} · ${st}.`);
     },
-    onOpen:f=>{f.querySelector('#ap-form').onclick=ev=>appFormDownload(id,ev.currentTarget);const b=f.querySelector('#ap-hire');if(b)b.onclick=()=>{if(appStatus(a)==='Blocklisted'&&!confirm('This applicant is blocklisted. Hire anyway?'))return;if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;MD.close();hireApplicant(id)}}});
+    onOpen:f=>{f.querySelector('#ap-form').onclick=ev=>appFormDownload(id,ev.currentTarget);const b=f.querySelector('#ap-hire'),o201=f.querySelector('#ap-201'),sv=f.querySelector('#ap-save');
+      /* Hired: no Save; the next step is the 201 file. Other statuses: Save only. */
+      const sync=()=>{const h=f.status&&f.status.value==='Hired';if(sv)sv.hidden=h;if(b)b.hidden=!h;if(o201)o201.hidden=!h&&!!f.status};
+      if(f.status)f.status.addEventListener('change',sync);sync();
+      if(o201)o201.addEventListener('click',()=>MD.close());
+      if(b)b.onclick=async()=>{if(appStatus(a)==='Blocklisted'&&!confirm('This applicant is blocklisted. Hire anyway?'))return;if(bl&&!confirm('This applicant matches a blocklisted person. Continue anyway?'))return;
+        const notes=String(f.notes&&f.notes.value||'').trim();if(notes!==(a.notes||'')){try{await save('applicants',{...clone(a),notes})}catch(e){}}
+        MD.close();hireApplicant(id)}}});
 }
 
 /* Pre-fills a new 201 file from the application. HR completes deployment details, then saves. */
