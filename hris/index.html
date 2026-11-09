@@ -122,6 +122,8 @@ svg.i{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .btn:hover{background:var(--btn-hover)}
 .btn:active{transform:scale(.98)}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+input[readonly],textarea[readonly]{background:var(--surface-2);color:var(--muted);cursor:default}
+input[readonly]:focus,textarea[readonly]:focus{outline:none}
 .btn.ghost{background:var(--surface);color:var(--ink);border-color:var(--line)}
 .btn.ghost:hover{background:var(--surface-2)}
 .btn.ok{background:var(--ok);color:var(--surface)}
@@ -2880,7 +2882,8 @@ function evalForm(id,k){
   const e=EMP[id];const m=MS.find(x=>x.k===k);
   const st=((milestones(e)||{}).items||[]).find(x=>x.k===k);if(st&&st.state==='stopped')return toast(`The ${st.stopBy.label.toLowerCase()} evaluation is Not recommended, so the ${m.label.toLowerCase()} evaluation is not needed. Change that recommendation to open this one.`,{kind:'bad'});const due=addMonths(e.hireDate,m.n);const rec=(e.evals&&e.evals[k])||{};
   const cl=rec.client||{},hr=rec.hr||{};const haveScan=(cl.files||[]).length;let staged=[];
-  const resp=clientResp(e,k),gform=cl.form||(resp?{responseId:resp.responseId,ratings:resp.ratings,avg:resp.avg,remarks:resp.remarks,email:resp.email,at:resp.submittedAt}:null);
+  const resp=clientResp(e,k),gform=(resp?{responseId:resp.responseId,ratings:resp.ratings,avg:resp.avg,remarks:resp.remarks,email:resp.email,at:resp.submittedAt}:null)||cl.form||null;
+  const gLock=!!(gform&&gform.avg!=null); // a score from the Google Form cannot be changed here
   // a client that used the printed form before is assumed to use it again
   const prevPaper=MS.some(x=>x.k!==k&&e.evals&&e.evals[x.k]&&e.evals[x.k].client&&(e.evals[x.k].client.method==='paper'||!e.evals[x.k].client.method&&!e.evals[x.k].client.form&&(e.evals[x.k].client.files||[]).length));
   const method=gform?'gform':cl.method||(haveScan?'paper':prevPaper?'paper':'gform');
@@ -2892,8 +2895,9 @@ function evalForm(id,k){
       ${gform?`<div class="silline" style="margin-bottom:12px">${ic('check')}<span>Answered on the Google Form by <b>${esc(gform.email||'the client')}</b>${gform.at?' on '+fmtTs(gform.at):''}: ${gfRatings(gform)}. Average <b>${gform.avg!=null?Number(gform.avg).toFixed(2):'—'}</b>.${gform.remarks?`<br>Client remarks: “${esc(gform.remarks)}”`:''}</span></div>`
         :`<p class="help" style="margin:0 0 10px">Send the client the <a class="link" href="${esc(clientEvalLink(e,k))}" target="_blank" rel="noopener">pre-filled Google Form</a> (<button type="button" class="link" id="ev-gcopy" style="padding:0">copy link</button>); their answers fill in here. Or upload the scanned printed form and enter the client's average score.</p>`}
       <div class="fg">
-        ${field({id:'ev-cavg',name:'clientAvg',label:'Client average score',type:'number',req:1,value:cl.avg!=null?cl.avg:gform&&gform.avg!=null?gform.avg:'',attrs:'min="1" max="5" step="0.01" inputmode="decimal" placeholder="1.00 – 5.00"',help:'Average of all the ratings on the client’s form, from 1 to 5.'})}
+        ${field({id:'ev-cavg',name:'clientAvg',label:'Client average score',type:'number',req:1,value:gLock?Number(gform.avg).toFixed(2):cl.avg!=null?cl.avg:'',attrs:'min="1" max="5" step="0.01" inputmode="decimal" placeholder="1.00 – 5.00"'+(gLock?' readonly aria-readonly="true"':''),help:gLock?'From the client’s Google Form. It cannot be edited.':'Average of all the ratings on the client’s form, from 1 to 5.'})}
         ${field({id:'ev-cby',name:'clientEvaluator',label:'Evaluated by (client)',value:cl.evaluator||(gform&&gform.email)||'',attrs:'placeholder="Client supervisor name"'})}
+        ${gform?`<div class="field full"><label for="ev-crem">Client remarks (Google Form)</label><textarea id="ev-crem" readonly aria-readonly="true" rows="3">${esc(gform.remarks||'')}</textarea><p class="help">${gform.remarks?'Written by the client on the Google Form. It cannot be edited.':'The client left no remarks on the Google Form.'}</p></div>`:''}
         ${gform?'':`<fieldset class="field full" style="border:0;padding:0;margin:0"><legend class="flabel">How did the client evaluate?</legend><div class="rate" role="radiogroup" style="grid-template-columns:repeat(2,minmax(0,1fr))">${[['gform','Google Form','No scan needed'],['paper','Printed form (hard copy)','Upload the scanned form']].map(([v,l,d])=>`<label><input type="radio" name="clientMethod" value="${v}" ${method===v?'checked':''}><span><b>${l}</b>${d}</span></label>`).join('')}</div></fieldset>`}
         <div class="field full" id="ev-scan-box" ${method==='paper'||haveScan?'':'hidden'}><span class="flabel">Scanned client evaluation form${method==='paper'&&!haveScan?' <span class="req" aria-hidden="true">*</span>':''}</span>
           ${haveScan?`<div class="files" style="padding-left:0">${cl.files.map(f=>`<div class="file">${/^image\//.test(f.type)?`<img src="/_blob/${esc(f.id)}" alt="" width="44" height="44">`:`<span class="fic">${ic('pdf')}<b>PDF</b></span>`}<div class="fn"><a href="/_blob/${esc(f.id)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:600;overflow-wrap:anywhere">${esc(f.name)}</a><span>${fsize(f.size||0)} · on file</span></div></div>`).join('')}</div>`:''}
@@ -2928,7 +2932,7 @@ function evalForm(id,k){
     },
     onSubmit:async(fd,f)=>{
       f.querySelectorAll('.ferr2').forEach(p=>p.hidden=true);
-      const c=parseFloat(fd.get('clientAvg'));
+      const c=gLock?Number(gform.avg):parseFloat(fd.get('clientAvg'));
       if(!(c>=1&&c<=5)){setErr(f.querySelector('#ev-cavg'),'Enter the client’s average score from 1.00 to 5.00.');return false}
       for(const[key,title] of HR_FACTORS){if(!fd.get('hr_'+key)){const p=f.querySelector('#err-hr_'+key);p.textContent=`Select a score for ${title}.`;p.hidden=false;f.querySelector(`[name="hr_${key}"]`).focus();return false}}
       const paper=!gform&&fd.get('clientMethod')==='paper';
@@ -2940,7 +2944,7 @@ function evalForm(id,k){
       const h=r2(HR_FACTORS.reduce((s,[key])=>s+scores[key],0)/HR_FACTORS.length);const fin=r2((c+h)/2);
       const o=clone(EMP[id]);o.evals=o.evals||{};
       o.evals[k]={date:fd.get('date'),evaluator:String(fd.get('evaluator')).trim(),recommendation:fd.get('recommendation'),remarks:String(fd.get('remarks')||'').trim(),recordedBy:MEID,
-        client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),method:gform?'gform':paper?'paper':'gform',files:(cl.files||[]).concat(files),...(gform?{form:gform}:{})},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
+        client:{avg:r2(c),evaluator:String(fd.get('clientEvaluator')||'').trim(),method:gform?'gform':paper?'paper':'gform',files:(cl.files||[]).concat(files),...(gform?{form:gform,remarks:gform.remarks||''}:{})},hr:{...scores,avg:h},final:fin,rating:fin.toFixed(2)};
       await save('employees',o);const notRec=fd.get('recommendation')==='Not recommended';toast(`${m.label} evaluation saved for ${fullName(e)}: final score ${fin.toFixed(2)} (${scoreLabel(fin)}) · ${fd.get('recommendation')}.`);
       if(errs.length)toast('Not uploaded: '+errs.join(' · '),{kind:'bad'});
       if(notRec){const ex=eopNotice(e);MD.close();waitFor(()=>{const x=EMP[id];return x&&x.evals&&x.evals[k]&&x.evals[k].final===fin},()=>ex?viewMemo(ex.id):eopForm(id));return false}
