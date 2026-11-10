@@ -229,6 +229,10 @@ legend{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.0
 .fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 .field{display:flex;flex-direction:column;gap:6px;min-width:0}
 .field.full{grid-column:1/-1}
+.tk-day thead tr.tk-hd th{background:#0f2d6b;color:#fff;font-weight:800;letter-spacing:.02em}
+.tk-day thead tr.tk-hd th .sub{color:#cfd8ee;font-weight:600}
+.tk-day td.c,.tk-day th.c{text-align:center}
+.tk-bad{color:var(--bad,#c62828)}.tk-info{color:var(--info,#1565c0)}
 .field label{font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.03em}
 .field label .req{color:var(--bad)}
 .field .help{color:var(--muted);font-size:13px;margin:0}
@@ -731,7 +735,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:'',mode:'day',day:'',dtab:'All'},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -1378,6 +1382,8 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60))}:${pad(m%60)}`);
 // 15 min and the 2nd is 30 min (6-2) or 1 hr (6-3); from 3 PM on, one more 15-min break if it is logged. Minutes over
 // the allowance are overbreak. Regular hours = the schedule less the 2nd break (the 15-min breaks are paid), less
 // late, undertime and overbreak within the schedule. OT = time after the schedule end, less the breaks taken in it.
+// minutes of a span (minutes from midnight) that fall in night-differential hours, 10 PM – 6 AM
+const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,b-Math.max(a,1320));
 function tkRowell(e,ts){
   const m=ts.map(tkMins),n=m.length,start=e.shiftStart?tkMins(e.shiftStart):360;
   const end=e.shiftEnd?tkMins(e.shiftEnd):n>1&&n%2===0&&m[n-1]>=900?900:840;
@@ -1390,7 +1396,10 @@ function tkRowell(e,ts){
   const obReg=breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0),ob=breaks.reduce((t,x)=>t+x.ob,0);
   const reg=out==null?null:Math.max(0,end-start-meal-late-ut-obReg);
   const ot=out==null?0:Math.max(0,out-Math.max(end,inn)-breaks.filter(x=>x.ot).reduce((t,x)=>t+x.dur,0));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,odd};
+  const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(end,inn),oB=out==null?oA:out;
+  const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.b,rB)),0));
+  const ndot=out==null?0:Math.max(0,tkNight(oA,oB)-breaks.filter(x=>x.ot).reduce((t,x)=>t+tkNight(x.a,x.b),0));
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,nd,ndot,odd};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
@@ -1413,18 +1422,68 @@ const tkTest={'All':()=>true,'Late':r=>r.s.late>0,'Overbreak':r=>r.s.ob>0,'Incom
 function tkFiltered(doc){const f=UI.tk,q=f.q.trim().toLowerCase();
   return tkEmpRows(doc).filter(r=>(!f.client||(r.e&&r.e.client===f.client))&&(!q||[r.emp,r.name,r.e&&fullName(r.e),r.e&&r.e.empNo,r.e&&r.e.client].join(' ').toLowerCase().includes(q)))}
 const tkWho=r=>r.e?esc(fullName(r.e)):esc(r.name||'Unknown name');
+/* Time Keep per day: one table per date, like the DTR sheet: IN, OUT, LATE, REG HRS, OT, ND, NDOT.
+   Everyone active with a Biometric ID no. at the sites in the upload is listed; no logs that day = ABSENT (LEAVE when
+   on an approved leave). AC-No. not in any 201 file are listed with the name from the biometrics file. */
+const tkNum=m=>m?String(Math.round(m/60*100)/100):'';
+function tkDayRows(doc,d){
+  if(!doc)return[];const idx=tkIndex(S.employees),all=tkIndex(ALL_EMPLOYEES||S.employees),logs={},sites=new Set();
+  (doc.rows||[]).forEach(r=>{const k=tkKey(r.emp),e=idx[k];if(e&&e.client)sites.add(e.client);if(r.d===d)logs[k]=r});
+  const out=[],seen=new Set();
+  S.employees.filter(e=>e.biometricId&&sites.has(e.client)&&(isActive(e)||logs[tkKey(e.biometricId)])&&!(e.hireDate&&e.hireDate>d)).forEach(e=>{const k=tkKey(e.biometricId);if(seen.has(k))return;seen.add(k);
+    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,c:lg&&rule?rule.day(e,lg.t):null,leave:!lg&&leaveOn(e.id,d)})});
+  Object.keys(logs).forEach(k=>{if(seen.has(k)||all[k])return;const lg=logs[k];out.push({k,emp:lg.emp,name:lg.name,e:null,rule:null,log:lg,c:null})});
+  return out.sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
+}
+const TKD_TABS=['All','Present','Late','Absent','Missing log','Overbreak','Not in 201 files'];
+const tkdTest={'All':()=>true,'Present':r=>!!r.log,'Late':r=>!!(r.c&&r.c.late),'Absent':r=>!r.log&&!r.leave,'Missing log':r=>!!(r.log&&r.log.t.length%2),'Overbreak':r=>!!(r.c&&r.c.ob),'Not in 201 files':r=>!r.e};
+function tkDayFiltered(doc,d){const f=UI.tk,q=f.q.trim().toLowerCase();
+  return tkDayRows(doc,d).filter(r=>(!f.client||(r.e&&r.e.client===f.client))&&(!q||[r.emp,r.name,r.e&&fullName(r.e),r.e&&r.e.empNo,r.e&&r.e.client].join(' ').toLowerCase().includes(q)))}
+const tkDayOf=doc=>{const d=UI.tk.day;return d&&d>=doc.from&&d<=doc.to?d:doc.from};
+function tkDayCells(r){
+  if(!r.log)return r.leave?{inn:'LEAVE',out:'LEAVE',cls:'info'}:{inn:'ABSENT',out:'ABSENT',cls:'bad'};
+  const t=r.log.t,odd=t.length%2,c=r.c;
+  return{inn:fmtTime(t[0]),out:odd?'':fmtTime(t[t.length-1]),late:c?c.late:0,reg:c?c.reg:null,ot:c?c.ot:0,nd:c?c.nd:0,ndot:c?c.ndot:0,c,odd};
+}
+function tkDayView(doc){
+  const f=UI.tk,d=tkDayOf(doc),all=tkDayFiltered(doc,d),rows=all.filter(tkdTest[f.dtab]||tkdTest.All);
+  const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
+  const prev=d>doc.from?addDays(d,-1):'',next=d<doc.to?addDays(d,1):'';
+  let h=`<section class="card" style="margin-bottom:14px"><div class="toolbar" style="margin:0;flex-wrap:wrap;align-items:center">
+    <button class="btn ghost sm" data-act="tk-day" data-k="${prev}" ${prev?'':'disabled'} aria-label="Previous day">‹ Prev</button>
+    <label class="sr" for="f-tk-day">Date</label><input id="f-tk-day" type="date" data-filter="tk.day" value="${d}" min="${doc.from}" max="${doc.to}" style="flex:0 1 170px">
+    <button class="btn ghost sm" data-act="tk-day" data-k="${next}" ${next?'':'disabled'} aria-label="Next day">Next ›</button>
+    <b style="font-size:17px;margin-left:6px">${parse(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</b></div></section>`;
+  h+=fbtnsHtml('tk.dtab','Show employees',TKD_TABS.map(k=>[k,all.filter(tkdTest[k]).length,k==='All'?'users':k==='Present'?'check':k==='Absent'||k==='Not in 201 files'?'alert':'clock',k==='Present'?'ok':k==='Absent'||k==='Overbreak'||k==='Not in 201 files'?'bad':k==='All'?'':'warn']),f.dtab||'All');
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
+    <label class="sr" for="f-tk-client">Client company</label><select id="f-tk-client" data-filter="tk.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    ${searchBox('f-tk-q','tk.q',f.q,'Search employee, AC-No., site')}</div>`;
+  if(!rows.length)return h+emptyBlock('No employees here','Try another day, tab, site or search.')+'</section>';
+  const cell=(v,cls='')=>`<td class="c num ${cls}">${v}</td>`;
+  h+=`<div class="tw" style="margin-top:6px"><table class="tbl tk-day" style="min-width:1040px"><thead><tr class="tk-hd"><th>Employee</th><th>AC-No.</th><th class="c">IN</th><th class="c">OUT</th><th class="c">LATE<div class="sub">min</div></th><th class="c">REG HRS</th><th class="c">OT<div class="sub">hrs</div></th><th class="c">ND<div class="sub">hrs</div></th><th class="c">NDOT<div class="sub">hrs</div></th><th>Remarks</th></tr></thead><tbody>
+  ${rows.map(r=>{const x=tkDayCells(r),c=x.c;
+    const rem=[!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?'<span class="chip warn">Missing log</span>':'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
+    return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}</div></td><td class="num">${esc(r.emp)}</td>
+      ${r.log?cell(x.inn)+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
+        :cell(`<b class="tk-${x.cls}">${x.inn}</b>`)+cell(`<b class="tk-${x.cls}">${x.out}</b>`)+cell('')+cell('')+cell('')+cell('')+cell('')}
+      <td><div class="dchips">${rem}</div></td></tr>`}).join('')}
+  </tbody></table></div>`;
+  return h+'</section>';
+}
 VIEWS.timekeep=function(){
   const f=UI.tk,L=tkSorted(),doc=tkCur();
   let h=groupTabs()+ph('Time Keep','Upload the attendance log extracted from the biometrics device for each cut-off. Every time log is kept per employee and per day. The <b>AC-No.</b> in the file is matched to the <b>Biometric ID no.</b> in each employee’s 201 file. Late, undertime, overbreak, regular hours and OT follow each site’s time keep rules (set for: ${TK_RULES.map(r=>r.name).join(', ')}).',
     `${doc?`<button class="btn ghost" data-act="tk-xlsx">${ic('download')}Export to Excel</button>`:''}<button class="btn" data-act="tk-upload" data-write>${ic('upload')}Upload biometrics file</button>`);
   if(!doc)return h+emptyBlock('No biometrics file yet','Upload the extraction from the biometrics device (Excel, CSV, or the .dat / .txt attendance log) to see the time logs here.');
-  const all=tkFiltered(doc),rows=all.filter(tkTest[f.tab]||tkTest.All);
+  const all=f.mode==='emp'?tkFiltered(doc):[],rows=all.filter(tkTest[f.tab]||tkTest.All);
   const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
   h+=`<section class="card" style="margin-bottom:14px"><div class="toolbar" style="margin:0;flex-wrap:wrap;align-items:center">
     <label for="f-tk-id" style="font-weight:700">Biometrics file</label>
     <select id="f-tk-id" data-filter="tk.id" style="flex:1 1 320px;max-width:560px">${L.map(x=>`<option value="${x.id}" ${x.id===doc.id?'selected':''}>${esc(fmtS(x.from))} – ${esc(fmt(x.to))} · ${esc(x.fileName||'file')}${x.note?' · '+esc(x.note):''}</option>`).join('')}</select>
     <button class="btn bad-ghost" data-act="tk-del" data-id="${doc.id}" data-write>${ic('trash')}Delete this upload</button></div>
-    <p class="help" style="margin:8px 0 0">Uploaded ${esc(fmtTs(doc.createdAt))}${doc.byName?' by '+esc(doc.byName):''} · ${fmt(doc.from)} – ${fmt(doc.to)} · ${(doc.rows||[]).length} employee-day${(doc.rows||[]).length===1?'':'s'} of time logs${doc.bad?` · ${doc.bad} line${doc.bad===1?'':'s'} without a readable date or time skipped`:''}</p></section>`;
+    <p class="help" style="margin:8px 0 0">Uploaded ${esc(fmtTs(doc.createdAt))}${doc.byName?' by '+esc(doc.byName):''} · ${fmt(doc.from)} – ${fmt(doc.to)} · ${(doc.rows||[]).length} employee-day${(doc.rows||[]).length===1?'':'s'} of time logs${doc.bad?` · ${doc.bad} line${doc.bad===1?'':'s'} without a readable date or time skipped`:''}</p>
+    <div class="fbtns" role="group" aria-label="View" style="margin:12px 0 0"><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="day" aria-pressed="${f.mode!=='emp'}">${ic('cal')}<span>Per day</span></button><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="emp" aria-pressed="${f.mode==='emp'}">${ic('users')}<span>Cut-off total per employee</span></button></div></section>`;
+  if(f.mode!=='emp')return h+tkDayView(doc);
   h+=fbtnsHtml('tk','Show employees',TK_TABS.map(k=>[k,all.filter(tkTest[k]).length,k==='All'?'users':k==='Not in 201 files'?'alert':'clock',k==='All'?'':k==='Not in 201 files'||k==='Overbreak'?'bad':'warn']),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
     <label class="sr" for="f-tk-client">Client company</label><select id="f-tk-client" data-filter="tk.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
@@ -1486,11 +1545,32 @@ function tkUpload(){
       toast(`Uploaded ${fname}: ${new Set(parsed.rows.map(r=>tkKey(r.emp))).size} employees, ${fmt(doc.from)} – ${fmt(doc.to)}.`);
     }});
 }
+async function tkDayXlsx(){
+  const doc=tkCur();if(!doc)return;
+  const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+  if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
+  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  const wb=X.utils.book_new(),COLS=['NAME','AC-NO.','SITE','IN','OUT','LATE (MIN)','REG HRS','OT','ND','NDOT','REMARKS'];let n=0;
+  for(let d=doc.from;d<=doc.to;d=addDays(d,1)){
+    const rows=tkDayFiltered(doc,d);if(!rows.some(r=>r.log))continue;n++;
+    const aoa=[[parse(d).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})],COLS];
+    rows.forEach(r=>{const x=tkDayCells(r),c=x.c,num=m=>m?Math.round(m/60*100)/100:'';
+      aoa.push([r.e?fullName(r.e):r.name||'',r.emp,r.e?r.e.client||'':'Not in 201 files',x.inn,x.out,r.log&&x.late?x.late:'',r.log&&x.reg!=null?num(x.reg):'',r.log?num(x.ot):'',r.log?num(x.nd):'',r.log?num(x.ndot):'',
+        [x.odd?'Missing log':'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
+    const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,9,28,10,10,10,9,7,7,7,26].map(w=>({wch:w}));
+    X.utils.book_append_sheet(wb,ws,parse(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+  }
+  if(!n){toast('There are no time logs to export.',{kind:'bad'});return}
+  const name=`GBMA Time Keep per day ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
+  try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${n} day${n===1?'':'s'} to ${name}, one sheet per day.`)}
+  catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
+}
 function tkDel(id){
   const d=S.timekeep.find(x=>x.id===id);if(!d)return;
   confirmBox('Delete this upload?',`This removes the time logs of <b>${esc(d.fileName||'this file')}</b> (${fmt(d.from)} – ${fmt(d.to)}) from Time Keep. The file on your computer is not affected.`,'Delete',async()=>{await remove('timekeep',id);if(UI.tk.id===id)UI.tk.id='';toast('Upload deleted.')});
 }
 async function tkXlsx(){
+  if(UI.tk.mode!=='emp')return tkDayXlsx();
   const doc=tkCur();const rows=tkFiltered(doc).filter(tkTest[UI.tk.tab]||tkTest.All);if(!rows.length){toast('There are no time logs to export.',{kind:'bad'});return}
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
@@ -4179,7 +4259,8 @@ const ACT={
   'tk-upload':()=>tkUpload(),
   'tk-view':(el,id)=>tkView(id),
   'tk-del':(el,id)=>tkDel(id),
-  'tk-xlsx':()=>tkXlsx()
+  'tk-xlsx':()=>tkXlsx(),
+  'tk-day':(el,id,k)=>{if(k){UI.tk.day=k;renderView()}}
 };
 document.addEventListener('click',ev=>{
   const a=ev.target.closest('[data-act]');if(!a)return;
