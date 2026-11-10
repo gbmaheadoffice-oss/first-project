@@ -1270,7 +1270,7 @@ async function otrepXlsx(){
 }
 /* ---- Payroll · Time Keep: biometrics extractions (attendance logs) uploaded per cut-off ----
    Each upload is one record in 'timekeep': the file name, the dates it covers and one row per biometric ID per day
-   with every punch of that day. Employees are matched to their 201 file by Biometric ID no. or ID number when shown,
+   with every punch of that day. The AC-No. (biometric number) is matched to the Biometric ID no. in the 201 file when shown,
    so fixing a Biometric ID in the 201 file also fixes the match. Hours = first punch to last punch of the day. */
 const tkKey=s=>String(s==null?'':s).trim().toLowerCase().replace(/^0+(?=\d)/,'');
 const TK_HEAD={
@@ -1336,7 +1336,7 @@ function tkParse(cells){
     const k=emp+'|'+d;const o=out[k]||(out[k]={emp,name:ci.name>=0?String(r[ci.name]||'').trim():'',d,t:[]});ts.forEach(t=>{if(!o.t.includes(t))o.t.push(t)});
   }
   const rows=Object.values(out).map(o=>({...o,t:o.t.sort()})).sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
-  return{rows,bad,err:rows.length?'':'No time logs could be read. The file needs a biometric ID (AC-No., User ID or Employee No.) and the date and time of each log.'};
+  return{rows,bad,err:rows.length?'':'No time logs could be read. The file needs the AC-No. (biometric number) and the date and time of each log.'};
 }
 const tkMins=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
 const tkHours=ts=>ts.length>1?tkMins(ts[ts.length-1])-tkMins(ts[0]):0;
@@ -1366,8 +1366,8 @@ function tkRowell(e,ts){
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
-// 201 files by biometric ID and ID number (Biometric ID wins)
-function tkIndex(list){const m={};list.forEach(e=>{if(e.empNo&&!m[tkKey(e.empNo)])m[tkKey(e.empNo)]=e});list.forEach(e=>{if(e.biometricId)m[tkKey(e.biometricId)]=e});return m}
+// 201 files by Biometric ID no. (the AC-No. in the biometrics file)
+function tkIndex(list){const m={};list.forEach(e=>{if(e.biometricId)m[tkKey(e.biometricId)]=e});return m}
 const tkSorted=()=>S.timekeep.slice().sort((a,b)=>(b.createdAt||'')<(a.createdAt||'')?-1:1);
 const tkCur=()=>{const L=tkSorted();return L.find(x=>x.id===UI.tk.id)||L[0]||null};
 // one line per biometric ID in the upload, limited to the sites the account may see
@@ -1387,7 +1387,7 @@ function tkFiltered(doc){const f=UI.tk,q=f.q.trim().toLowerCase();
 const tkWho=r=>r.e?esc(fullName(r.e)):esc(r.name||'Unknown name');
 VIEWS.timekeep=function(){
   const f=UI.tk,L=tkSorted(),doc=tkCur();
-  let h=groupTabs()+ph('Time Keep','Upload the attendance log extracted from the biometrics device for each cut-off. Every time log is kept per employee and per day. Employees are matched to their 201 file by <b>Biometric ID no.</b> or <b>ID number</b>. Late, undertime, overbreak, regular hours and OT follow each site’s time keep rules (set for: ${TK_RULES.map(r=>r.name).join(', ')}).',
+  let h=groupTabs()+ph('Time Keep','Upload the attendance log extracted from the biometrics device for each cut-off. Every time log is kept per employee and per day. The <b>AC-No.</b> in the file is matched to the <b>Biometric ID no.</b> in each employee’s 201 file. Late, undertime, overbreak, regular hours and OT follow each site’s time keep rules (set for: ${TK_RULES.map(r=>r.name).join(', ')}).',
     `${doc?`<button class="btn ghost" data-act="tk-xlsx">${ic('download')}Export to Excel</button>`:''}<button class="btn" data-act="tk-upload" data-write>${ic('upload')}Upload biometrics file</button>`);
   if(!doc)return h+emptyBlock('No biometrics file yet','Upload the extraction from the biometrics device (Excel, CSV, or the .dat / .txt attendance log) to see the time logs here.');
   const all=tkFiltered(doc),rows=all.filter(tkTest[f.tab]||tkTest.All);
@@ -1400,9 +1400,9 @@ VIEWS.timekeep=function(){
   h+=fbtnsHtml('tk','Show employees',TK_TABS.map(k=>[k,all.filter(tkTest[k]).length,k==='All'?'users':k==='Not in 201 files'?'alert':'clock',k==='All'?'':k==='Not in 201 files'||k==='Overbreak'?'bad':'warn']),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
     <label class="sr" for="f-tk-client">Client company</label><select id="f-tk-client" data-filter="tk.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
-    ${searchBox('f-tk-q','tk.q',f.q,'Search employee, biometric ID, site')}</div>`;
+    ${searchBox('f-tk-q','tk.q',f.q,'Search employee, AC-No., site')}</div>`;
   if(!rows.length)h+=emptyBlock('No employees here','Try another tab, site or search.');
-  else h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1280px"><thead><tr><th>Employee</th><th>Biometric ID</th><th>Site Location</th><th class="r">Days with Logs</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular Hours</th><th class="r">OT</th><th class="r">Hours (first to last log)</th><th>Remarks</th></tr></thead><tbody>
+  else h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1280px"><thead><tr><th>Employee</th><th>AC-No.</th><th>Site Location</th><th class="r">Days with Logs</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular Hours</th><th class="r">OT</th><th class="r">Hours (first to last log)</th><th>Remarks</th></tr></thead><tbody>
     ${rows.map(r=>`<tr class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"><td><div class="nm">${tkWho(r)}</div><div class="sub">${r.e?esc(r.e.empNo||''):'Name from the biometrics file'}</div></td>
       <td class="num">${esc(r.emp)}</td><td>${r.e?esc(r.e.client||'—'):'—'}</td><td class="r num">${r.s.days}</td>${r.rule?`<td class="r num ${r.s.late?'att-warn':''}">${tkH(r.s.late)}</td><td class="r num ${r.s.ut?'att-warn':''}">${tkH(r.s.ut)}</td><td class="r num ${r.s.ob?'att-bad':''}">${tkH(r.s.ob)}</td><td class="r num"><b>${tkH(r.s.reg)}</b></td><td class="r num">${tkH(r.s.ot)}</td>`:`<td colspan="5" class="att-muted" style="text-align:center">No time keep rules for this site yet</td>`}<td class="r num">${tkH(r.s.mins)}</td>
       <td><div class="dchips">${r.e?'':'<span class="chip bad">Not in 201 files</span>'}${r.s.inc?`<span class="chip warn">${r.s.inc} day${r.s.inc===1?'':'s'} with a missing log</span>`:''}</div></td></tr>`).join('')}
@@ -1413,7 +1413,7 @@ function tkView(k){
   const doc=tkCur();const r=tkEmpRows(doc).find(x=>x.k===k);if(!r)return;
   const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
   openModal({title:`Time logs · ${tkWho(r)} · ${fmtS(doc.from)} – ${fmt(doc.to)}`,wide:1,
-    body:`<p class="help" style="margin:0;color:var(--muted)">Biometric ID ${esc(r.emp)}${r.e?` · ${esc(r.e.empNo||'')} · ${esc(r.e.client||'')}`:' · not matched to a 201 file. Put this number in the employee’s <b>Biometric ID no.</b> to match it.'}</p>
+    body:`<p class="help" style="margin:0;color:var(--muted)">AC-No. ${esc(r.emp)}${r.e?` · ${esc(r.e.empNo||'')} · ${esc(r.e.client||'')}`:' · not matched to a 201 file. Put this number in the employee’s <b>Biometric ID no.</b> to match it.'}</p>
     <div class="dchips"><span class="chip">${r.s.days} day${r.s.days===1?'':'s'} with logs</span>${r.rule?`<span class="chip info">${esc(r.rule.name)} rules</span><span class="chip ok">Regular ${tkH(r.s.reg)}</span><span class="chip">OT ${tkH(r.s.ot)}</span>${r.s.late?`<span class="chip warn">Late ${tkH(r.s.late)}</span>`:''}${r.s.ut?`<span class="chip warn">Undertime ${tkH(r.s.ut)}</span>`:''}${r.s.ob?`<span class="chip bad">Overbreak ${tkH(r.s.ob)}</span>`:''}`:`<span class="chip ok">${tkH(r.s.mins)} first to last log</span>`}${r.s.inc?`<span class="chip warn">${r.s.inc} incomplete</span>`:''}</div>
     ${r.rule?tkRuleTable(r,wd):`<div class="tw" style="margin:0"><table class="tbl" style="min-width:640px"><thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th>All Logs</th><th class="r">Hours</th><th>Note</th></tr></thead><tbody>
     ${r.days.map(x=>`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num">${fmtTime(x.t[0])}</td><td class="num">${x.t.length>1?fmtTime(x.t[x.t.length-1]):'<span class="att-muted">—</span>'}</td>
@@ -1435,7 +1435,7 @@ function tkRuleTable(r,wd){
 function tkUpload(){
   let parsed=null,fname='';
   openModal({title:'Upload biometrics file',wide:1,
-    body:`<p class="help" style="margin:0">Upload the attendance log extracted from the biometrics device: Excel (.xlsx, .xls), CSV, or the .dat / .txt log. The file needs the <b>biometric ID</b> (AC-No., User ID or Employee No.) and the <b>date and time</b> of each log, as one row per log or as time-in / time-out columns.</p>
+    body:`<p class="help" style="margin:0">Upload the attendance log extracted from the biometrics device: Excel (.xlsx, .xls), CSV, or the .dat / .txt log. The file needs the <b>AC-No.</b> (the employee’s biometric number) and the <b>date and time</b> of each log, as one row per log or as time-in / time-out columns.</p>
     <div class="fg"><div class="field full"><label for="tk-file">Biometrics file</label><input id="tk-file" type="file" accept=".xlsx,.xls,.xlsm,.csv,.txt,.tsv,.dat"></div>
     ${field({id:'tk-note',name:'note',label:'Note (optional)',full:1,attrs:'placeholder="e.g. Tae Sung, Oct 16–31 cut-off" maxlength="120"'})}</div>
     <div id="tk-prev"></div>`,
@@ -1447,7 +1447,7 @@ function tkUpload(){
         if(parsed.err){box.innerHTML=`<div class="formerr">${esc(parsed.err)}</div>`;parsed=null;return}
         const idx=tkIndex(ALL_EMPLOYEES||S.employees),ids=[...new Set(parsed.rows.map(r=>tkKey(r.emp)))],un=ids.filter(k=>!idx[k]),ds=parsed.rows.map(r=>r.d).sort();
         const nLogs=parsed.rows.reduce((t,r)=>t+r.t.length,0);
-        box.innerHTML=`<div class="silline ${un.length?'warn':''}">${ic(un.length?'alert':'check')}<span><b>${nLogs}</b> time log${nLogs===1?'':'s'} of <b>${ids.length}</b> biometric ID${ids.length===1?'':'s'}, ${fmt(ds[0])} – ${fmt(ds[ds.length-1])}. <b>${ids.length-un.length}</b> matched to a 201 file.${un.length?` Not in 201 files: ${un.slice(0,10).map(k=>esc(parsed.rows.find(r=>tkKey(r.emp)===k).emp)).join(', ')}${un.length>10?` and ${un.length-10} more`:''}. They are kept and shown as “Not in 201 files”.`:''}${parsed.bad?` ${parsed.bad} line${parsed.bad===1?' has':'s have'} no readable date or time and will be skipped.`:''}</span></div>`});
+        box.innerHTML=`<div class="silline ${un.length?'warn':''}">${ic(un.length?'alert':'check')}<span><b>${nLogs}</b> time log${nLogs===1?'':'s'} of <b>${ids.length}</b> AC-No., ${fmt(ds[0])} – ${fmt(ds[ds.length-1])}. <b>${ids.length-un.length}</b> matched to a 201 file.${un.length?` Not in 201 files: ${un.slice(0,10).map(k=>esc(parsed.rows.find(r=>tkKey(r.emp)===k).emp)).join(', ')}${un.length>10?` and ${un.length-10} more`:''}. They are kept and shown as “Not in 201 files”.`:''}${parsed.bad?` ${parsed.bad} line${parsed.bad===1?' has':'s have'} no readable date or time and will be skipped.`:''}</span></div>`});
     },
     onSubmit:async(fd,f)=>{
       if(!parsed){setErr(f.querySelector('#tk-file'),'Choose a biometrics file that can be read.');return false}
@@ -1467,7 +1467,7 @@ async function tkXlsx(){
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
   let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
-  const COLS=['Biometric ID','ID Number','Name','Client Company','Date','Day','Time In','Time Out','All Logs','Hours (first to last log)','Schedule','Late (min)','Undertime (min)','Overbreak (min)','Regular Hours','OT Hours','Note'];
+  const COLS=['AC-No.','ID Number','Name','Client Company','Date','Day','Time In','Time Out','All Logs','Hours (first to last log)','Schedule','Late (min)','Undertime (min)','Overbreak (min)','Regular Hours','OT Hours','Note'];
   const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
   const aoa=[[`Time Keep · ${fmt(doc.from)} – ${fmt(doc.to)} · ${doc.fileName||''}`],[],COLS];
   rows.forEach(r=>r.days.forEach((x,i)=>{const c=r.calc&&r.calc[i];aoa.push([r.emp,r.e?r.e.empNo||'':'',r.e?fullName(r.e):r.name||'',r.e?r.e.client||'':'Not in 201 files',x.d,wd(x.d),fmtTime(x.t[0]),x.t.length>1?fmtTime(x.t[x.t.length-1]):'',x.t.map(fmtTime).join(' | '),tkDec(tkHours(x.t)),
