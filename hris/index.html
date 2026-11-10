@@ -513,6 +513,7 @@ const P={
   chev:'<path d="m6 9 6 6 6-6"/>',
   award:'<circle cx="12" cy="8" r="6"/><path d="M15.5 12.9 17 22l-5-3-5 3 1.5-9.1"/>',
   alert:'<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4M12 17h.01"/>',
+  wallet:'<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 15h2M6 6V4h12v2"/>',
   clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   ot:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4M19 6l-1.5 1.5"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -665,8 +666,8 @@ const susDays=label=>{const r=/^(\d+) Days/.exec(label||'');return r?+r[1]:0};
 function susEnd(from,days){let d=from,k=1;while(parse(d).getDay()===0)d=addDays(d,1);const start=d;while(k<days){d=addDays(d,1);if(parse(d).getDay()!==0)k++}return{from:start,to:d,resume:nextWorkday(d)}}
 
 /* ---------------- state + storage ---------------- */
-const COLS=['employees','leaves','permits','overtime','memos','attendance','applicants','clientevals','evalinvites','grievances'];
-const S={employees:[],leaves:[],permits:[],overtime:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[],grievances:[]};
+const COLS=['employees','leaves','permits','overtime','memos','attendance','applicants','clientevals','evalinvites','grievances','timekeep'];
+const S={employees:[],leaves:[],permits:[],overtime:[],memos:[],attendance:[],applicants:[],clientevals:[],evalinvites:[],grievances:[],timekeep:[]};
 let EMP={};
 let DB=null,USER=null,MEID=null,MODE='loading',ASSETS=null,DEMO=false;const UPL={};
 let ME={role:'',approver:'',access:null}; // the signed-in account's access (Settings → User access)
@@ -675,9 +676,9 @@ let ME={role:'',approver:'',access:null}; // the signed-in account's access (Set
 // Admins see and change everything. Other accounts get, per part, View / Edit and the sites they may see
 // (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
 // ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
-const PARTS={approvals:'Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications',da:'DA & Grievances'};
-const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'da',grievances:'da',cmemos:'comms',settings:'admin'};
-const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',grievances:'da',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
+const PARTS={approvals:'Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications',da:'DA & Grievances',payroll:'Payroll'};
+const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'da',grievances:'da',cmemos:'comms',timekeep:'payroll',settings:'admin'};
+const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',grievances:'da',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance',timekeep:'payroll'};
 const acc=p=>{
   if(ME.role==='admin')return{view:true,edit:true,sites:null};
   if(p==='admin')return{view:false,edit:false,sites:null};
@@ -698,7 +699,7 @@ function siteOf(c,r){
 const siteOK=(p,site)=>{const s=acc(p).sites;return!s||site==null||s.includes(site)};
 const recOK=(p,c,r)=>canView(p)&&siteOK(p,siteOf(c,r));
 // which records each page lists, so every page only shows the sites its part allows
-const PAGE_COLS={approvals:['leaves','permits','overtime','employees'],employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees'],da:['memos','employees','grievances']};
+const PAGE_COLS={approvals:['leaves','permits','overtime','employees'],employees:['employees'],leaves:['leaves','permits','employees'],attendance:['attendance','overtime','employees'],evaluations:['employees','clientevals','evalinvites'],comms:['memos','employees'],da:['memos','employees','grievances'],payroll:['timekeep','employees']};
 // run fn with S limited to what the account may see: on a page, by that page's part; on the dashboard and in the
 // menu counts, each kind of record by its own part
 function scoped(rt,fn){
@@ -721,7 +722,7 @@ const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees',
   'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves','apr-decide':'approvals',
   'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
-  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants',
+  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll',
   'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
 const actOK=a=>!ACT_PART[a]||canEdit(ACT_PART[a]);
 function applyAccessCss(){
@@ -730,7 +731,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:''},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -866,11 +867,12 @@ const ROUTES={
   memos:{t:'DA & Grievances',nav:'DA Memos',icon:'memo'},
   cmemos:{t:'Company Communications',nav:'Inter-office Memo',icon:'send'},
   grievances:{t:'DA & Grievances',nav:'Grievances',icon:'users'},
+  timekeep:{t:'Payroll',nav:'Time Keep',icon:'clock'},
   settings:{t:'Settings',nav:'Settings',icon:'gear'}
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'send',routes:['cmemos']},dag:{name:'DA & Grievances',icon:'memo',routes:['memos','grievances']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'send',routes:['cmemos']},dag:{name:'DA & Grievances',icon:'memo',routes:['memos','grievances']},pay:{name:'Payroll',icon:'wallet',routes:['timekeep']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -896,7 +898,7 @@ function renderNav(){
   const glink=(g,n)=>{const G=NAV_GROUPS[g],r=lastOf[g];if(!canView(PART_OF[r]))return'';return`<a href="#${r}" data-act="nav" data-id="${r}" ${groupOf(route)===g?'aria-current="page"':''}>${ic(G.icon)}<span>${G.name}</span>${n?`<span class="cnt num" aria-label="${n} pending">${n}</span>`:''}</a>`};
   $('#nav').innerHTML=link('dashboard')+link('approvals',canView('approvals')?scoped('approvals',()=>[...S.leaves,...S.permits,...S.overtime].filter(r=>r.status==='Pending'&&(!fixedStep()||myTurn(r))).length):0)+
    `<button class="grp" data-act="grp" aria-expanded="${groupOpen}" aria-controls="grp1">${ic('clip')}<span>Operations &amp; HR</span><span class="gb num">${tot}</span>${ic('chev','i chev')}</button>
-    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm')}${glink('dag',c.memos+c.grievances)}</div>`;
+    <div id="grp1" ${groupOpen?'':'hidden'}>${link('applicants',c.applicants)}${link('employees')}${glink('req',c.leaves+c.permits)}${glink('att',c.overtime)}${link('evaluations',c.evals)}${glink('comm')}${glink('dag',c.memos+c.grievances)}</div>${glink('pay')}`;
 }
 function render(focus){
   EMP={};(ALL_EMPLOYEES||S.employees).forEach(e=>{normRecs(e);EMP[e.id]=e});
@@ -1265,6 +1267,178 @@ async function otrepXlsx(){
   const name=`GBMA Overtime Summary ${UI.otrep.from} to ${UI.otrep.to}${UI.otrep.client?' - '+UI.otrep.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
   try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
   catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else if(c==='rate_limited')toast('A save prompt is already open. Finish it, then try again.',{kind:'bad'});else toast('The file could not be saved in this view.',{kind:'bad'})}
+}
+/* ---- Payroll · Time Keep: biometrics extractions (attendance logs) uploaded per cut-off ----
+   Each upload is one record in 'timekeep': the file name, the dates it covers and one row per biometric ID per day
+   with every punch of that day. Employees are matched to their 201 file by Biometric ID no. or ID number when shown,
+   so fixing a Biometric ID in the 201 file also fixes the match. Hours = first punch to last punch of the day. */
+const tkKey=s=>String(s==null?'':s).trim().toLowerCase().replace(/^0+(?=\d)/,'');
+const TK_HEAD={
+  emp:[/^ac[-\s.]*no\.?$/,/^(user|employee|emp|staff|person|enroll(ment|ed)?|biometric|machine)\s*(id|no\.?|number|code)/,/^(badge|pin|enroll)/,/^(no\.?|id|id\s*(no\.?|number)|employee|emp\s*#?)$/,/(^|\s)(id|no\.?)$/],
+  name:[/name/],
+  dt:[/date\s*[\/&-]?\s*time|datetime|time\s*stamp|(check|punch|log|record|verify|att(endance)?|clock)\s*time/],
+  date:[/^(date|day|log\s*date|att(endance)?\s*date|punch\s*date|work\s*date)$/],
+  time:[/^(time|clock|log)$/],
+  punch:[/\b(in|out)\b|^(in|out)\s*\d|duty|break|^(time|punch)\s*\d|^c\/(in|out)$/]
+};
+// one rectangular list of cells (strings) from an uploaded file: Excel through SheetJS, otherwise text
+async function tkCells(file){
+  const name=file.name.toLowerCase();
+  if(/\.(xlsx|xls|xlsm|ods)$/.test(name)){
+    const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];const raw=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+    // dates and times stored as Excel numbers become text the parser understands
+    const dc=v=>{const p=X.SSF.parse_date_code(v);if(!p)return String(v);const t=`${pad(p.H)}:${pad(p.M)}`;return v<1?t:`${p.y}-${pad(p.m)}-${pad(p.d)}${v%1?' '+t:''}`};
+    const hi=tkHeadRow(raw.map(r=>r.map(x=>String(x))));const head=hi<0?[]:raw[hi].map(x=>String(x).toLowerCase().trim());
+    const dateCol=c=>hi>=0&&[...TK_HEAD.dt,...TK_HEAD.date,...TK_HEAD.time,...TK_HEAD.punch].some(re=>re.test(head[c]||''));
+    return raw.map((r,i)=>r.map((v,c)=>typeof v==='number'&&i!==hi&&dateCol(c)?dc(v):v instanceof Date?iso(v)+' '+pad(v.getHours())+':'+pad(v.getMinutes()):String(v).trim()));
+  }
+  const text=await file.text();
+  const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim());
+  const sample=lines.slice(0,20).join('\n');
+  const delim=sample.includes('\t')?'\t':(sample.match(/;/g)||[]).length>(sample.match(/,/g)||[]).length?';':(sample.match(/,/g)||[]).length?',':null;
+  const split=l=>{if(!delim)return l.trim().split(/\s+/);const out=[];let cur='',q=false;for(const ch of l){if(ch==='"'){q=!q;continue}if(ch===delim&&!q){out.push(cur);cur='';continue}cur+=ch}out.push(cur);return out.map(x=>x.trim())};
+  return lines.map(split);
+}
+function tkHeadRow(rows){
+  for(let i=0;i<Math.min(rows.length,25);i++){const h=rows[i].map(x=>String(x).toLowerCase().trim());
+    const has=k=>h.some(x=>x&&TK_HEAD[k].some(re=>re.test(x)));
+    if(has('emp')&&(has('dt')||has('date')||has('time')||has('punch')))return i}
+  return -1;
+}
+const tkDT=v=>{v=String(v||'').trim();if(!v)return{d:'',t:''};const d=/\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/.test(v)?normDate(v.replace(/\./g,'-')):'';const rest=d?v.replace(/^\S+\s*/,''):v;return{d,t:/\d{1,2}:\d{2}/.test(rest)?normTime(rest):''}};
+// rows of cells -> {rows:[{emp,name,d,t:[...]}], bad, err}
+function tkParse(cells){
+  if(!cells.length)return{rows:[],err:'The file is empty.'};
+  const hi=tkHeadRow(cells);let ci;
+  if(hi>=0){const h=cells[hi].map(x=>String(x).toLowerCase().trim());
+    const pick=k=>{for(const re of TK_HEAD[k]){const i=h.findIndex(x=>x&&re.test(x));if(i>=0)return i}return -1};
+    ci={emp:pick('emp'),name:pick('name'),dt:pick('dt'),date:pick('date'),time:pick('time'),punch:[]};
+    if(ci.name===ci.emp)ci.name=-1;
+    h.forEach((x,i)=>{if(x&&![ci.emp,ci.name,ci.dt,ci.date,ci.time].includes(i)&&TK_HEAD.punch.some(re=>re.test(x))&&!/state|status|type|device|location|verify/.test(x))ci.punch.push(i)});
+  }else{
+    // no heading row (e.g. the attlog .dat file): the first column is the biometric ID, the date and time are found by their look
+    ci={emp:0,name:-1,dt:-1,date:-1,time:-1,punch:[]};
+  }
+  const out={};let bad=0;
+  for(const r of cells.slice(hi+1)){
+    const emp=String(r[ci.emp]||'').trim();if(!emp||!/[0-9a-z]/i.test(emp)||/^(total|page)/i.test(emp))continue;
+    let d='';const ts=[];
+    if(hi<0){for(let c=1;c<r.length&&!d;c++){const x=tkDT(r[c]);if(!x.d)continue;d=x.d;
+      if(x.t)ts.push(x.t);else if(r[c+1]&&/^\d{1,2}:\d{2}/.test(r[c+1]))ts.push(normTime(r[c+1]+(/^[ap]m$/i.test(r[c+2]||'')?' '+r[c+2]:'')))}}
+    else{
+      if(ci.dt>=0){const x=tkDT(r[ci.dt]);d=x.d;if(x.t)ts.push(x.t)}
+      if(!d&&ci.date>=0)d=tkDT(r[ci.date]).d;
+      if(ci.time>=0){const x=tkDT(r[ci.time]);if(x.d&&!d)d=x.d;if(x.t)ts.push(x.t)}
+      ci.punch.forEach(c=>{const x=tkDT(r[c]);if(x.d&&!d)d=x.d;if(x.t)ts.push(x.t)});
+    }
+    if(!d||!ts.length){bad++;continue}
+    const k=emp+'|'+d;const o=out[k]||(out[k]={emp,name:ci.name>=0?String(r[ci.name]||'').trim():'',d,t:[]});ts.forEach(t=>{if(!o.t.includes(t))o.t.push(t)});
+  }
+  const rows=Object.values(out).map(o=>({...o,t:o.t.sort()})).sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
+  return{rows,bad,err:rows.length?'':'No time logs could be read. The file needs a biometric ID (AC-No., User ID or Employee No.) and the date and time of each log.'};
+}
+const tkMins=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+const tkHours=ts=>ts.length>1?tkMins(ts[ts.length-1])-tkMins(ts[0]):0;
+const tkH=m=>m?`${Math.floor(m/60)}h${m%60?' '+pad(m%60)+'m':''}`:'—';
+const tkDec=m=>Math.round(m/60*100)/100;
+// 201 files by biometric ID and ID number (Biometric ID wins)
+function tkIndex(list){const m={};list.forEach(e=>{if(e.empNo&&!m[tkKey(e.empNo)])m[tkKey(e.empNo)]=e});list.forEach(e=>{if(e.biometricId)m[tkKey(e.biometricId)]=e});return m}
+const tkSorted=()=>S.timekeep.slice().sort((a,b)=>(b.createdAt||'')<(a.createdAt||'')?-1:1);
+const tkCur=()=>{const L=tkSorted();return L.find(x=>x.id===UI.tk.id)||L[0]||null};
+// one line per biometric ID in the upload, limited to the sites the account may see
+function tkEmpRows(doc){
+  if(!doc)return[];const idx=tkIndex(S.employees),all=tkIndex(ALL_EMPLOYEES||S.employees),by={};
+  (doc.rows||[]).forEach(r=>{const k=tkKey(r.emp);const e=idx[k]||null;if(!e&&all[k])return;const g=by[k]||(by[k]={k,emp:r.emp,name:r.name,e,days:[]});g.days.push(r)});
+  return Object.values(by).map(g=>({...g,s:{days:g.days.length,inc:g.days.filter(x=>x.t.length%2).length,mins:g.days.reduce((t,x)=>t+tkHours(x.t),0)}}))
+    .sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
+}
+const TK_TABS=['All','Incomplete logs','Not in 201 files'];
+const tkTest={'All':()=>true,'Incomplete logs':r=>r.s.inc>0,'Not in 201 files':r=>!r.e};
+function tkFiltered(doc){const f=UI.tk,q=f.q.trim().toLowerCase();
+  return tkEmpRows(doc).filter(r=>(!f.client||(r.e&&r.e.client===f.client))&&(!q||[r.emp,r.name,r.e&&fullName(r.e),r.e&&r.e.empNo,r.e&&r.e.client].join(' ').toLowerCase().includes(q)))}
+const tkWho=r=>r.e?esc(fullName(r.e)):esc(r.name||'Unknown name');
+VIEWS.timekeep=function(){
+  const f=UI.tk,L=tkSorted(),doc=tkCur();
+  let h=groupTabs()+ph('Time Keep','Upload the attendance log extracted from the biometrics device for each cut-off. Every time log is kept per employee and per day. Employees are matched to their 201 file by <b>Biometric ID no.</b> or <b>ID number</b>.',
+    `${doc?`<button class="btn ghost" data-act="tk-xlsx">${ic('download')}Export to Excel</button>`:''}<button class="btn" data-act="tk-upload" data-write>${ic('upload')}Upload biometrics file</button>`);
+  if(!doc)return h+emptyBlock('No biometrics file yet','Upload the extraction from the biometrics device (Excel, CSV, or the .dat / .txt attendance log) to see the time logs here.');
+  const all=tkFiltered(doc),rows=all.filter(tkTest[f.tab]||tkTest.All);
+  const clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
+  h+=`<section class="card" style="margin-bottom:14px"><div class="toolbar" style="margin:0;flex-wrap:wrap;align-items:center">
+    <label for="f-tk-id" style="font-weight:700">Biometrics file</label>
+    <select id="f-tk-id" data-filter="tk.id" style="flex:1 1 320px;max-width:560px">${L.map(x=>`<option value="${x.id}" ${x.id===doc.id?'selected':''}>${esc(fmtS(x.from))} – ${esc(fmt(x.to))} · ${esc(x.fileName||'file')}${x.note?' · '+esc(x.note):''}</option>`).join('')}</select>
+    <button class="btn bad-ghost" data-act="tk-del" data-id="${doc.id}" data-write>${ic('trash')}Delete this upload</button></div>
+    <p class="help" style="margin:8px 0 0">Uploaded ${esc(fmtTs(doc.createdAt))}${doc.byName?' by '+esc(doc.byName):''} · ${fmt(doc.from)} – ${fmt(doc.to)} · ${(doc.rows||[]).length} employee-day${(doc.rows||[]).length===1?'':'s'} of time logs${doc.bad?` · ${doc.bad} line${doc.bad===1?'':'s'} without a readable date or time skipped`:''}</p></section>`;
+  h+=fbtnsHtml('tk','Show employees',TK_TABS.map(k=>[k,all.filter(tkTest[k]).length,k==='All'?'users':k==='Not in 201 files'?'alert':'clock',k==='All'?'':k==='Not in 201 files'?'bad':'warn']),f.tab);
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
+    <label class="sr" for="f-tk-client">Client company</label><select id="f-tk-client" data-filter="tk.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    ${searchBox('f-tk-q','tk.q',f.q,'Search employee, biometric ID, site')}</div>`;
+  if(!rows.length)h+=emptyBlock('No employees here','Try another tab, site or search.');
+  else h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:900px"><thead><tr><th>Employee</th><th>Biometric ID</th><th>Site Location</th><th class="r">Days with Logs</th><th class="r">Incomplete Days</th><th class="r">Hours (first to last log)</th><th>Remarks</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"><td><div class="nm">${tkWho(r)}</div><div class="sub">${r.e?esc(r.e.empNo||''):'Name from the biometrics file'}</div></td>
+      <td class="num">${esc(r.emp)}</td><td>${r.e?esc(r.e.client||'—'):'—'}</td><td class="r num">${r.s.days}</td><td class="r num ${r.s.inc?'att-warn':''}">${r.s.inc||'—'}</td><td class="r num"><b>${tkH(r.s.mins)}</b></td>
+      <td><div class="dchips">${r.e?'':'<span class="chip bad">Not in 201 files</span>'}${r.s.inc?`<span class="chip warn">${r.s.inc} day${r.s.inc===1?'':'s'} with a missing log</span>`:''}</div></td></tr>`).join('')}
+    </tbody></table></div>`;
+  return h+'</section>';
+};
+function tkView(k){
+  const doc=tkCur();const r=tkEmpRows(doc).find(x=>x.k===k);if(!r)return;
+  const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
+  openModal({title:`Time logs · ${tkWho(r)} · ${fmtS(doc.from)} – ${fmt(doc.to)}`,wide:1,
+    body:`<p class="help" style="margin:0;color:var(--muted)">Biometric ID ${esc(r.emp)}${r.e?` · ${esc(r.e.empNo||'')} · ${esc(r.e.client||'')}`:' · not matched to a 201 file. Put this number in the employee’s <b>Biometric ID no.</b> to match it.'}</p>
+    <div class="dchips"><span class="chip">${r.s.days} day${r.s.days===1?'':'s'} with logs</span><span class="chip ok">${tkH(r.s.mins)} first to last log</span>${r.s.inc?`<span class="chip warn">${r.s.inc} incomplete</span>`:''}</div>
+    <div class="tw" style="margin:0"><table class="tbl" style="min-width:640px"><thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th>All Logs</th><th class="r">Hours</th><th>Note</th></tr></thead><tbody>
+    ${r.days.map(x=>`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num">${fmtTime(x.t[0])}</td><td class="num">${x.t.length>1?fmtTime(x.t[x.t.length-1]):'<span class="att-muted">—</span>'}</td>
+      <td class="num" style="white-space:normal">${x.t.map(fmtTime).join(' · ')}</td><td class="r num">${tkH(tkHours(x.t))}</td><td>${x.t.length===1?'<span class="chip warn">Only one log</span>':x.t.length%2?'<span class="chip warn">Odd number of logs</span>':''}</td></tr>`).join('')}
+    </tbody></table></div>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button>${r.e?`<button type="button" class="btn ghost" data-close data-act="open-emp" data-id="${r.e.id}">${ic('users')}Open 201 file</button>`:''}`});
+}
+function tkUpload(){
+  let parsed=null,fname='';
+  openModal({title:'Upload biometrics file',wide:1,
+    body:`<p class="help" style="margin:0">Upload the attendance log extracted from the biometrics device: Excel (.xlsx, .xls), CSV, or the .dat / .txt log. The file needs the <b>biometric ID</b> (AC-No., User ID or Employee No.) and the <b>date and time</b> of each log, as one row per log or as time-in / time-out columns.</p>
+    <div class="fg"><div class="field full"><label for="tk-file">Biometrics file</label><input id="tk-file" type="file" accept=".xlsx,.xls,.xlsm,.csv,.txt,.tsv,.dat"></div>
+    ${field({id:'tk-note',name:'note',label:'Note (optional)',full:1,attrs:'placeholder="e.g. Tae Sung, Oct 16–31 cut-off" maxlength="120"'})}</div>
+    <div id="tk-prev"></div>`,
+    submitLabel:'Upload',
+    onOpen:f=>{const box=f.querySelector('#tk-prev');
+      f.querySelector('#tk-file').addEventListener('change',async ev=>{const file=ev.target.files[0];parsed=null;box.innerHTML='';if(!file)return;fname=file.name;
+        box.innerHTML='<p class="help">Reading the file…</p>';
+        try{parsed=tkParse(await tkCells(file))}catch(err){parsed=null;box.innerHTML='<div class="formerr">This file could not be read. Save it as Excel (.xlsx) or CSV and try again.</div>';return}
+        if(parsed.err){box.innerHTML=`<div class="formerr">${esc(parsed.err)}</div>`;parsed=null;return}
+        const idx=tkIndex(ALL_EMPLOYEES||S.employees),ids=[...new Set(parsed.rows.map(r=>tkKey(r.emp)))],un=ids.filter(k=>!idx[k]),ds=parsed.rows.map(r=>r.d).sort();
+        const nLogs=parsed.rows.reduce((t,r)=>t+r.t.length,0);
+        box.innerHTML=`<div class="silline ${un.length?'warn':''}">${ic(un.length?'alert':'check')}<span><b>${nLogs}</b> time log${nLogs===1?'':'s'} of <b>${ids.length}</b> biometric ID${ids.length===1?'':'s'}, ${fmt(ds[0])} – ${fmt(ds[ds.length-1])}. <b>${ids.length-un.length}</b> matched to a 201 file.${un.length?` Not in 201 files: ${un.slice(0,10).map(k=>esc(parsed.rows.find(r=>tkKey(r.emp)===k).emp)).join(', ')}${un.length>10?` and ${un.length-10} more`:''}. They are kept and shown as “Not in 201 files”.`:''}${parsed.bad?` ${parsed.bad} line${parsed.bad===1?' has':'s have'} no readable date or time and will be skipped.`:''}</span></div>`});
+    },
+    onSubmit:async(fd,f)=>{
+      if(!parsed){setErr(f.querySelector('#tk-file'),'Choose a biometrics file that can be read.');return false}
+      const ds=parsed.rows.map(r=>r.d).sort();
+      const doc={id:'tk_'+uid(),fileName:fname,note:String(fd.get('note')||'').trim(),from:ds[0],to:ds[ds.length-1],by:MEID,byName:ME.name||ME.email||'',bad:parsed.bad||0,rows:parsed.rows};
+      if(JSON.stringify(doc).length>8e6){setErr(f.querySelector('#tk-file'),'This file is too large for one upload. Extract one cut-off at a time and upload it.');return false}
+      await save('timekeep',doc);UI.tk.id=doc.id;UI.tk.tab='All';
+      toast(`Uploaded ${fname}: ${new Set(parsed.rows.map(r=>tkKey(r.emp))).size} employees, ${fmt(doc.from)} – ${fmt(doc.to)}.`);
+    }});
+}
+function tkDel(id){
+  const d=S.timekeep.find(x=>x.id===id);if(!d)return;
+  confirmBox('Delete this upload?',`This removes the time logs of <b>${esc(d.fileName||'this file')}</b> (${fmt(d.from)} – ${fmt(d.to)}) from Time Keep. The file on your computer is not affected.`,'Delete',async()=>{await remove('timekeep',id);if(UI.tk.id===id)UI.tk.id='';toast('Upload deleted.')});
+}
+async function tkXlsx(){
+  const doc=tkCur();const rows=tkFiltered(doc).filter(tkTest[UI.tk.tab]||tkTest.All);if(!rows.length){toast('There are no time logs to export.',{kind:'bad'});return}
+  const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+  if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
+  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  const COLS=['Biometric ID','ID Number','Name','Client Company','Date','Day','Time In','Time Out','All Logs','Hours','Note'];
+  const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
+  const aoa=[[`Time Keep · ${fmt(doc.from)} – ${fmt(doc.to)} · ${doc.fileName||''}`],[],COLS];
+  rows.forEach(r=>r.days.forEach(x=>aoa.push([r.emp,r.e?r.e.empNo||'':'',r.e?fullName(r.e):r.name||'',r.e?r.e.client||'':'Not in 201 files',x.d,wd(x.d),fmtTime(x.t[0]),x.t.length>1?fmtTime(x.t[x.t.length-1]):'',x.t.map(fmtTime).join(' | '),tkDec(tkHours(x.t)),x.t.length===1?'Only one log':x.t.length%2?'Odd number of logs':''])));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,12,28,30,11,6,10,10,40,8,18].map(w=>({wch:w}));
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:COLS.length-1}})};
+  const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Time Keep');
+  const name=`GBMA Time Keep ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
+  try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
+  catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
 }
 /* ---- Leave Summary Report: approved leaves in a period and whether each one has a Permit to Work ---- */
 const LREP_TABS=['All','Permit issued','Permit pending','Permit declined','No permit filed','Not yet back'];
@@ -1827,7 +2001,7 @@ function grvView(id){
 /* ---------------- settings: user access ---------------- */
 // Accounts are made here by an admin (no sign-up). The server function hris-admin does the work and checks that
 // the caller is an admin; the database rules stop view-only and turned-off accounts from changing records.
-const SITE_PARTS=['approvals','employees','leaves','attendance','evaluations','comms','da'];
+const SITE_PARTS=['approvals','employees','leaves','attendance','evaluations','comms','da','payroll'];
 const allSites=()=>[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
 // one line per part the account can use, e.g. "201 Files: View + Edit · Sanno"
 function accessSummary(u){
@@ -3934,7 +4108,11 @@ const ACT={
   'view-att':(el,id,k)=>viewAtt(id,k),
   'del-file':(el,id,k)=>delFile(id,k),
   'view-app':(el,id)=>viewApplicant(id),
-  'app-sync':el=>syncJotform(el)
+  'app-sync':el=>syncJotform(el),
+  'tk-upload':()=>tkUpload(),
+  'tk-view':(el,id)=>tkView(id),
+  'tk-del':(el,id)=>tkDel(id),
+  'tk-xlsx':()=>tkXlsx()
 };
 document.addEventListener('click',ev=>{
   const a=ev.target.closest('[data-act]');if(!a)return;

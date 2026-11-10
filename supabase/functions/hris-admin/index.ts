@@ -24,7 +24,7 @@ type Meta = Record<string, unknown>;
 const ROLES = ["admin", "staff", "viewer"];
 const APPROVERS = ["", "HR", "Owner"];
 const role = (m: Meta | undefined) => (ROLES.includes(s(m?.hris_role)) ? s(m?.hris_role) : "staff");
-const PARTS = ["approvals", "applicants", "employees", "leaves", "attendance", "evaluations", "comms", "da"];
+const PARTS = ["approvals", "applicants", "employees", "leaves", "attendance", "evaluations", "comms", "da", "payroll"];
 type Part = { view: boolean; edit: boolean; sites: string[] | null };
 // keeps only known parts; Edit implies View; Applicants have no site
 function cleanAccess(a: unknown): Record<string, Part> {
