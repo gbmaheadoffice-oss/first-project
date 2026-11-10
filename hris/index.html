@@ -1281,24 +1281,52 @@ const TK_HEAD={
   time:[/^(time|clock|log)$/],
   punch:[/\b(in|out)\b|^(in|out)\s*\d|duty|break|^(time|punch)\s*\d|^c\/(in|out)$/]
 };
-// one rectangular list of cells (strings) from an uploaded file: Excel through SheetJS, otherwise text
+// the sheets of an uploaded file as lists of cells (strings): every sheet of an Excel file, or the one text file
 async function tkCells(file){
   const name=file.name.toLowerCase();
   if(/\.(xlsx|xls|xlsm|ods)$/.test(name)){
     const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});
-    const ws=wb.Sheets[wb.SheetNames[0]];const raw=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+    return wb.SheetNames.map(n=>{const raw=X.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:''});
     // dates and times stored as Excel numbers become text the parser understands
     const dc=v=>{const p=X.SSF.parse_date_code(v);if(!p)return String(v);const t=`${pad(p.H)}:${pad(p.M)}`;return v<1?t:`${p.y}-${pad(p.m)}-${pad(p.d)}${v%1?' '+t:''}`};
     const hi=tkHeadRow(raw.map(r=>r.map(x=>String(x))));const head=hi<0?[]:raw[hi].map(x=>String(x).toLowerCase().trim());
     const dateCol=c=>hi>=0&&[...TK_HEAD.dt,...TK_HEAD.date,...TK_HEAD.time,...TK_HEAD.punch].some(re=>re.test(head[c]||''));
-    return raw.map((r,i)=>r.map((v,c)=>typeof v==='number'&&i!==hi&&dateCol(c)?dc(v):v instanceof Date?iso(v)+' '+pad(v.getHours())+':'+pad(v.getMinutes()):String(v).trim()));
+    return raw.map((r,i)=>r.map((v,c)=>typeof v==='number'&&i!==hi&&dateCol(c)?dc(v):v instanceof Date?iso(v)+' '+pad(v.getHours())+':'+pad(v.getMinutes()):String(v).trim()))});
   }
   const text=await file.text();
   const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim());
   const sample=lines.slice(0,20).join('\n');
   const delim=sample.includes('\t')?'\t':(sample.match(/;/g)||[]).length>(sample.match(/,/g)||[]).length?';':(sample.match(/,/g)||[]).length?',':null;
   const split=l=>{if(!delim)return l.trim().split(/\s+/);const out=[];let cur='',q=false;for(const ch of l){if(ch==='"'){q=!q;continue}if(ch===delim&&!q){out.push(cur);cur='';continue}cur+=ch}out.push(cur);return out.map(x=>x.trim())};
-  return lines.map(split);
+  return[lines.map(split)];
+}
+// the sheet that gives the most time logs (a device export often has a summary sheet first and the logs on another)
+function tkParseBest(sheets){
+  let best=null;
+  for(const c of sheets){const r=tkParseRecord(c)||tkParse(c);if(!best||r.rows.length>best.rows.length)best=r}
+  return best&&best.rows.length?best:{rows:[],bad:0,err:'No time logs could be read. The file needs the AC-No. (biometric number) and the date and time of each log. For the device report, upload the Excel file (.xls) — the CSV has only the first sheet.'};
+}
+// "Attendance Record Report" (Att.log report sheet): the dates "2026-03-26 ~ 2026-04-13", a row of day numbers, then
+// for each employee an "ID:" row and below it one cell per day with the times run together ("07:1616:12")
+function tkParseRecord(cells){
+  let range=null,dayRow=-1;
+  for(let i=0;i<Math.min(cells.length,12)&&!range;i++)for(const v of cells[i]){const m=/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/.exec(String(v));if(m){range=[m[1],m[2]];break}}
+  if(!range||!cells.some(r=>/^id\s*:?$/i.test(String(r[0]).trim())))return null;
+  for(let i=0;i<cells.length;i++){const n=cells[i].filter(v=>/^\d{1,2}$/.test(String(v).trim())).length;if(n>=3&&!/^id/i.test(String(cells[i][0]))){dayRow=i;break}}
+  if(dayRow<0)return null;
+  // column -> date: walk the range in order, matching each day number
+  const colDate={};let d=range[0];
+  cells[dayRow].forEach((v,c)=>{const n=+String(v).trim();if(!n||!d||d>range[1])return;let k=0;while(d&&d<=range[1]&&+d.slice(8)!==n&&k++<40)d=addDays(d,1);if(d&&d<=range[1]){colDate[c]=d;d=addDays(d,1)}});
+  const out=[];let bad=0;
+  for(let i=dayRow+1;i<cells.length;i++){const r=cells[i];if(!/^id\s*:?$/i.test(String(r[0]).trim()))continue;
+    const after=lab=>{const j=r.findIndex(v=>new RegExp('^'+lab,'i').test(String(v).trim()));if(j<0)return'';for(let k=j+1;k<r.length;k++)if(String(r[k]).trim()&&!/:$/.test(String(r[k]).trim()))return String(r[k]).trim();return''};
+    const emp=r.slice(1).map(v=>String(v).trim()).find(Boolean)||'',name=after('name');if(!emp)continue;
+    const day={};
+    for(let j=i+1;j<cells.length&&!/^id\s*:?$/i.test(String(cells[j][0]).trim());j++)
+      cells[j].forEach((v,c)=>{const ts=(String(v).match(/\d{1,2}:\d{2}/g)||[]).map(normTime).filter(Boolean);if(!ts.length)return;if(!colDate[c]){bad++;return}(day[colDate[c]]=day[colDate[c]]||[]).push(...ts)});
+    Object.keys(day).sort().forEach(dd=>out.push({emp,name,d:dd,t:day[dd].sort()}));
+  }
+  return{rows:out.sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1)),bad,err:''};
 }
 function tkHeadRow(rows){
   for(let i=0;i<Math.min(rows.length,25);i++){const h=rows[i].map(x=>String(x).toLowerCase().trim());
@@ -1333,7 +1361,7 @@ function tkParse(cells){
       ci.punch.forEach(c=>{const x=tkDT(r[c]);if(x.d&&!d)d=x.d;if(x.t)ts.push(x.t)});
     }
     if(!d||!ts.length){bad++;continue}
-    const k=emp+'|'+d;const o=out[k]||(out[k]={emp,name:ci.name>=0?String(r[ci.name]||'').trim():'',d,t:[]});ts.forEach(t=>{if(!o.t.includes(t))o.t.push(t)});
+    const k=emp+'|'+d;const o=out[k]||(out[k]={emp,name:ci.name>=0?String(r[ci.name]||'').trim():'',d,t:[]});const many=ts.length>1;ts.forEach(t=>{if(many||!o.t.includes(t))o.t.push(t)});
   }
   const rows=Object.values(out).map(o=>({...o,t:o.t.sort()})).sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
   return{rows,bad,err:rows.length?'':'No time logs could be read. The file needs the AC-No. (biometric number) and the date and time of each log.'};
@@ -1443,7 +1471,7 @@ function tkUpload(){
     onOpen:f=>{const box=f.querySelector('#tk-prev');
       f.querySelector('#tk-file').addEventListener('change',async ev=>{const file=ev.target.files[0];parsed=null;box.innerHTML='';if(!file)return;fname=file.name;
         box.innerHTML='<p class="help">Reading the file…</p>';
-        try{parsed=tkParse(await tkCells(file))}catch(err){parsed=null;box.innerHTML='<div class="formerr">This file could not be read. Save it as Excel (.xlsx) or CSV and try again.</div>';return}
+        try{parsed=tkParseBest(await tkCells(file))}catch(err){parsed=null;box.innerHTML='<div class="formerr">This file could not be read. Save it as Excel (.xlsx) or CSV and try again.</div>';return}
         if(parsed.err){box.innerHTML=`<div class="formerr">${esc(parsed.err)}</div>`;parsed=null;return}
         const idx=tkIndex(ALL_EMPLOYEES||S.employees),ids=[...new Set(parsed.rows.map(r=>tkKey(r.emp)))],un=ids.filter(k=>!idx[k]),ds=parsed.rows.map(r=>r.d).sort();
         const nLogs=parsed.rows.reduce((t,r)=>t+r.t.length,0);
