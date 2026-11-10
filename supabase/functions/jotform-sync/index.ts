@@ -461,7 +461,7 @@ async function syncDecisions(col: "leaves" | "permits" | "overtime", emps: Map<s
 // outcome (POST /workflow/task/<id>/complete, needs a full-access key in JOTFORM_WRITE_KEY), with who decided and the
 // remarks as the comment. Approval has two steps: HR's approval in the HRIS (hrApproval, the request stays Pending)
 // completes only the HR step, so the final approver (Gladys) still approves in Jotform or in the HRIS; the Owner's
-// decision ("Owner" = Gladys, HRIS account gbmaheadoffice) finishes the workflow. The results are kept in
+// decision ("Owner" = Gladys, HRIS account gladness311) finishes the workflow. The results are kept in
 // jotformPushHR and jotformPush so each step is sent once.
 const MAX_PUSH = 10; // requests per run; the rest go on the next runs
 const FINAL_APPROVER = "gladness311@gmail.com";

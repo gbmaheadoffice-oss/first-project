@@ -792,10 +792,10 @@ const soloChip=e=>e&&e.soloParent?` <span class="chip ${soloExpired(e)?'warn':'s
 const sampleChip=o=>o&&o.sample?' <span class="chip sample">Sample</span>':'';
 const uname=id=>id?`<span data-uid="${esc(id)}">HR</span>`:'HR';
 // Leaves, permits and overtime are approved in two steps: HR first (hrd02), then the Owner, whose HRIS account is
-// gbmaheadoffice and whose Jotform account is gladness311. Only the Owner's approval makes a request Approved.
+// gladness311 (in the HRIS and in Jotform). Only the Owner's approval makes a request Approved.
 // The HRIS account decides which step someone takes; other accounts that may edit take the HR step.
 const APPROVERS={HR:'hrd02.goldenbear@gmail.com',Owner:'gladness311@gmail.com'};
-const STEP_OF={'hrd02.goldenbear@gmail.com':'HR','gbmaheadoffice@gmail.com':'Owner'};
+const STEP_OF={'hrd02.goldenbear@gmail.com':'HR','gladness311@gmail.com':'Owner'};
 const myStep=()=>STEP_OF[(ME.email||'').toLowerCase()]||'HR';
 // the HR approval of a request still waiting for the Owner: given in the HRIS (r.hrApproval) or in Jotform
 function hrStep(r){
@@ -2845,7 +2845,7 @@ function decide(id,k){
   const what=col==='leaves'?'leave request':col==='overtime'?'overtime request':'permit to work';
   // HR's approval is the first step and leaves the request Pending; the Owner's approval (or anyone's decline) is final
   const step=myStep(),first=!dec&&step==='HR',hr=hrStep(rec);
-  if(first&&hr)return toast(`HR already approved this ${what}. It now needs the Owner’s approval (gbmaheadoffice@gmail.com).`);
+  if(first&&hr)return toast(`HR already approved this ${what}. It now needs the Owner’s approval (gladness311@gmail.com).`);
   // the Owner approves only after HR (hrd02) has
   if(!dec&&!first&&!hr)return toast(`HR (hrd02.goldenbear@gmail.com) has to approve this ${what} first. You can approve it after that.`,{kind:'bad'});
   const isPtwIssue=col==='permits'&&!dec&&!first;
