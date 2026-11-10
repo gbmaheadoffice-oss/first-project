@@ -675,7 +675,7 @@ let ME={role:'',approver:'',access:null}; // the signed-in account's access (Set
 // Admins see and change everything. Other accounts get, per part, View / Edit and the sites they may see
 // (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
 // ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
-const PARTS={approvals:'For Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications',da:'DA & Grievances'};
+const PARTS={approvals:'Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications',da:'DA & Grievances'};
 const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'da',grievances:'da',cmemos:'comms',settings:'admin'};
 const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',grievances:'da',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance'};
 const acc=p=>{
@@ -684,7 +684,7 @@ const acc=p=>{
   if(!ME.access)return{view:true,edit:ME.role!=='viewer',sites:null};
   return ME.access[p]||(p==='approvals'?apprFallback(ME.access):p==='da'&&ME.access.comms?ME.access.comms:{view:false,edit:false,sites:null});
 };
-// accounts saved before "For Approvals" was a part: it follows their Leave Management / Attendance access
+// accounts saved before "Approvals" was a part: it follows their Leave Management / Attendance access
 const apprFallback=a=>{const l=a.leaves||{},t=a.attendance||{};return{view:!!(l.view||t.view),edit:!!(l.edit||t.edit),sites:l.view&&t.view&&l.sites&&t.sites?[...new Set([...l.sites,...t.sites])]:l.view&&!t.view?l.sites||null:t.view&&!l.view?t.sites||null:null}};
 const canView=p=>!p||acc(p).view;
 const canEdit=p=>!p||(acc(p).view&&acc(p).edit);
@@ -849,7 +849,7 @@ function evalQueue(days){
 /* ---------------- routing ---------------- */
 const ROUTES={
   dashboard:{t:'Head Office Dashboard',nav:'Dashboard',icon:'home'},
-  approvals:{t:'For Approvals',nav:'For Approvals',icon:'check'},
+  approvals:{t:'Approvals',nav:'Approvals',icon:'check'},
   applicants:{t:'Applicants',nav:'Applicants',icon:'clip'},
   employees:{t:'201 Files',nav:'201 Files',icon:'users'},
   leaves:{t:'Leave Management',nav:'Leave Approvals',icon:'cal'},
@@ -940,7 +940,7 @@ const searchBox=(id,key,val,ph)=>`<div class="srch">${ic('search')}<label class=
 
 const VIEWS={};
 
-/* ---- For Approvals: every request still waiting for a decision (leave, Permit to Work, overtime) in one list ---- */
+/* ---- Approvals: every request still waiting for a decision (leave, Permit to Work, overtime) in one list ---- */
 function approvalItems(){
   const out=[];
   {
@@ -965,7 +965,7 @@ VIEWS.approvals=function(){
   let list=byStep.filter(x=>f.tab==='All'||x.kind===f.tab);
   if(q)list=list.filter(x=>[reqName(x.r),x.kind,x.txt,siteClient(x.r),siteLoc(x.r)].join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>(a.r.filedAt||'')<(b.r.filedAt||'')?-1:1);
-  let h=ph('For Approvals','Every leave, Permit to Work and overtime request still waiting for a decision, in one place. HR approves first, then the Owner. Open a request to see its details, or approve or decline it here.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('refresh')}REFRESH</button>`:'');
+  let h=ph('Approvals','Every leave, Permit to Work and overtime request still waiting for a decision, in one place. HR approves first, then the Owner. Open a request to see its details, or approve or decline it here.',window.HRIS_SB?`<button class="btn ghost" data-act="app-sync" data-k="requests" data-write>${ic('refresh')}REFRESH</button>`:'');
   h+=fbtnsHtml('apr','Show requests',APR_KINDS.map(([k,i])=>[k,k==='All'?byStep.length:byStep.filter(x=>x.kind===k).length,i,'',k==='All'?'All requests':k]),f.tab);
   const nMine=all.filter(mine).length;
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px">${searchBox('f-apr-q','apr.q',f.q,'Search employee, request, site, reason')}
