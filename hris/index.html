@@ -1438,7 +1438,10 @@ function tkRowell(e,ts,d){
   // Sundays: everyone who works has a fixed 8-hour shift, 6-2 (6 AM – 2 PM) or 2-10 (2 PM – 10 PM)
   const sun=!!d&&parse(d).getDay()===0;
   const start=(sun?[360,840]:[s201,840,1080]).reduce((b,x)=>Math.abs(inn-x)<Math.abs(inn-b)?x:b);
-  const len=sun||start===840?480:e201!=null&&e201-s201>=480&&e201-s201<=600?e201-s201:n>1&&n%2===0&&m[n-1]>=start+540?540:480;
+  let len=sun||start===840?480:e201!=null&&e201-s201>=480&&e201-s201<=600?e201-s201:n>1&&n%2===0&&m[n-1]>=start+540?540:480;
+  // 201 says 6-3 but the time out is before the 6-3 end: that day was worked as 6-2, so no undertime for the last hour
+  // OT still starts only at the 6-3 end (3 PM) for them
+  const otFrom=start+len;if(len>480&&n>1&&n%2===0&&m[n-1]<start+len)len=480;
   const end=start+len,meal=len>=540?60:30,odd=n%2===1,out=odd?null:m[n-1];
   const late=Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
   const breaks=[];let pre=0,post=0;
@@ -1449,10 +1452,10 @@ function tkRowell(e,ts,d){
   // regular hours: always 8, less undertime only (a half day leaves early, so it shows as undertime). Late and overbreak are
   // their own columns and are not taken off here, like the Rowell DTR (LATE 1, REG HRS 8).
   const reg=out==null?null:Math.max(0,480-ut);
-  const otRaw=out==null?0:Math.max(0,out-Math.max(end,inn)-breaks.filter(x=>x.ot).reduce((t,x)=>t+x.dur,0)),ot=otBlock(otRaw);
-  const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(end,inn),oB=out==null?oA:out;
+  const otRaw=out==null?0:Math.max(0,out-Math.max(otFrom,inn)-breaks.filter(x=>x.a>=otFrom).reduce((t,x)=>t+x.dur,0)),ot=otBlock(otRaw);
+  const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(otFrom,inn),oB=out==null?oA:out;
   const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.b,rB)),0));
-  const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)-breaks.filter(x=>x.ot).reduce((t,x)=>t+tkNight(x.a,x.b),0)));
+  const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)-breaks.filter(x=>x.a>=otFrom).reduce((t,x)=>t+tkNight(x.a,x.b),0)));
   return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,otRaw,nd,ndot,odd};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
