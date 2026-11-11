@@ -1912,16 +1912,29 @@ function parseAtt(text){
   const rows=Object.values(days).map(x=>x.p?{emp:x.emp,d:x.d,in:x.p.sort()[0],out:x.p.length>1?x.p.sort().slice(-1)[0]:''}:x);
   return{rows,err:rows.length?'':'No rows could be read. Check that the file has Employee No., Date, Time In and Time Out columns.'};
 }
+// an Excel file for Attendance: a sheet with Employee No / Date / Time In / Time Out columns, or the biometrics device
+// report (read the same way as Time Keep, one line per shift) — whichever gives more days. Returns CSV text.
+async function attFromExcel(file){
+  const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});
+  let best={n:0,text:''};
+  wb.SheetNames.forEach(n=>{const csv=X.utils.sheet_to_csv(wb.Sheets[n],{blankrows:false});const p=parseAtt(csv);if(!p.err&&p.rows.length>best.n)best={n:p.rows.length,text:csv}});
+  try{const r=tkParseBest(await tkCells(file));
+    if(r.rows.length){const ds=r.rows.map(x=>x.d).sort(),sh=tkShifts({rows:r.rows,from:ds[0]});
+      const hh=t=>{const[h,m]=t.split(':');return`${pad(+h%24)}:${m}`};
+      if(sh.length>best.n)best={n:sh.length,text:['Employee No,Date,Time In,Time Out',...sh.map(x=>[x.emp,x.d,hh(x.t[0]),x.t.length>1?hh(x.t[x.t.length-1]):''].join(','))].join('\n')}}}catch(e){}
+  if(!best.n)throw new Error('No attendance could be read from this Excel file. It needs Employee No., Date, Time In and Time Out columns, or be the biometrics device report.');
+  return best.text;
+}
 function attImport(){
   let parsed=null;
   openModal({title:'Import Attendance',wide:1,
-    body:`<p class="help" style="margin:0">Upload the timekeeping export (CSV or tab-separated) or paste it below. Employees are matched by <b>ID number</b> or <b>Biometric ID no.</b></p>
+    body:`<p class="help" style="margin:0">Upload the timekeeping export (Excel, CSV or tab-separated), or the biometrics device report (Excel), or paste the data below. Employees are matched by <b>ID number</b> or <b>Biometric ID no.</b></p>
     <div class="att-fmt"><b>Accepted formats</b><pre>Employee No,Date,Time In,Time Out
 EMP-0201,2026-10-01,07:56,17:04
 EMP-0201,2026-10-02,8:12 AM,5:00 PM</pre><span>or one row per biometric punch: <code>Employee No, Date and time</code>. The first and last punch of the day become time in and time out.</span></div>
-    <div class="fg"><div class="field"><label for="ai-file">Timekeeping file</label><input id="ai-file" type="file" accept=".csv,.txt,.tsv,text/csv,text/plain"></div>
+    <div class="fg"><div class="field"><label for="ai-file">Timekeeping file</label><input id="ai-file" type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv,.txt,.tsv,text/csv,text/plain"></div>
     ${field({id:'ai-text',name:'text',label:'Or paste the data',type:'textarea',full:1,attrs:'style="min-height:140px;font-family:ui-monospace,Consolas,monospace;font-size:13.5px"'})}</div>
-    <label class="ck"><input type="checkbox" name="absent" checked>Mark Monday–Saturday workdays with no time logs as <b>Absent</b> (only for the dates covered by the file, and not on approved leave)</label>
+    <label class="ck"><input type="checkbox" name="absent" checked>Mark workdays (not the employee’s rest day) with no time logs as <b>Absent</b> (only for the dates covered by the file, and not on approved leave)</label>
     <div id="ai-prev"></div>`,
     submitLabel:'Import',
     onOpen:f=>{
@@ -1932,7 +1945,11 @@ EMP-0201,2026-10-02,8:12 AM,5:00 PM</pre><span>or one row per biometric punch: <
         const ds=parsed.rows.map(r=>r.d).sort();
         box.innerHTML=`<div class="silline ${un.length?'warn':''}">${ic(un.length?'alert':'check')}<span><b>${matched.length}</b> day record${matched.length===1?'':'s'} for <b>${new Set(matched.map(r=>r.emp)).size}</b> employee${new Set(matched.map(r=>r.emp)).size===1?'':'s'}, ${fmt(ds[0])} – ${fmt(ds[ds.length-1])}.${un.length?` Not found in 201 files: ${un.slice(0,8).map(esc).join(', ')}${un.length>8?` and ${un.length-8} more`:''}. These rows will be skipped.`:''}</span></div>`};
       f.text.addEventListener('input',show);
-      f.querySelector('#ai-file').addEventListener('change',ev=>{const file=ev.target.files[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{f.text.value=String(rd.result);show()};rd.readAsText(file)});
+      f.querySelector('#ai-file').addEventListener('change',async ev=>{const file=ev.target.files[0];if(!file)return;const box=f.querySelector('#ai-prev');
+        if(/\.(xlsx|xls|xlsm|ods)$/i.test(file.name)){box.innerHTML='<p class="help">Reading the Excel file…</p>';
+          try{f.text.value=await attFromExcel(file);show()}catch(err){f.text.value='';box.innerHTML=`<div class="formerr">${esc(err&&err.message&&!/^load failed|missing$/.test(err.message)?err.message:'The Excel file could not be read. Check your connection and try again.')}</div>`}
+          return}
+        const rd=new FileReader();rd.onload=()=>{f.text.value=String(rd.result);show()};rd.readAsText(file)});
     },
     onSubmit:async(fd,f)=>{
       parsed=parseAtt(fd.get('text'));if(parsed.err){setErr(f.querySelector('#ai-text'),parsed.err);return false}
