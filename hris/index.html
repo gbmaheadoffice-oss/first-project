@@ -735,7 +735,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:'',mode:'day',day:'',dtab:'All'},otrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:'',mode:'day',day:'',dtab:'All'},otrep:{tab:'All',mode:'day',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -1221,9 +1221,18 @@ VIEWS.otreport=function(){
     <label class="sr" for="f-otrep-from">From</label><input id="f-otrep-from" type="date" data-filter="otrep.from" value="${f.from}" style="flex:0 1 165px" title="From">
     <label class="sr" for="f-otrep-to">To</label><input id="f-otrep-to" type="date" data-filter="otrep.to" value="${f.to}" style="flex:0 1 165px" title="To">
     <label class="sr" for="f-otrep-client">Client company</label><select id="f-otrep-client" data-filter="otrep.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
-    ${searchBox('f-otrep-q','otrep.q',f.q,'Search employee, ID no., site')}</div>`;
+    ${searchBox('f-otrep-q','otrep.q',f.q,'Search employee, ID no., site')}</div>
+    <div class="fbtns" role="group" aria-label="View" style="margin:0 0 10px"><button class="fbtn" data-act="fset" data-id="otrep.mode" data-k="day" aria-pressed="${f.mode!=='emp'}">${ic('cal')}<span>Per person, per day</span></button><button class="fbtn" data-act="fset" data-id="otrep.mode" data-k="emp" aria-pressed="${f.mode==='emp'}">${ic('users')}<span>Totals per employee</span></button></div>`;
   if(unmatched)h+=`<div class="banner" style="margin-bottom:10px">${ic('info')}<span class="grow">${unmatched} approved overtime request${unmatched===1?' is':'s are'} not linked to a 201 file and ${unmatched===1?'is':'are'} left out. Open it in <a href="#overtime" data-act="nav" data-id="overtime">Overtime Requests</a> to link the employee.</span></div>`;
-  if(!rows.length)h+=emptyBlock('No overtime here','No approved, pending or actual overtime in this period. Try another period, site or tab.');
+  const dayRows=f.mode!=='emp'?otrepDayGroups(rows):null;
+  if(dayRows&&!dayRows.length)h+=emptyBlock('No approved overtime here','No approved overtime requests in this period. Try another period, site or tab.');
+  else if(dayRows){const all=dayRows.reduce((t,g)=>t+g.tot,0),n=dayRows.reduce((t,g)=>t+g.days.length,0);
+    h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:820px"><thead><tr><th>Name</th><th>Date</th><th class="r">Approved OT Hrs</th><th>Reason</th></tr></thead><tbody>
+    ${dayRows.map(g=>g.days.map((x,i)=>`<tr>${i?'':`<td rowspan="${g.days.length+1}" style="vertical-align:top"><a href="#otreport" class="nm" data-act="otrep-view" data-id="${g.e.id}">${esc(fullName(g.e))}</a><div class="sub">${esc(g.e.empNo)} · ${esc(g.e.client||'—')}</div></td>`}
+      <td class="num" style="white-space:nowrap">${fmt(x.d)}</td><td class="r num"><b>${otDec(x.ap)}</b></td><td style="max-width:520px;white-space:pre-wrap;overflow-wrap:anywhere">${esc(x.reason||'—')}</td></tr>`).join('')+
+      `<tr style="background:rgba(127,127,127,.07)"><td class="sub"><b>Total · ${g.days.length} day${g.days.length===1?'':'s'}</b></td><td class="r num"><b>${otDec(g.tot)}</b></td><td></td></tr>`).join('')}
+    </tbody><tfoot><tr><th>Grand total · ${dayRows.length} employee${dayRows.length===1?'':'s'}</th><th>${n} day${n===1?'':'s'}</th><th class="r num">${otDec(all)}</th><th></th></tr></tfoot></table></div>`}
+  else if(!rows.length)h+=emptyBlock('No overtime here','No approved, pending or actual overtime in this period. Try another period, site or tab.');
   else{const tot=k=>rows.reduce((t,r)=>t+r.s[k],0);
     h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1320px"><thead><tr><th>Employee</th><th class="r">Approved Requests</th><th class="r">Approved OT</th><th class="r">Actual OT on Approved Days</th><th class="r">Payable OT</th><th class="r">Difference</th><th class="r">OT Without Approval</th><th class="r">Pending OT</th><th>Reason for Overtime</th><th>Remarks</th></tr></thead><tbody>
     ${rows.map(({e,s})=>{const dif=s.actAp-s.ap;return`<tr class="click" data-act="otrep-view" data-id="${e.id}" tabindex="0"><td><div class="nm">${esc(fullName(e))}</div><div class="sub">${esc(e.empNo)} · ${esc(e.client||'—')}</div></td>
@@ -1254,22 +1263,30 @@ const otrepTitle=()=>`Overtime Summary · ${fmt(UI.otrep.from)} – ${fmt(UI.otr
 const OTREP_COLS=['ID Number','Name','Client Company','Approved Requests','Approved OT (hours)','Actual OT on Approved Days (hours)','Payable OT (hours)','Difference (hours)','OT Without Approval (hours)','Pending OT (hours)','Days Without Time Out','Reason for Overtime'];
 const otrepLine=({e,s})=>[e.empNo||'',fullName(e),e.client||'',s.reqs,otDec(s.ap),otDec(s.actAp),otDec(s.pay),otDec(s.actAp-s.ap),otDec(s.extra),otDec(s.pend),s.noOut,s.reasons.map(x=>`${fmtS(x.d)}${x.st==='Pending'?' (pending)':''}: ${x.t.replace(/\s+/g,' ')}`).join(' | ')];
 const otrepList=()=>otrepRows().filter(r=>otrepTest[UI.otrep.tab](r.s));
+// per person, per day: only days with approved overtime; reasons of that day's approved requests joined
+const otrepDayGroups=rows=>rows.map(({e,days})=>{const d=days.filter(x=>x.ap>0).map(x=>({d:x.d,ap:x.ap,reason:x.reqs.filter(o=>o.status==='Approved').map(o=>String(o.reason||'').trim()).filter(Boolean).join('\n')}));
+  return{e,days:d,tot:d.reduce((t,x)=>t+x.ap,0)}}).filter(g=>g.days.length);
+const OTDAY_COLS=['Name','Date','Approved OT Hrs','Reason'];
+const otrepDayAoa=()=>{const out=[];otrepDayGroups(otrepList()).forEach(g=>{g.days.forEach(x=>out.push([fullName(g.e),fmt(x.d),otDec(x.ap),x.reason.replace(/\s*\n\s*/g,' | ')]));out.push([`Total – ${fullName(g.e)}`,`${g.days.length} day${g.days.length===1?'':'s'}`,otDec(g.tot),''])});return out};
 function otrepCopy(){
+  if(UI.otrep.mode!=='emp'){const a=otrepDayAoa();if(!a.length){toast('There is no approved overtime to copy.',{kind:'bad'});return}
+    navigator.clipboard.writeText([otrepTitle(),OTDAY_COLS.join('\t')].concat(a.map(r=>r.join('\t'))).join('\n')).then(()=>toast('Overtime per person, per day copied. Paste into Excel or Google Sheets.'),()=>toast('Copy is blocked in this view. Select the table and press Ctrl+C.',{kind:'bad'}));return}
   const rows=otrepList();const txt=[otrepTitle(),OTREP_COLS.join('\t')].concat(rows.map(r=>otrepLine(r).join('\t'))).join('\n');
   navigator.clipboard.writeText(txt).then(()=>toast(`${rows.length} row${rows.length===1?'':'s'} copied. Paste into Excel or Google Sheets.`),()=>toast('Copy is blocked in this view. Select the table and press Ctrl+C.',{kind:'bad'}));
 }
 async function otrepXlsx(){
-  const rows=otrepList();if(!rows.length){toast('There is no overtime to export.',{kind:'bad'});return}
+  const day=UI.otrep.mode!=='emp';const rows=day?otrepDayAoa():otrepList();if(!rows.length){toast(day?'There is no approved overtime to export.':'There is no overtime to export.',{kind:'bad'});return}
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
   let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
-  const aoa=[[otrepTitle()],[],OTREP_COLS].concat(rows.map(otrepLine));
-  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,28,30,10,12,14,12,12,14,12,12,60].map(w=>({wch:w}));
-  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:OTREP_COLS.length-1}})};
+  const cols=day?OTDAY_COLS:OTREP_COLS;
+  const aoa=[[otrepTitle()],[],cols].concat(day?rows:rows.map(otrepLine));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=(day?[32,20,16,80]:[12,28,30,10,12,14,12,12,14,12,12,60]).map(w=>({wch:w}));
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:cols.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Overtime Summary');
   wb.Props={Title:'Overtime Summary',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
   const name=`GBMA Overtime Summary ${UI.otrep.from} to ${UI.otrep.to}${UI.otrep.client?' - '+UI.otrep.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
-  try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
+  try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(day?`Exported overtime per person, per day to ${name}.`:`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
   catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else if(c==='rate_limited')toast('A save prompt is already open. Finish it, then try again.',{kind:'bad'});else toast('The file could not be saved in this view.',{kind:'bad'})}
 }
 /* ---- Payroll · Time Keep: biometrics extractions (attendance logs) uploaded per cut-off ----
