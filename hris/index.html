@@ -1425,8 +1425,7 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 // Rowell: 6-2 (6:00 AM – 2:00 PM) or 6-3 (6:00 AM – 3:00 PM), from the 201 shift, otherwise time out at 3 PM or later = 6-3.
 // Logs in order: time in, then break out / break in pairs, then time out. Before 3 PM the 1st and 3rd breaks are
 // 15 min and the 2nd is 30 min (6-2) or 1 hr (6-3); from 3 PM on, one more 15-min break if it is logged. Minutes over
-// the allowance are overbreak. Regular hours = the schedule less the 2nd break (the 15-min breaks are paid), less
-// late, undertime and overbreak within the schedule. OT = time after the schedule end, less the breaks taken in it.
+// the allowance are overbreak. Regular hours = 8, less undertime (late and overbreak are shown on their own). OT = time after the schedule end, less the breaks taken in it.
 // minutes of a span (minutes from midnight) that fall in night-differential hours, 10 PM – 6 AM
 // OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
 const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
@@ -1447,7 +1446,9 @@ function tkRowell(e,ts,d){
     const allow=a<start+540?[15,meal,15][pre++]||0:post++?0:15;
     breaks.push({a,b,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
   const obReg=breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0),ob=breaks.reduce((t,x)=>t+x.ob,0);
-  const reg=out==null?null:Math.max(0,end-start-meal-late-ut-obReg);
+  // regular hours: always 8, less undertime only (a half day leaves early, so it shows as undertime). Late and overbreak are
+  // their own columns and are not taken off here, like the Rowell DTR (LATE 1, REG HRS 8).
+  const reg=out==null?null:Math.max(0,480-ut);
   const otRaw=out==null?0:Math.max(0,out-Math.max(end,inn)-breaks.filter(x=>x.ot).reduce((t,x)=>t+x.dur,0)),ot=otBlock(otRaw);
   const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(end,inn),oB=out==null?oA:out;
   const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.b,rB)),0));
