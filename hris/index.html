@@ -1280,9 +1280,9 @@ async function otrepXlsx(){
   if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
   let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const cols=day?OTDAY_COLS:OTREP_COLS;
-  const aoa=[[otrepTitle()],[],cols].concat(day?rows:rows.map(otrepLine));
+  const aoa=xlInfo(day?'OVERTIME SUMMARY – PER PERSON, PER DAY':'OVERTIME SUMMARY – TOTALS PER EMPLOYEE',[['CLIENT:',UI.otrep.client||'All client companies'],['COVERED PERIOD:',`${fmt(UI.otrep.from)} – ${fmt(UI.otrep.to)}`],['SHOWING:',UI.otrep.tab!=='All'?UI.otrep.tab:'']]).concat([cols],day?rows:rows.map(otrepLine));
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=(day?[32,20,16,80]:[12,28,30,10,12,14,12,12,14,12,12,60]).map(w=>({wch:w}));
-  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:cols.length-1}})};
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:aoa.length-rows.length-1,c:0},e:{r:aoa.length-1,c:cols.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Overtime Summary');
   wb.Props={Title:'Overtime Summary',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
   const name=`GBMA Overtime Summary ${UI.otrep.from} to ${UI.otrep.to}${UI.otrep.client?' - '+UI.otrep.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
@@ -1570,7 +1570,7 @@ async function tkDayXlsx(){
   const wb=X.utils.book_new(),COLS=['NAME','AC-NO.','SITE','IN','OUT','LATE (MIN)','REG HRS','OT','ND','NDOT','REMARKS'];let n=0;
   for(let d=doc.from;d<=doc.to;d=addDays(d,1)){
     const rows=tkDayFiltered(doc,d);if(!rows.some(r=>r.log))continue;n++;
-    const aoa=[[parse(d).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})],COLS];
+    const aoa=xlInfo('TIME KEEP – DAILY',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`]]).concat([[parse(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}).toUpperCase()],COLS]);
     rows.forEach(r=>{const x=tkDayCells(r),c=x.c,num=m=>m?Math.round(m/60*100)/100:'';
       aoa.push([r.e?fullName(r.e):r.name||'',r.emp,r.e?r.e.client||'':'Not in 201 files',x.inn,x.out,r.log&&x.late?x.late:'',r.log&&x.reg!=null?num(x.reg):'',r.log?num(x.ot):'',r.log?num(x.nd):'',r.log?num(x.ndot):'',
         [x.odd?'Missing log':'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
@@ -1594,11 +1594,11 @@ async function tkXlsx(){
   let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const COLS=['AC-No.','ID Number','Name','Client Company','Date','Day','Time In','Time Out','All Logs','Hours (first to last log)','Schedule','Late (min)','Undertime (min)','Overbreak (min)','Regular Hours','OT Hours','Note'];
   const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
-  const aoa=[[`Time Keep · ${fmt(doc.from)} – ${fmt(doc.to)} · ${doc.fileName||''}`],[],COLS];
+  const aoa=xlInfo('TIME KEEP',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`],['BIOMETRICS FILE:',doc.fileName||'']]).concat([COLS]);const top=aoa.length-1;
   rows.forEach(r=>r.days.forEach((x,i)=>{const c=r.calc&&r.calc[i];aoa.push([r.emp,r.e?r.e.empNo||'':'',r.e?fullName(r.e):r.name||'',r.e?r.e.client||'':'Not in 201 files',x.d,wd(x.d),fmtTime(x.t[0]),x.t.length>1?fmtTime(x.t[x.t.length-1]):'',x.t.map(fmtTime).join(' | '),tkDec(tkHours(x.t)),
     ...(c?[c.sched,c.late,c.ut,c.ob,c.reg==null?'':tkDec(c.reg),tkDec(c.ot)]:['','','','','','']),x.t.length===1?'Only one log':x.t.length%2?'Odd number of logs':''])}));
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,12,28,30,11,6,10,10,40,10,20,9,11,11,10,9,18].map(w=>({wch:w}));
-  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:COLS.length-1}})};
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:top,c:0},e:{r:aoa.length-1,c:COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Time Keep');
   const name=`GBMA Time Keep ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
   try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
@@ -1654,9 +1654,9 @@ async function lrepXlsx(){
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
   let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
-  const aoa=[[lrepTitle()],[],LREP_COLS].concat(rows.map(lrepLine));
+  const aoa=xlInfo('LEAVE SUMMARY REPORT',[['CLIENT:',UI.lrep.client||'All client companies'],['COVERED PERIOD:',`${fmt(UI.lrep.from)} – ${fmt(UI.lrep.to)}`],['LEAVE TYPE:',UI.lrep.type],['SHOWING:',UI.lrep.tab!=='All'?UI.lrep.tab:'']]).concat([LREP_COLS],rows.map(lrepLine));
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,28,30,24,14,40,12,12,7,12,18,16,16,16,12].map(w=>({wch:w}));
-  ws['!autofilter']={ref:X.utils.encode_range({s:{r:2,c:0},e:{r:aoa.length-1,c:LREP_COLS.length-1}})};
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:aoa.length-rows.length-1,c:0},e:{r:aoa.length-1,c:LREP_COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Leave Summary');
   wb.Props={Title:'Leave Summary Report',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
   const name=`GBMA Leave Summary ${UI.lrep.from} to ${UI.lrep.to}${UI.lrep.client?' - '+UI.lrep.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
@@ -2374,45 +2374,62 @@ function statusForm(id){
 
 /* ---------------- 201 file export to Excel (.xlsx) ---------------- */
 let XLSXP=null;
-/* ---- GBMA Excel template: every exported sheet gets the same look (applied when a sheet is added to a workbook).
-   Title row (navy, bold), a "Golden Bear Manpower Agency · Exported <date>" line, navy header with white bold labels and a gold
-   line under it, bordered cells with light banding, and Total rows in bold on light gold. ---- */
+/* ---- GBMA Excel template, based on the Rowell Daily Consolidated Report (applied when a sheet is added to a workbook):
+   info boxes on top (CLIENT:, COVERED PERIOD:, … in bold on peach with thick borders), a black date bar right above the header,
+   navy header with white bold labels, names in bold on peach, thin borders, hours as 0.00, ABSENT and problems in red,
+   Total rows in bold on peach. Calibri throughout. ---- */
+// rows for the info boxes at the top of a sheet: [['CLIENT:','Rowell'],…] then a blank row
+const xlInfo=(title,pairs)=>[['REPORT:',title],...pairs.filter(p=>p[1]),['EXPORTED:',`${new Date().toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}${ME&&ME.name?' by '+ME.name:''}`],[]];
 function xlTemplate(X){
   if(X.__gbma)return X;X.__gbma=1;
-  const NAVY='0F1E3F',GOLD='F3C623',LINE='D9D6CE',BAND='F7F6F2',TOT='FDF3C9',MUTED='596175';
-  const thin={style:'thin',color:{rgb:LINE}},box={top:thin,bottom:thin,left:thin,right:thin};
+  const NAVY='002060',PEACH='FBD4B4',NAME='FABF8F',BLACK='0C0C0C',RED='FF0000',INK='000000',F='Calibri';
+  const ln=(st,c)=>({style:st,color:{rgb:c||INK}}),all=(st,c)=>({top:ln(st,c),bottom:ln(st,c),left:ln(st,c),right:ln(st,c)});
   const add=X.utils.book_append_sheet;
-  X.utils.book_append_sheet=function(wb,ws,name){try{xlStyle(X,ws)}catch(e){}return add.apply(this,arguments)};
+  X.utils.book_append_sheet=function(wb,ws,name){try{xlStyle(X,ws)}catch(e){console.warn('Excel template',e)}return add.apply(this,arguments)};
   function xlStyle(X,ws){
     if(!ws||!ws['!ref'])return;const R=X.utils.decode_range(ws['!ref']);const nc=R.e.c+1;
-    const cell=(r,c)=>ws[X.utils.encode_cell({r,c})];
-    const filled=r=>{let n=0;for(let c=0;c<nc;c++){const x=cell(r,c);if(x&&x.v!==''&&x.v!=null)n++}return n};
+    const cell=(r,c)=>ws[X.utils.encode_cell({r,c})];const val=(r,c)=>{const x=cell(r,c);return x&&x.v!=null?String(x.v):''};
+    const filled=r=>{let n=0;for(let c=0;c<nc;c++)if(val(r,c)!=='')n++;return n};
     let last=R.e.r;while(last>0&&!filled(last))last--;
-    let head=-1;for(let r=0;r<=Math.min(last,30);r++)if(filled(r)>=2){head=r;break}
+    const isLabel=r=>filled(r)<=2&&/:$/.test(val(r,0).trim());
+    let head=-1;for(let r=0;r<=Math.min(last,40);r++)if(filled(r)>=2&&!isLabel(r)){head=r;break}
     if(head<0)return;
-    const put=(r,c,st)=>{const k=X.utils.encode_cell({r,c});if(!ws[k])ws[k]={t:'s',v:''};ws[k].s=Object.assign({},ws[k].s||{},st)};
-    const rows=ws['!rows']||(ws['!rows']=[]);const wch=c=>((ws['!cols']||[])[c]||{}).wch||10;
-    if(head>0&&filled(0)===1){
-      put(0,0,{font:{bold:true,sz:14,color:{rgb:NAVY}},alignment:{vertical:'center'}});rows[0]={hpt:24};
-      if(head>=2&&!filled(1)){const k=X.utils.encode_cell({r:1,c:0});ws[k]={t:'s',v:`Golden Bear Manpower Agency · Exported ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`};}
-      if(head>=2&&filled(1)===1)put(1,0,{font:{italic:true,sz:9,color:{rgb:MUTED}}});
-      const m=ws['!merges']||(ws['!merges']=[]);
-      [0,head>=2?1:-1].forEach(r=>{if(r>=0&&nc>1&&filled(r)===1&&!m.some(x=>x.s.r===r))m.push({s:{r,c:0},e:{r,c:nc-1}})});
-      for(let r=head>=2?2:1;r<head;r++)if(filled(r)===1)put(r,0,{alignment:{wrapText:false}});
+    const put=(r,c,st)=>{const k=X.utils.encode_cell({r,c});if(!ws[k])ws[k]={t:'s',v:''};ws[k].s=st};
+    const rows=ws['!rows']||(ws['!rows']=[]);const cols=ws['!cols']||(ws['!cols']=[]);const merges=ws['!merges']||(ws['!merges']=[]);
+    const merge=(r,c1,c2)=>{if(c2>c1&&!merges.some(m=>m.s.r<=r&&m.e.r>=r))merges.push({s:{r,c:c1},e:{r,c:c2}})};
+    // top part: info boxes, the black date bar, and plain notes
+    let info=false;
+    for(let r=0;r<head;r++){
+      if(!filled(r))continue;
+      if(isLabel(r)){info=true;
+        put(r,0,{font:{name:F,bold:true,sz:12},fill:{patternType:'solid',fgColor:{rgb:PEACH}},alignment:{horizontal:'center',vertical:'center'},border:all('thick')});
+        const end=Math.max(1,Math.min(nc-1,3));for(let c=1;c<=end;c++)put(r,c,{font:{name:F,bold:true,sz:11},fill:{patternType:'solid',fgColor:{rgb:PEACH}},alignment:{horizontal:'left',vertical:'center'},border:all('thick')});
+        merge(r,1,end);rows[r]={hpt:20};continue}
+      if(r===head-1&&filled(r)===1){ // date bar right above the header
+        for(let c=0;c<nc;c++)put(r,c,{font:{name:F,bold:true,sz:12,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:BLACK}},alignment:{horizontal:'center',vertical:'center'}});
+        merge(r,0,nc-1);rows[r]={hpt:22};continue}
+      put(r,0,{font:{name:F,bold:r===0,sz:r===0?14:11}});
     }
-    for(let c=0;c<nc;c++)put(head,c,{font:{bold:true,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:NAVY}},
-      alignment:{horizontal:'center',vertical:'center',wrapText:true},border:{top:thin,left:thin,right:thin,bottom:{style:'medium',color:{rgb:GOLD}}}});
-    rows[head]={hpt:30};
-    let band=0;
+    if(info&&(!cols[0]||(cols[0].wch||0)<20))cols[0]={wch:20};
+    // header
+    const heads=[];for(let c=0;c<nc;c++)heads.push(val(head,c));
+    for(let c=0;c<nc;c++)put(head,c,{font:{name:F,bold:true,sz:11,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:NAVY}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},border:all('thin','FFFFFF')});
+    rows[head]={hpt:32};
+    const nameCol=heads.map(h=>/^(full\s*)?names?$|^employee(\s*name)?$/i.test(h.trim()));
+    const hrsCol=heads.map(h=>/hrs|hours|\b(ot|nd|ndot)\b/i.test(h)&&!/days|requests|\(min\)/i.test(h));
+    const bad=/^(absent|no work schedule|missing log|only one log|odd number of logs|no time out|not in 201 files)$/i;
+    const wch=c=>(cols[c]||{}).wch||10;
     for(let r=head+1;r<=last;r++){
-      if(!filled(r)){band=0;continue}
-      const first=cell(r,0),tot=first&&typeof first.v==='string'&&/^(grand\s+)?total\b/i.test(first.v);
+      if(!filled(r))continue;
+      const tot=/^(grand\s+)?total\b/i.test(val(r,0).trim());
       for(let c=0;c<nc;c++){const x=cell(r,c);const num=x&&x.t==='n';
-        const st={border:box,alignment:Object.assign({vertical:'top',wrapText:wch(c)>=30},num?{horizontal:'right'}:{}),font:{color:{rgb:'121A2C'}}};
-        if(tot){st.font={bold:true,color:{rgb:NAVY}};st.fill={patternType:'solid',fgColor:{rgb:TOT}};st.border=Object.assign({},box,{top:{style:'thin',color:{rgb:NAVY}}})}
-        else if(band%2)st.fill={patternType:'solid',fgColor:{rgb:BAND}};
+        const st={font:{name:F,sz:11,color:{rgb:INK}},border:all('thin'),alignment:{vertical:'center',wrapText:wch(c)>=30}};
+        if(num){st.alignment.horizontal='center';if(hrsCol[c]&&!x.z)x.z='0.00'}
+        if(tot){st.font.bold=true;st.fill={patternType:'solid',fgColor:{rgb:PEACH}};st.border=Object.assign(all('thin'),{top:ln('medium')})}
+        else if(nameCol[c]&&val(r,c)){st.font.bold=true;st.fill={patternType:'solid',fgColor:{rgb:NAME}}}
+        if(!tot&&x&&typeof x.v==='string'&&(bad.test(x.v.trim())||/^(undertime|overbreak)\b/i.test(x.v.trim())))st.font.color={rgb:RED};
         put(r,c,st)}
-      band=tot?0:band+1;
     }
   }
   return X;
