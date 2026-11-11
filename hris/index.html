@@ -687,8 +687,9 @@ const acc=p=>{
   if(ME.role==='admin')return{view:true,edit:true,sites:null};
   if(p==='admin')return{view:false,edit:false,sites:null};
   if(!ME.access)return{view:true,edit:ME.role!=='viewer',sites:null};
-  return ME.access[p]||(p==='approvals'?apprFallback(ME.access):p==='da'&&ME.access.comms?ME.access.comms:{view:false,edit:false,sites:null});
+  return ME.access[p]||(p==='approvals'?apprFallback(ME.access):p==='da'&&ME.access.comms?ME.access.comms:p==='payroll'&&ME.access.attendance?ME.access.attendance:{view:false,edit:false,sites:null});
 };
+// accounts saved before "Payroll" was a part: Payroll (Time Keep) follows their Attendance access until it is set in Settings
 // accounts saved before "Approvals" was a part: it follows their Leave Management / Attendance access
 const apprFallback=a=>{const l=a.leaves||{},t=a.attendance||{};return{view:!!(l.view||t.view),edit:!!(l.edit||t.edit),sites:l.view&&t.view&&l.sites&&t.sites?[...new Set([...l.sites,...t.sites])]:l.view&&!t.view?l.sites||null:t.view&&!l.view?t.sites||null:null}};
 const canView=p=>!p||acc(p).view;
