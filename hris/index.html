@@ -1409,7 +1409,8 @@ const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,b-Math.max(a,1320));
 function tkRowell(e,ts){
   const m=ts.map(tkMins),n=m.length,start=e.shiftStart?tkMins(e.shiftStart):360;
-  const end=e.shiftEnd?tkMins(e.shiftEnd):n>1&&n%2===0&&m[n-1]>=900?900:840;
+  // a shift end before the start (6:00 AM – 2:00 AM: the masterlist had "2:00" without AM/PM) is read as PM, since Rowell is a day shift
+  let end=e.shiftEnd?tkMins(e.shiftEnd):n>1&&n%2===0&&m[n-1]>=900?900:840;if(end<=start&&end<720)end+=720;
   const meal=end-start>=540?60:30,odd=n%2===1,inn=m[0],out=odd?null:m[n-1];
   const late=Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
   const breaks=[];let pre=0,post=0;
