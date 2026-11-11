@@ -2374,9 +2374,52 @@ function statusForm(id){
 
 /* ---------------- 201 file export to Excel (.xlsx) ---------------- */
 let XLSXP=null;
+/* ---- GBMA Excel template: every exported sheet gets the same look (applied when a sheet is added to a workbook).
+   Title row (navy, bold), a "Golden Bear Manpower Agency · Exported <date>" line, navy header with white bold labels and a gold
+   line under it, bordered cells with light banding, and Total rows in bold on light gold. ---- */
+function xlTemplate(X){
+  if(X.__gbma)return X;X.__gbma=1;
+  const NAVY='0F1E3F',GOLD='F3C623',LINE='D9D6CE',BAND='F7F6F2',TOT='FDF3C9',MUTED='596175';
+  const thin={style:'thin',color:{rgb:LINE}},box={top:thin,bottom:thin,left:thin,right:thin};
+  const add=X.utils.book_append_sheet;
+  X.utils.book_append_sheet=function(wb,ws,name){try{xlStyle(X,ws)}catch(e){}return add.apply(this,arguments)};
+  function xlStyle(X,ws){
+    if(!ws||!ws['!ref'])return;const R=X.utils.decode_range(ws['!ref']);const nc=R.e.c+1;
+    const cell=(r,c)=>ws[X.utils.encode_cell({r,c})];
+    const filled=r=>{let n=0;for(let c=0;c<nc;c++){const x=cell(r,c);if(x&&x.v!==''&&x.v!=null)n++}return n};
+    let last=R.e.r;while(last>0&&!filled(last))last--;
+    let head=-1;for(let r=0;r<=Math.min(last,30);r++)if(filled(r)>=2){head=r;break}
+    if(head<0)return;
+    const put=(r,c,st)=>{const k=X.utils.encode_cell({r,c});if(!ws[k])ws[k]={t:'s',v:''};ws[k].s=Object.assign({},ws[k].s||{},st)};
+    const rows=ws['!rows']||(ws['!rows']=[]);const wch=c=>((ws['!cols']||[])[c]||{}).wch||10;
+    if(head>0&&filled(0)===1){
+      put(0,0,{font:{bold:true,sz:14,color:{rgb:NAVY}},alignment:{vertical:'center'}});rows[0]={hpt:24};
+      if(head>=2&&!filled(1)){const k=X.utils.encode_cell({r:1,c:0});ws[k]={t:'s',v:`Golden Bear Manpower Agency · Exported ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`};}
+      if(head>=2&&filled(1)===1)put(1,0,{font:{italic:true,sz:9,color:{rgb:MUTED}}});
+      const m=ws['!merges']||(ws['!merges']=[]);
+      [0,head>=2?1:-1].forEach(r=>{if(r>=0&&nc>1&&filled(r)===1&&!m.some(x=>x.s.r===r))m.push({s:{r,c:0},e:{r,c:nc-1}})});
+      for(let r=head>=2?2:1;r<head;r++)if(filled(r)===1)put(r,0,{alignment:{wrapText:false}});
+    }
+    for(let c=0;c<nc;c++)put(head,c,{font:{bold:true,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:NAVY}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},border:{top:thin,left:thin,right:thin,bottom:{style:'medium',color:{rgb:GOLD}}}});
+    rows[head]={hpt:30};
+    let band=0;
+    for(let r=head+1;r<=last;r++){
+      if(!filled(r)){band=0;continue}
+      const first=cell(r,0),tot=first&&typeof first.v==='string'&&/^(grand\s+)?total\b/i.test(first.v);
+      for(let c=0;c<nc;c++){const x=cell(r,c);const num=x&&x.t==='n';
+        const st={border:box,alignment:Object.assign({vertical:'top',wrapText:wch(c)>=30},num?{horizontal:'right'}:{}),font:{color:{rgb:'121A2C'}}};
+        if(tot){st.font={bold:true,color:{rgb:NAVY}};st.fill={patternType:'solid',fgColor:{rgb:TOT}};st.border=Object.assign({},box,{top:{style:'thin',color:{rgb:NAVY}}})}
+        else if(band%2)st.fill={patternType:'solid',fgColor:{rgb:BAND}};
+        put(r,c,st)}
+      band=tot?0:band+1;
+    }
+  }
+  return X;
+}
 function loadXLSX(){
   if(window.XLSX)return Promise.resolve(window.XLSX);if(XLSXP)return XLSXP;
-  XLSXP=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=()=>window.XLSX?res(window.XLSX):rej(new Error('missing'));s.onerror=()=>{XLSXP=null;rej(new Error('load failed'))};document.head.appendChild(s)});
+  XLSXP=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';s.onload=()=>window.XLSX?res(xlTemplate(window.XLSX)):rej(new Error('missing'));s.onerror=()=>{XLSXP=null;rej(new Error('load failed'))};document.head.appendChild(s)});
   return XLSXP;
 }
 function empFiltered(){
