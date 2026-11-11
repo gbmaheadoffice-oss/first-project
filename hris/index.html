@@ -214,7 +214,10 @@ button.row:hover .nm{text-decoration:underline}
 
 /* dialogs */
 dialog{border:0;padding:0;background:var(--surface);color:var(--ink);border-radius:16px;box-shadow:0 24px 60px rgba(5,12,30,.35);width:min(640px,calc(100vw - 32px));max-height:min(90vh,900px)}
-dialog.wide{width:min(900px,calc(100vw - 32px))}
+dialog.wide{width:min(900px,calc(100vw - 32px));max-height:calc(100vh - 24px);resize:both;overflow:hidden;min-width:min(420px,calc(100vw - 16px));min-height:220px;max-width:calc(100vw - 16px)}
+dialog.wide .mform{height:100%}
+dialog.wide.max{width:calc(100vw - 24px)!important;height:calc(100vh - 24px)!important;max-width:none;resize:none;border-radius:12px}
+.mhead .mtools{display:flex;gap:4px;align-items:center}
 dialog::backdrop{background:var(--scrim)}
 dialog[open]{animation:pop .18s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
@@ -510,7 +513,7 @@ const P={
   memo:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
   arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
-  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',maxi:'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',mini:'<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
   check:'<path d="M20 6 9 17l-5-5"/>',
   edit:'<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
   trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
@@ -2293,7 +2296,7 @@ function field(o){
 }
 function openModal({title,body,foot,wide,onSubmit,onOpen,submitLabel='Save',submitClass=''}){
   MD.className=wide?'wide':'';
-  MD.innerHTML=`<form class="mform" novalidate><header class="mhead"><h2 id="mtitle">${title}</h2><button type="button" class="icon-btn" data-close aria-label="Close">${ic('x')}</button></header><div class="mbody">${body}</div><footer class="mfoot">${foot||`<button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn ${submitClass}">${submitLabel}</button>`}</footer></form>`;
+  MD.innerHTML=`<form class="mform" novalidate><header class="mhead"><h2 id="mtitle">${title}</h2><div class="mtools">${wide?`<button type="button" class="icon-btn" data-maxi aria-label="Maximize" title="Maximize (see everything)">${ic('maxi')}</button>`:''}<button type="button" class="icon-btn" data-close aria-label="Close">${ic('x')}</button></div></header><div class="mbody">${body}</div><footer class="mfoot">${foot||`<button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn ${submitClass}">${submitLabel}</button>`}</footer></form>`;
   MD.setAttribute('aria-labelledby','mtitle');
   const f=MD.querySelector('form');
   f.addEventListener('submit',async ev=>{
@@ -2305,6 +2308,12 @@ function openModal({title,body,foot,wide,onSubmit,onOpen,submitLabel='Save',subm
     finally{btns.forEach(b=>b.disabled=false)}
   });
   f.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>MD.close()));
+  // large windows: Maximize fills the screen; the choice is remembered on this computer. They can also be resized from the bottom-right corner.
+  MD.style.width=MD.style.height='';
+  const mx=f.querySelector('[data-maxi]');
+  if(mx){const setMax=on=>{MD.classList.toggle('max',on);mx.innerHTML=ic(on?'mini':'maxi');mx.title=on?'Restore size':'Maximize (see everything)';mx.setAttribute('aria-label',on?'Restore size':'Maximize')};
+    let keep=false;try{keep=localStorage.getItem('hris-modal-max')==='1'}catch(e){}setMax(keep);
+    mx.addEventListener('click',()=>{const on=!MD.classList.contains('max');MD.style.width=MD.style.height='';setMax(on);try{localStorage.setItem('hris-modal-max',on?'1':'0')}catch(e){}})}
   if(!MD.open)MD.showModal();
   onOpen&&onOpen(f);
   const first=f.querySelector('.mbody input,.mbody select,.mbody textarea');if(first)first.focus();
