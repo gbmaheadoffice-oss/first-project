@@ -1196,7 +1196,7 @@ function otrepDays(e,a,b,byDay){
   return rangeDays(a,b).map(d=>{const m=d.slice(0,7);const doc=docs[m]!==undefined?docs[m]:(docs[m]=attDoc(e.id,m)||null);
     const r=doc&&doc.days?doc.days[d]||null:null;const reqs=byDay[`${e.id}|${d}`]||[];
     const sum=st=>reqs.filter(o=>o.status===st).reduce((t,o)=>t+(Number(o.hours)||0)*60,0);
-    const ap=sum('Approved'),pend=sum('Pending'),act=otActualMin(d,r,sc);
+    const ap=sum('Approved'),pend=sum('Pending'),act=otBlock(otActualMin(d,r,sc));
     return{d,r,reqs,ap,pend,act,pay:Math.min(ap,act),noOut:ap>0&&!(r&&r.in&&r.out)}});
 }
 function otrepRows(){
@@ -1404,6 +1404,8 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60))}:${pad(m%60)}`);
 // the allowance are overbreak. Regular hours = the schedule less the 2nd break (the 15-min breaks are paid), less
 // late, undertime and overbreak within the schedule. OT = time after the schedule end, less the breaks taken in it.
 // minutes of a span (minutes from midnight) that fall in night-differential hours, 10 PM – 6 AM
+// OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
+const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,b-Math.max(a,1320));
 function tkRowell(e,ts){
   const m=ts.map(tkMins),n=m.length,start=e.shiftStart?tkMins(e.shiftStart):360;
@@ -1416,11 +1418,11 @@ function tkRowell(e,ts){
     breaks.push({a,b,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
   const obReg=breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0),ob=breaks.reduce((t,x)=>t+x.ob,0);
   const reg=out==null?null:Math.max(0,end-start-meal-late-ut-obReg);
-  const ot=out==null?0:Math.max(0,out-Math.max(end,inn)-breaks.filter(x=>x.ot).reduce((t,x)=>t+x.dur,0));
+  const otRaw=out==null?0:Math.max(0,out-Math.max(end,inn)-breaks.filter(x=>x.ot).reduce((t,x)=>t+x.dur,0)),ot=otBlock(otRaw);
   const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(end,inn),oB=out==null?oA:out;
   const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.b,rB)),0));
-  const ndot=out==null?0:Math.max(0,tkNight(oA,oB)-breaks.filter(x=>x.ot).reduce((t,x)=>t+tkNight(x.a,x.b),0));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,nd,ndot,odd};
+  const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)-breaks.filter(x=>x.ot).reduce((t,x)=>t+tkNight(x.a,x.b),0)));
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,otRaw,nd,ndot,odd};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
