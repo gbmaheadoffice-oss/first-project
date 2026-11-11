@@ -1180,10 +1180,10 @@ function viewOvertime(id){
 /* ---- Overtime Summary: approved overtime (Overtime Requests) against actual overtime (Attendance time in/out), per employee ----
    Actual overtime of a workday = time out after the shift end. Rest day or holiday = the whole time in to time out.
    Payable = for each day, the smaller of approved and actual. */
-function otActualMin(d,r,sc){
+function otActualMin(d,r,sc,e){
   if(!r||!r.in||!r.out||r.status==='absent')return 0;
   let i=tmin(r.in),o=tmin(r.out);
-  if(r.status==='holiday'||r.status==='restday'||(parse(d).getDay()===0&&!r.status)){if(o<=i)o+=1440;return o-i}
+  if(r.status==='holiday'||r.status==='restday'||(isRest(e,d)&&!r.status)){if(o<=i)o+=1440;return o-i}
   const s=tmin(sc.start);let en=tmin(sc.end);if(en<=s){en+=1440;if(i<s-360)i+=1440}if(o<=i)o+=1440;
   return Math.max(0,o-en);
 }
@@ -1196,7 +1196,7 @@ function otrepDays(e,a,b,byDay){
   return rangeDays(a,b).map(d=>{const m=d.slice(0,7);const doc=docs[m]!==undefined?docs[m]:(docs[m]=attDoc(e.id,m)||null);
     const r=doc&&doc.days?doc.days[d]||null:null;const reqs=byDay[`${e.id}|${d}`]||[];
     const sum=st=>reqs.filter(o=>o.status===st).reduce((t,o)=>t+(Number(o.hours)||0)*60,0);
-    const ap=sum('Approved'),pend=sum('Pending'),act=otBlock(otActualMin(d,r,sc));
+    const ap=sum('Approved'),pend=sum('Pending'),act=otBlock(otActualMin(d,r,sc,e));
     return{d,r,reqs,ap,pend,act,pay:Math.min(ap,act),noOut:ap>0&&!(r&&r.in&&r.out)}});
 }
 function otrepRows(){
@@ -1256,7 +1256,7 @@ function otrepView(empId){
     <div class="dchips"><span class="chip">Approved ${otH(s.ap)}</span><span class="chip">Actual on approved days ${otH(s.actAp)}</span><span class="chip ok">Payable ${otH(s.pay)}</span>${s.extra?`<span class="chip bad">Without approval ${otH(s.extra)}</span>`:''}${s.pend?`<span class="chip info">Pending ${otH(s.pend)}</span>`:''}</div>
     <div class="tw" style="margin:0"><table class="tbl" style="min-width:860px"><thead><tr><th>Date</th><th class="r">Approved</th><th class="r">Pending</th><th>Time in – out</th><th class="r">Actual OT</th><th class="r">Payable</th><th>Reason for Overtime</th><th>Note</th></tr></thead><tbody>
     ${days.map(x=>`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="r num">${otH(x.ap)}</td><td class="r num">${otH(x.pend)}</td>
-      <td class="num">${x.r&&x.r.in?`${fmtTime(x.r.in)} – ${x.r.out?fmtTime(x.r.out):'?'}`:'<span class="att-muted">No record</span>'}${x.r&&(x.r.status==='holiday'||x.r.status==='restday'||(parse(x.d).getDay()===0&&!x.r.status))?' <span class="sub">rest day / holiday</span>':''}</td>
+      <td class="num">${x.r&&x.r.in?`${fmtTime(x.r.in)} – ${x.r.out?fmtTime(x.r.out):'?'}`:'<span class="att-muted">No record</span>'}${x.r&&(x.r.status==='holiday'||x.r.status==='restday'||(isRest(e,x.d)&&!x.r.status))?' <span class="sub">rest day / holiday</span>':''}</td>
       <td class="r num">${otH(x.act)}</td><td class="r num">${otH(x.pay)}</td>
       <td style="max-width:280px">${x.reqs.filter(o=>o.status!=='Declined'&&String(o.reason||'').trim()).map(o=>`<div class="sub" style="color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere">${esc(String(o.reason).trim())}</div>`).join('')||'<span class="sub">—</span>'}</td>
       <td>${x.noOut?'<span class="chip">No time out</span>':x.ap&&x.act<x.ap?'<span class="chip warn">Short</span>':!x.ap&&x.act?`<span class="chip bad">No approved OT</span>`:''}</td></tr>`).join('')}
@@ -1431,13 +1431,15 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 // OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
 const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,Math.min(b,1800)-Math.max(a,1320));
-function tkRowell(e,ts){
+function tkRowell(e,ts,d){
   const m=ts.map(tkMins),n=m.length,inn=m[0],s201=e.shiftStart?tkMins(e.shiftStart):360;
   // 201 shift length: 8 h (6-2) or 9 h (6-3). A shift end before the start ("2:00" without AM/PM from the masterlist) is read as PM.
   let e201=e.shiftEnd?tkMins(e.shiftEnd):null;if(e201!=null){if(e201<=s201&&e201<720)e201+=720;if(e201<=s201)e201+=1440}
   // the shift worked that day: the start nearest the time in — the 201 start (day shift), 2:00 PM, or 6:00 PM (night shift)
-  const start=[s201,840,1080].reduce((b,x)=>Math.abs(inn-x)<Math.abs(inn-b)?x:b);
-  const len=start===840?480:e201!=null&&e201-s201>=480&&e201-s201<=600?e201-s201:n>1&&n%2===0&&m[n-1]>=start+540?540:480;
+  // Sundays: everyone who works has a fixed 8-hour shift, 6-2 (6 AM – 2 PM) or 2-10 (2 PM – 10 PM)
+  const sun=!!d&&parse(d).getDay()===0;
+  const start=(sun?[360,840]:[s201,840,1080]).reduce((b,x)=>Math.abs(inn-x)<Math.abs(inn-b)?x:b);
+  const len=sun||start===840?480:e201!=null&&e201-s201>=480&&e201-s201<=600?e201-s201:n>1&&n%2===0&&m[n-1]>=start+540?540:480;
   const end=start+len,meal=len>=540?60:30,odd=n%2===1,out=odd?null:m[n-1];
   const late=Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
   const breaks=[];let pre=0,post=0;
@@ -1462,7 +1464,7 @@ const tkCur=()=>{const L=tkSorted();return L.find(x=>x.id===UI.tk.id)||L[0]||nul
 function tkEmpRows(doc){
   if(!doc)return[];const idx=tkIndex(S.employees),all=tkIndex(ALL_EMPLOYEES||S.employees),by={};
   tkShifts(doc).forEach(r=>{const k=tkKey(r.emp);const e=idx[k]||null;if(!e&&all[k])return;const g=by[k]||(by[k]={k,emp:r.emp,name:r.name,e,days:[]});g.days.push(r)});
-  return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
+  return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t,x.d)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
     const s={days:g.days.length,inc:g.days.filter(x=>x.t.length%2).length,mins:g.days.reduce((t,x)=>t+tkHours(x.t),0)};
     if(calc)Object.assign(s,{late:sum('late'),ut:sum('ut'),ob:sum('ob'),reg:sum('reg'),ot:sum('ot')});
     return{...g,rule,calc,s}})
@@ -1482,17 +1484,17 @@ function tkDayRows(doc,d){
   tkShifts(doc).forEach(r=>{const k=tkKey(r.emp),e=idx[k];if(e&&e.client)sites.add(e.client);if(r.d===d)logs[k]=r});
   const out=[],seen=new Set();
   S.employees.filter(e=>e.biometricId&&sites.has(e.client)&&(isActive(e)||logs[tkKey(e.biometricId)])&&!(e.hireDate&&e.hireDate>d)).forEach(e=>{const k=tkKey(e.biometricId);if(seen.has(k))return;seen.add(k);
-    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,c:lg&&rule?rule.day(e,lg.t):null,leave:!lg&&leaveOn(e.id,d)})});
+    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,c:lg&&rule?rule.day(e,lg.t,d):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
   Object.keys(logs).forEach(k=>{if(seen.has(k)||all[k])return;const lg=logs[k];out.push({k,emp:lg.emp,name:lg.name,e:null,rule:null,log:lg,c:null})});
   return out.sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
 }
 const TKD_TABS=['All','Present','Late','Absent','Missing log','Overbreak','Not in 201 files'];
-const tkdTest={'All':()=>true,'Present':r=>!!r.log,'Late':r=>!!(r.c&&r.c.late),'Absent':r=>!r.log&&!r.leave,'Missing log':r=>!!(r.log&&r.log.t.length%2),'Overbreak':r=>!!(r.c&&r.c.ob),'Not in 201 files':r=>!r.e};
+const tkdTest={'All':()=>true,'Present':r=>!!r.log,'Late':r=>!!(r.c&&r.c.late),'Absent':r=>!r.log&&!r.leave&&!r.rest,'Missing log':r=>!!(r.log&&r.log.t.length%2),'Overbreak':r=>!!(r.c&&r.c.ob),'Not in 201 files':r=>!r.e};
 function tkDayFiltered(doc,d){const f=UI.tk,q=f.q.trim().toLowerCase();
   return tkDayRows(doc,d).filter(r=>(!f.client||(r.e&&r.e.client===f.client))&&(!q||[r.emp,r.name,r.e&&fullName(r.e),r.e&&r.e.empNo,r.e&&r.e.client].join(' ').toLowerCase().includes(q)))}
 const tkDayOf=doc=>{const d=UI.tk.day;return d&&d>=doc.from&&d<=doc.to?d:doc.from};
 function tkDayCells(r){
-  if(!r.log)return r.leave?{inn:'LEAVE',out:'LEAVE',cls:'info'}:{inn:'ABSENT',out:'ABSENT',cls:'bad'};
+  if(!r.log)return r.rest?{inn:'REST DAY',out:'REST DAY',cls:''}:r.leave?{inn:'LEAVE',out:'LEAVE',cls:'info'}:{inn:'ABSENT',out:'ABSENT',cls:'bad'};
   const t=r.log.t,odd=t.length%2,c=r.c;
   return{inn:tkT(t[0]),out:odd?'':tkT(t[t.length-1]),late:c?c.late:0,reg:c?c.reg:null,ot:c?c.ot:0,nd:c?c.nd:0,ndot:c?c.ndot:0,c,odd};
 }
@@ -1720,6 +1722,10 @@ const hm=m=>m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;
 function monthDays(m){const[y,mo]=m.split('-').map(Number);const n=new Date(y,mo,0).getDate();return Array.from({length:n},(_,i)=>`${m}-${pad(i+1)}`)}
 const fmtMonth=m=>{const[y,mo]=m.split('-').map(Number);return new Date(y,mo-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'})};
 const schedOf=e=>({start:e.shiftStart||ATTSET.start,end:e.shiftEnd||ATTSET.end,grace:+(ATTSET.grace||0)});
+// rest day per employee (201 file → Rest day): 0 = Sunday (the default) … 6 = Saturday
+const WEEKDAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const restDayOf=e=>e&&e.restDay!=null&&e.restDay!==''&&!isNaN(+e.restDay)?+e.restDay:0;
+const isRest=(e,d)=>parse(d).getDay()===restDayOf(e);
 const attDoc=(empId,m)=>S.attendance.find(a=>a.id===`${empId}_${m}`);
 const leaveOn=(empId,d)=>S.leaves.find(l=>l.employeeId===empId&&l.status==='Approved'&&l.from<=d&&d<=l.to);
 function dayInfo(e,d,rec,sc){
@@ -1728,7 +1734,7 @@ function dayInfo(e,d,rec,sc){
   const sepD=empStatus(e)!=='Active'?(e.separationDate||e.blocklistDate||''):'';if(sepD&&d>sepD)return{st:'na'};
   if(d>t||(d===t&&!r.in&&!r.status))return{st:'future'};
   if(r.status==='holiday')return{st:'holiday'};
-  const rest=parse(d).getDay()===0;
+  const rest=isRest(e,d);
   if(r.status==='restday'||(rest&&!r.status))return r.in?{st:'restwork',in:r.in,out:r.out}:{st:'restday'};
   const lv=leaveOn(e.id,d);
   if(lv&&!r.in&&r.status!=='absent')return{st:'leave',leave:lv.type,half:lv.type==='Half Day'};
@@ -1938,7 +1944,7 @@ EMP-0201,2026-10-02,8:12 AM,5:00 PM</pre><span>or one row per biometric punch: <
       for(const k of keys){const g=groups[k];n++;sb.textContent=`Saving ${n} of ${keys.length}…`;
         const doc=attDoc(g.e.id,g.m);const days=clone((doc&&doc.days)||{});
         g.rows.forEach(r=>{days[r.d]={in:r.in,...(r.out?{out:r.out}:{})}});
-        if(fd.get('absent'))monthDays(g.m).forEach(d=>{if(d<from||d>to||d>=today()||days[d]||parse(d).getDay()===0||leaveOn(g.e.id,d)||(g.e.hireDate&&d<g.e.hireDate))return;days[d]={status:'absent'}});
+        if(fd.get('absent'))monthDays(g.m).forEach(d=>{if(d<from||d>to||d>=today()||days[d]||isRest(g.e,d)||leaveOn(g.e.id,d)||(g.e.hireDate&&d<g.e.hireDate))return;days[d]={status:'absent'}});
         await save('attendance',{id:k,employeeId:g.e.id,month:g.m,days,...(doc&&doc.createdAt?{createdAt:doc.createdAt}:{})})}
       UI.att.month=from.slice(0,7);UI.att.lastMonth=UI.att.month;UI.att.lastClient=UI.att.client;UI.att.from=from;UI.att.to=to;UI.att.custom=true;
       toast(`Imported attendance for ${new Set(keys.map(k=>groups[k].e.id)).size} employees.`);
@@ -2978,7 +2984,7 @@ function empForm(id,pre){
     ${F('hireDate','Date hired',{type:'date',req:1,help:'Sets the evaluation dates and the end of the probationary contract.'})}
     <div class="field"><span class="flabel">End of probationary contract</span><div id="ef-probend" class="ro-val">${fmt(probEnd(e))}</div><p class="help" style="margin:0">Six months from the date hired.</p></div>
     ${F('regularizedOn','Date of regularization',{type:'date',help:'Leave blank while on probation.'})}
-    ${F('shiftStart','Shift start (own schedule)',{type:'time',help:`Leave blank to use the default ${fmtTime(ATTSET.start)} – ${fmtTime(ATTSET.end)}.`})}${F('shiftEnd','Shift end (own schedule)',{type:'time'})}
+    ${F('shiftStart','Shift start (own schedule)',{type:'time',help:`Leave blank to use the default ${fmtTime(ATTSET.start)} – ${fmtTime(ATTSET.end)}.`})}${F('shiftEnd','Shift end (own schedule)',{type:'time'})}${F('restDay','Rest day',{type:'select',blank:'Sunday (default)',opts:WEEKDAYS.map((w,i)=>[String(i),w]).slice(1),help:'Days without logs on the rest day show as Rest day, not Absent.'})}
   </div></fieldset>
   <fieldset><legend>Contracts, orientation and deployment</legend><div class="fg">
     ${F('probContractNo','Probationary contract control no.')}${F('regContractNo','Regularization contract control no.')}
@@ -3069,7 +3075,7 @@ function empForm(id,pre){
         sb.textContent='Saving…'}
       if(acct&&newProof&&!(ups.__bank||[]).length&&!(prevBank.proof||[]).length){sb.textContent=id?'Save changes':'Add employee';setErr(f.querySelector('#ef-bankproof'),'The account photo did not upload: '+errs.join(' · '));return false}
       const o=id?clone(EMP[id]):{id:uid(),evals:{},...(pre&&pre.applicantId?{applicantId:pre.applicantId}:{})};
-      ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','supervisorName','supervisorEmail','shiftStart','shiftEnd','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
+      ['firstName','middleName','lastName','suffix','gender','birthDate','civilStatus','mobile','email','client','empNo','position','department','site','supervisorName','supervisorEmail','shiftStart','shiftEnd','restDay','birthPlace','nationality','religion','dependents','education','school','course','biometricId','probContractNo','regContractNo','companyOrientation','clientOrientation','clientMrNo','endorsementNo','dailySalary','monthlySalary','allowance','allowanceNote','medicalDate','medicalClinic','medicalResult','hdmfTracking','employmentType','status','hireDate','regularizedOn','sss','philhealth','pagibig','tin','emergencyName','emergencyRelation','emergencyPhone'].forEach(k=>o[k]=String(fd.get(k)||'').trim());
       for(const k of['dailySalary','monthlySalary','allowance']){const t=unComma(o[k]);if(t&&(isNaN(+t)||+t<0)){sb.textContent=id?'Save changes':'Add employee';setErr(f[k],'Enter an amount, e.g. 12,345.00');return false}o[k]=t}
       {const A=f._addr,pa=A.PA.get(),pm=A.same.checked?pa:A.PM.get();o.addr=pa;o.permAddr=pm;o.address=addrLine(pa);o.permanentAddress=addrLine(pm)}
       if(o.employmentType==='Regular'&&!o.regularizedOn&&EMP[id]&&EMP[id].employmentType==='Probationary')o.regularizedOn=today();
