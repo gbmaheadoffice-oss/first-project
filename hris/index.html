@@ -1278,7 +1278,7 @@ async function otrepXlsx(){
   const day=UI.otrep.mode!=='emp';const rows=day?otrepDayAoa():otrepList();if(!rows.length){toast(day?'There is no approved overtime to export.':'There is no overtime to export.',{kind:'bad'});return}
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
-  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const cols=day?OTDAY_COLS:OTREP_COLS;
   const aoa=xlInfo(day?'OVERTIME SUMMARY – PER PERSON, PER DAY':'OVERTIME SUMMARY – TOTALS PER EMPLOYEE',[['CLIENT:',UI.otrep.client||'All client companies'],['COVERED PERIOD:',`${fmt(UI.otrep.from)} – ${fmt(UI.otrep.to)}`],['SHOWING:',UI.otrep.tab!=='All'?UI.otrep.tab:'']]).concat([cols],day?rows:rows.map(otrepLine));
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=(day?[32,20,16,80]:[12,28,30,10,12,14,12,12,14,12,12,60]).map(w=>({wch:w}));
@@ -1566,7 +1566,7 @@ async function tkDayXlsx(){
   const doc=tkCur();if(!doc)return;
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
-  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const wb=X.utils.book_new(),COLS=['NAME','AC-NO.','SITE','IN','OUT','LATE (MIN)','REG HRS','OT','ND','NDOT','REMARKS'];let n=0;
   for(let d=doc.from;d<=doc.to;d=addDays(d,1)){
     const rows=tkDayFiltered(doc,d);if(!rows.some(r=>r.log))continue;n++;
@@ -1591,7 +1591,7 @@ async function tkXlsx(){
   const doc=tkCur();const rows=tkFiltered(doc).filter(tkTest[UI.tk.tab]||tkTest.All);if(!rows.length){toast('There are no time logs to export.',{kind:'bad'});return}
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
-  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const COLS=['AC-No.','ID Number','Name','Client Company','Date','Day','Time In','Time Out','All Logs','Hours (first to last log)','Schedule','Late (min)','Undertime (min)','Overbreak (min)','Regular Hours','OT Hours','Note'];
   const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
   const aoa=xlInfo('TIME KEEP',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`],['BIOMETRICS FILE:',doc.fileName||'']]).concat([COLS]);const top=aoa.length-1;
@@ -1653,7 +1653,7 @@ async function lrepXlsx(){
   const rows=lrepList();if(!rows.length){toast('There are no leaves to export.',{kind:'bad'});return}
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view. Use Copy list instead.',{kind:'bad'});return}
-  let X;try{X=await loadXLSX()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
   const aoa=xlInfo('LEAVE SUMMARY REPORT',[['CLIENT:',UI.lrep.client||'All client companies'],['COVERED PERIOD:',`${fmt(UI.lrep.from)} – ${fmt(UI.lrep.to)}`],['LEAVE TYPE:',UI.lrep.type],['SHOWING:',UI.lrep.tab!=='All'?UI.lrep.tab:'']]).concat([LREP_COLS],rows.map(lrepLine));
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,28,30,24,14,40,12,12,7,12,18,16,16,16,12].map(w=>({wch:w}));
   ws['!autofilter']={ref:X.utils.encode_range({s:{r:aoa.length-rows.length-1,c:0},e:{r:aoa.length-1,c:LREP_COLS.length-1}})};
@@ -2373,7 +2373,7 @@ function statusForm(id){
 }
 
 /* ---------------- 201 file export to Excel (.xlsx) ---------------- */
-let XLSXP=null;
+let XLSXP=null,XLSXWP=null;
 /* ---- GBMA Excel template, based on the Rowell Daily Consolidated Report (applied when a sheet is added to a workbook):
    info boxes on top (CLIENT:, COVERED PERIOD:, … in bold on peach with thick borders), a black date bar right above the header,
    navy header with white bold labels, names in bold on peach, thin borders, hours as 0.00, ABSENT and problems in red,
@@ -2434,11 +2434,17 @@ function xlTemplate(X){
   }
   return X;
 }
-function loadXLSX(){
-  if(window.XLSX)return Promise.resolve(window.XLSX);if(XLSXP)return XLSXP;
-  XLSXP=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';s.onload=()=>window.XLSX?res(xlTemplate(window.XLSX)):rej(new Error('missing'));s.onerror=()=>{XLSXP=null;rej(new Error('load failed'))};document.head.appendChild(s)});
-  return XLSXP;
+// Two Excel libraries: the full SheetJS build reads uploads (it has the code pages old .xls files from biometrics devices need);
+// xlsx-js-style writes the exports, because only it saves colors and bold. Each keeps its own copy; window.XLSX is put back after loading.
+function xlLoad(src){
+  return new Promise((res,rej)=>{const prev=window.XLSX;const s=document.createElement('script');s.src=src;
+    s.onload=()=>{const L=window.XLSX;window.XLSX=prev;L&&L!==prev?res(L):rej(new Error('missing'))};
+    s.onerror=()=>{window.XLSX=prev;rej(new Error('load failed'))};document.head.appendChild(s)});
 }
+// for reading uploaded files
+function loadXLSX(){return XLSXP||(XLSXP=xlLoad('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js').catch(e=>{XLSXP=null;throw e}))}
+// for exports (GBMA template styling)
+function loadXLSXW(){return XLSXWP||(XLSXWP=xlLoad('https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js').then(xlTemplate).catch(e=>{XLSXWP=null;throw e}))}
 function empFiltered(){
   const f=UI.emp;const q=f.q.trim().toLowerCase();
   let list=S.employees.filter(e=>(!f.tag||(f.tag==='solo'&&e.soloParent)||(f.tag==='pwd'&&e.pwd))&&(!f.client||(e.client||'')===f.client)&&(!f.dept||deptKey(e.department)===deptKey(f.dept))&&empView(e,f));
@@ -2505,7 +2511,7 @@ function export201(){
       const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
       if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return false}
       const sb=f.querySelector('button[type=submit]');sb.textContent='Preparing workbook…';
-      let X;try{X=await loadXLSX()}catch(err){sb.textContent='Export to Excel';toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return false}
+      let X;try{X=await loadXLSXW()}catch(err){sb.textContent='Export to Excel';toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return false}
       const cols=empColumns();
       const rows=[cols.map(c=>c[0])].concat(list.map(e=>cols.map(c=>{const v=c[1](e);return v==null?'':v})));
       const ws=X.utils.aoa_to_sheet(rows);
@@ -2759,7 +2765,7 @@ async function impAddresses(plan){
     if(o.permAddr===null){const g=o.permanentAddress?guessAddr(M,o.permanentAddress):null;if(g&&g.city){o.permAddr=g;o.permanentAddress=addrLine(g)}else delete o.permAddr}});
 }
 async function templateBlob(){
-  const X=await loadXLSX();
+  const X=await loadXLSXW();
   const cols=IMP_COLS.slice(0,IMP_TPL);
   const ws=X.utils.aoa_to_sheet([cols.map(c=>c[0]+(c[5]?' *':''))]);
   /* ID, phone and account columns are formatted as Text so Excel keeps leading zeros and long numbers */
