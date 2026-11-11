@@ -1490,7 +1490,7 @@ function tkDayView(doc){
 }
 VIEWS.timekeep=function(){
   const f=UI.tk,L=tkSorted(),doc=tkCur();
-  let h=groupTabs()+ph('Time Keep','Upload the attendance log extracted from the biometrics device for each cut-off. Every time log is kept per employee and per day. The <b>AC-No.</b> in the file is matched to the <b>Biometric ID no.</b> in each employee’s 201 file. Late, undertime, overbreak, regular hours and OT follow each site’s time keep rules (set for: ${TK_RULES.map(r=>r.name).join(', ')}).',
+  let h=groupTabs()+ph('Time Keep',`Upload the attendance log extracted from the biometrics device for each cut-off. Every time log is kept per employee and per day. The <b>AC-No.</b> in the file is matched to the <b>Biometric ID no.</b> in each employee’s 201 file. Late, undertime, overbreak, regular hours and OT follow each site’s time keep rules (set for: ${TK_RULES.map(r=>r.name).join(', ')}).`,
     `${doc?`<button class="btn ghost" data-act="tk-xlsx">${ic('download')}Export to Excel</button>`:''}<button class="btn" data-act="tk-upload" data-write>${ic('upload')}Upload biometrics file</button>`);
   if(!doc)return h+emptyBlock('No biometrics file yet','Upload the extraction from the biometrics device (Excel, CSV, or the .dat / .txt attendance log) to see the time logs here.');
   const all=f.mode==='emp'?tkFiltered(doc):[],rows=all.filter(tkTest[f.tab]||tkTest.All);
