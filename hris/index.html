@@ -1403,8 +1403,8 @@ const TK_GAP=420,TK_CARRY=270;
 const tkDayNo=d=>Math.round(Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))/864e5);
 const tkDayIso=n=>new Date(n*864e5).toISOString().slice(0,10);
 const TKSH=new WeakMap();
-function tkShifts(doc){
-  if(!doc)return[];const hit=TKSH.get(doc);if(hit)return hit;
+// the first grouping, by the gaps between logs; used to guess each person's shift (and for the attendance import)
+function tkGapShifts(doc,each){
   const by={};(doc.rows||[]).forEach(r=>{const g=by[r.emp]||(by[r.emp]={emp:r.emp,name:r.name,L:[]});const b=tkDayNo(r.d)*1440;r.t.forEach(t=>g.L.push(b+tkMins(t)))});
   const out=[];
   Object.values(by).forEach(g=>{const L=g.L.sort((a,b)=>a-b);let cur=null;
@@ -1413,9 +1413,55 @@ function tkShifts(doc){
     // a gap of over 7 hours ends the shift only when the shift so far has an even number of logs: with an odd number
     // (e.g. 5:55 AM in, no break logs, 6:00 PM out) the next log is its time out. A shift never runs past 16 hours.
     L.forEach(x=>{if(cur&&(x-cur[0]>960||x-cur[cur.length-1]>TK_GAP&&cur.length%2===0))done();(cur=cur||[]).push(x)});done()});
+  if(each)return out;
   // two shifts starting on the same date (rare) are kept as one day
   const m={};out.forEach(r=>{const k=r.emp+'|'+r.d;if(m[k])m[k].t=m[k].t.concat(r.t);else m[k]=r});
-  const res=Object.values(m).sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
+  return Object.values(m).sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
+}
+/* Shift roster: each person works the Day shift (6 AM), the 2-10 shift (2 PM) or the Night shift (6 PM) each day.
+   HR can set it per week (Mon–Sat) in Time Keep → Shift roster; it is saved in the upload as doc.roster
+   {"<AC-No.>|<Monday>": "day"|"mid"|"night"}. Without it the shift is guessed from that day's time in (the first log
+   at or after 4:30 AM), then from the week's most common shift. Sundays are always guessed (6-2 or 2-10).
+   Each duty day then owns a fixed window of logs: Day from 4:00 AM, 2-10 from 10:00 AM, Night from 2:00 PM, up to
+   the start of the next day's window. A night shift's window runs to 12:00 noon the next day when the person worked
+   that night and the next day is not a night shift, so the 6 AM time out stays with the night it ends. */
+const TK_TYPES={day:{name:'Day',hrs:'starts 6 AM',start:360,from:240},mid:{name:'2-10',hrs:'2 PM – 10 PM',start:840,from:600},night:{name:'Night',hrs:'starts 6 PM',start:1080,from:840}};
+const tkMon=d=>{const n=tkDayNo(d);return tkDayIso(n-(new Date(n*864e5).getUTCDay()+6)%7)};
+const tkSun=d=>new Date(tkDayNo(d)*864e5).getUTCDay()===0;
+const tkGuess=(t,sun)=>{const x=tkMins(t);return(sun?['day','mid']:['day','mid','night']).reduce((b,k)=>Math.abs(x-TK_TYPES[k].start)<Math.abs(x-TK_TYPES[b].start)?k:b)};
+// the guessed shift per AC-No. and date, and per AC-No. and week
+function tkAuto(doc){
+  if(doc._auto)return doc._auto;
+  const day={},wk={};
+  // each shift's first log is its time in; a shift that starts before 4:30 AM is the tail of a night,
+  // and a lone morning log (e.g. only a 6:01 AM time out) could be either, so neither says anything.
+  // When a date has two, the one with more logs counts.
+  const n={};
+  tkGapShifts(doc,1).forEach(r=>{const t=r.t[0];if(tkMins(t)<TK_CARRY||r.t.length<2&&tkMins(t)<720)return;const k=tkKey(r.emp),kd=k+'|'+r.d;if(n[kd]>=r.t.length)return;n[kd]=r.t.length;const g=tkGuess(t,tkSun(r.d));day[kd]=g;
+    if(!tkSun(r.d)){const w=wk[k+'|'+tkMon(r.d)]=wk[k+'|'+tkMon(r.d)]||{};w[g]=(w[g]||0)+1}});
+  const week={};Object.entries(wk).forEach(([k,c])=>{week[k]=Object.keys(c).reduce((b,x)=>c[x]>c[b]?x:b)});
+  Object.defineProperty(doc,'_auto',{value:{day,week},configurable:true});return doc._auto;
+}
+// the shift of one person on one date: Sunday guessed, else the roster, else that day's guess, else the week's
+function tkType(doc,k,d){
+  const a=tkAuto(doc),w=k+'|'+tkMon(d);
+  if(tkSun(d))return a.day[k+'|'+d]||'day';
+  return(doc.roster||{})[w]||a.day[k+'|'+d]||a.week[w]||'day';
+}
+function tkShifts(doc){
+  if(!doc)return[];const hit=TKSH.get(doc);if(hit)return hit;
+  if(!doc.to){const r=tkGapShifts(doc);TKSH.set(doc,r);return r} // the attendance import has no roster
+  const by={};(doc.rows||[]).forEach(r=>{const g=by[r.emp]||(by[r.emp]={emp:r.emp,name:r.name,L:[]});const b=tkDayNo(r.d)*1440;r.t.forEach(t=>g.L.push(b+tkMins(t)))});
+  const d0=tkDayNo(doc.from),d1=tkDayNo(doc.to),out=[];
+  Object.values(by).forEach(g=>{const k=tkKey(g.emp),L=g.L.sort((a,b)=>a-b);
+    const ty=[];for(let n=d0;n<=d1;n++)ty.push(tkType(doc,k,tkDayIso(n)));
+    // window start of each date; on the first date logs before 4:30 AM (or before 2 PM for a night) end an earlier shift
+    const st=ty.map((t,i)=>(d0+i)*1440+(i===0&&t!=='night'?Math.max(TK_CARRY,TK_TYPES[t].from):TK_TYPES[t].from));
+    if(L.some(x=>x>=d0*1440&&x<d0*1440+TK_CARRY))st[0]=Math.max(st[0],d0*1440+720); // the tail of a night before the cut-off
+    for(let i=0;i+1<ty.length;i++)if(ty[i]==='night'&&ty[i+1]!=='night'&&L.some(x=>x>=st[i]&&x<(d0+i+1)*1440+TK_CARRY))st[i+1]=Math.max(st[i+1],(d0+i+1)*1440+720);
+    ty.forEach((t,i)=>{const a=st[i],b=i+1<st.length?st[i+1]:Infinity,base=(d0+i)*1440,ls=L.filter(x=>x>=a&&x<b);if(!ls.length)return;
+      out.push({emp:g.emp,name:g.name,d:tkDayIso(d0+i),type:t,set:!tkSun(tkDayIso(d0+i))&&!!(doc.roster||{})[k+'|'+tkMon(tkDayIso(d0+i))],t:ls.map(x=>{const m=x-base;return`${pad(Math.floor(m/60))}:${pad(m%60)}`})})})});
+  const res=out.sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
   TKSH.set(doc,res);return res;
 }
 // a log time for display: 24:26 (after midnight) shows as 12:26 AM
@@ -1432,7 +1478,7 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 // OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
 const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,Math.min(b,1800)-Math.max(a,1320));
-function tkRowell(e,ts,d){
+function tkRowell(e,ts,d,type){
   let m=ts.map(tkMins),lone=null;
   // the time in or time out tapped twice within 2 minutes counts once
   if(m.length>=3&&m[1]-m[0]<=2)m=m.slice(1);if(m.length>=3&&m[m.length-1]-m[m.length-2]<=2)m=m.slice(0,-1);
@@ -1442,13 +1488,15 @@ function tkRowell(e,ts,d){
   // the shift worked that day: the start nearest the time in — the 201 start (day shift), 2:00 PM, or 6:00 PM (night shift)
   // Sundays: everyone who works has a fixed 8-hour shift, 6-2 (6 AM – 2 PM) or 2-10 (2 PM – 10 PM)
   const sun=!!d&&parse(d).getDay()===0;
-  const start=(sun?[360,840]:[s201,840,1080]).reduce((b,x)=>Math.abs(inn-x)<Math.abs(inn-b)?x:b);
+  // with the shift from the roster (or its guess): Day = the 201 start (6 AM on Sundays), 2-10 = 2 PM, Night = 6 PM
+  const start=type&&TK_TYPES[type]?(type==='day'?(sun?360:s201):TK_TYPES[type].start):(sun?[360,840]:[s201,840,1080]).reduce((b,x)=>Math.abs(inn-x)<Math.abs(inn-b)?x:b);
   // an odd number of logs whose last log is at or after the 8-hour end: the time in and time out are there and one break
   // was tapped only once (common on the night shift, e.g. one tap at 12:30 AM). The lone tap is the one that leaves the
   // shortest breaks when taken out; it counts as a break of its allowed length with no overbreak.
   // the time in was not logged: the first log is 2 hours or more after the start and the next log follows within
   // 45 minutes, so the two are a break (e.g. 8:47 PM – 9:04 PM on the night shift), not a time in
-  const noIn=m.length>=2&&inn-start>=120&&m[1]-inn<45;
+  // Also when the first log is 6 hours or more after the start (e.g. 12:30 AM on a night shift): more than half the shift.
+  const noIn=m.length>=2&&(inn-start>=120&&m[1]-inn<45||inn-start>=360);
   if(!noIn&&m.length%2&&m.length>=3&&m[m.length-1]>=start+480){let best=1,bt=Infinity;
     for(let k=1;k<m.length-1;k++){const r=m.filter((_,i)=>i!==k);let t=0;for(let j=1;j+1<r.length;j+=2)t+=r[j+1]-r[j];if(t<bt){bt=t;best=k}}
     lone=m[best];m=m.filter((_,i)=>i!==best)}
@@ -1492,7 +1540,7 @@ const tkCur=()=>{const L=tkSorted();return L.find(x=>x.id===UI.tk.id)||L[0]||nul
 function tkEmpRows(doc){
   if(!doc)return[];const idx=tkIndex(S.employees),all=tkIndex(ALL_EMPLOYEES||S.employees),by={};
   tkShifts(doc).forEach(r=>{const k=tkKey(r.emp);const e=idx[k]||null;if(!e&&all[k])return;const g=by[k]||(by[k]={k,emp:r.emp,name:r.name,e,days:[]});g.days.push(r)});
-  return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t,x.d)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
+  return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t,x.d,x.type)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
     const s={days:g.days.length,inc:g.days.filter((x,i)=>calc?calc[i].odd:x.t.length%2).length,mins:g.days.reduce((t,x)=>t+tkHours(x.t),0)};
     if(calc)Object.assign(s,{late:sum('late'),ut:sum('ut'),ob:sum('ob'),reg:sum('reg'),ot:sum('ot')});
     return{...g,rule,calc,s}})
@@ -1514,7 +1562,7 @@ function tkDayRows(doc,d){
   const raw={};(doc.rows||[]).forEach(r=>{if(r.d===d)raw[tkKey(r.emp)]=r.t});
   const out=[],seen=new Set();
   S.employees.filter(e=>e.biometricId&&sites.has(e.client)&&(isActive(e)||logs[tkKey(e.biometricId)])&&!(e.hireDate&&e.hireDate>d)).forEach(e=>{const k=tkKey(e.biometricId);if(seen.has(k))return;seen.add(k);
-    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,carry:!lg&&raw[k]?raw[k]:null,c:lg&&rule?rule.day(e,lg.t,d):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
+    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,carry:!lg&&raw[k]?raw[k]:null,c:lg&&rule?rule.day(e,lg.t,d,lg.type):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
   Object.keys(logs).forEach(k=>{if(seen.has(k)||all[k])return;const lg=logs[k];out.push({k,emp:lg.emp,name:lg.name,e:null,rule:null,log:lg,c:null})});
   return out.sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
 }
@@ -1547,12 +1595,39 @@ function tkDayView(doc){
   h+=`<div class="tw" style="margin-top:6px"><table class="tbl tk-day" style="min-width:1040px"><thead><tr class="tk-hd"><th>Employee</th><th>AC-No.</th><th class="c">IN</th><th class="c">OUT</th><th class="c">LATE<div class="sub">min</div></th><th class="c">REG HRS</th><th class="c">OT<div class="sub">hrs</div></th><th class="c">ND<div class="sub">hrs</div></th><th class="c">NDOT<div class="sub">hrs</div></th><th>Remarks</th></tr></thead><tbody>
   ${rows.map(r=>{const x=tkDayCells(r),c=x.c;
     const rem=[r.carry?`<span class="chip info">${esc(tkCarryTxt(r,d,doc))}</span>`:'',!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?`<span class="chip warn">Missing log${(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')}</span>`:'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
-    return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}</div></td><td class="num">${esc(r.emp)}</td>
+    return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}${r.log&&TK_TYPES[r.log.type]?` · <b>${TK_TYPES[r.log.type].name} shift</b>${r.log.set?' (roster)':''}`:''}</div></td><td class="num">${esc(r.emp)}</td>
       ${r.log?cell(x.inn||'<span class="att-muted">—</span>')+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
         :cell(`<b class="tk-${x.cls}">${x.inn}</b>`)+cell(`<b class="tk-${x.cls}">${x.out}</b>`)+cell('')+cell('')+cell('')+cell('')+cell('')}
       <td><div class="dchips">${rem}</div>${x.odd?`<div class="sub">Logs: ${r.log.t.map(tkT).join(' · ')}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
+}
+/* Shift roster: one row per employee in the upload, one column per week (Mon–Sat). "Auto" uses the guess from the
+   time ins; HR picks Day, 2-10 or Night where the guess is wrong. Saved in the upload (doc.roster). */
+function tkRosterView(doc){
+  const f=UI.tk,a=tkAuto(doc),ro=doc.roster||{},weeks=[];for(let w=tkMon(doc.from);w<=doc.to;w=addDays(w,7))weeks.push(w);
+  const rows=tkFiltered(doc),ed=canEdit('payroll'),clients=[...new Set(CLIENTS.concat(S.employees.map(e=>e.client).filter(Boolean)))];
+  const wkLabel=w=>{const a1=w<doc.from?doc.from:w,b0=addDays(w,5),b1=b0>doc.to?doc.to:b0;return a1>b1?'':a1===b1?fmtS(a1):`${fmtS(a1)} – ${fmtS(b1)}`};
+  // only weeks with a Monday–Saturday date in the cut-off (a lone Sunday is always read from the time in)
+  for(let i=weeks.length-1;i>=0;i--)if(!wkLabel(weeks[i]))weeks.splice(i,1);
+  let h=`<section class="card"><p class="help" style="margin:0 0 10px">The shift each person worked, per week (Monday to Saturday). <b>Auto</b> is read from their time ins. Change it where it is wrong, e.g. someone who moved to the night shift in the middle of the week. Each duty day then takes the logs from its own window: <b>Day</b> from 4:00 AM, <b>2-10</b> from 10:00 AM, <b>Night</b> from 2:00 PM to the next day's 6 AM time out. Sundays are always read from the time in (6-2 or 2-10).</p>
+    <div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
+    <label class="sr" for="f-tk-client">Client company</label><select id="f-tk-client" data-filter="tk.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    ${searchBox('f-tk-q','tk.q',f.q,'Search employee, AC-No., site')}</div>`;
+  if(!rows.length)return h+emptyBlock('No employees here','Try another site or search.')+'</section>';
+  const opt=(v,cur,txt)=>`<option value="${v}" ${v===cur?'selected':''}>${txt}</option>`;
+  h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:${360+weeks.length*190}px"><thead><tr><th>Employee</th><th>AC-No.</th>${weeks.map(w=>`<th>Week of ${fmtS(w)}<div class="sub">${wkLabel(w)}</div></th>`).join('')}</tr></thead><tbody>
+  ${rows.map(r=>`<tr><td><div class="nm">${tkWho(r)}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}</div></td><td class="num">${esc(r.emp)}</td>
+    ${weeks.map(w=>{const key=r.k+'|'+w,set=ro[key]||'',au=a.week[key];const worked=r.days.some(x=>tkMon(x.d)===w&&!tkSun(x.d));
+      if(!worked&&!set)return`<td class="att-muted">No logs</td>`;
+      return`<td><label class="sr" for="ro-${esc(key)}">Shift of ${tkWho(r)}, week of ${fmtS(w)}</label><select id="ro-${esc(key)}" data-roster="${esc(key)}" ${ed?'':'disabled'} style="width:100%;${set?'font-weight:700':''}">${opt('',set,`Auto (${au?TK_TYPES[au].name:'Day'})`)}${Object.entries(TK_TYPES).map(([k,t])=>opt(k,set,`${t.name} · ${t.hrs}`)).join('')}</select>${set?'<div class="sub">Set by HR</div>':''}</td>`}).join('')}</tr>`).join('')}
+  </tbody></table></div>`;
+  return h+'</section>';
+}
+async function tkRosterSet(key,v){
+  const doc=tkCur();if(!doc)return;const roster={...(doc.roster||{})};if(v)roster[key]=v;else delete roster[key];
+  await save('timekeep',{...doc,roster});
+  toast(v?`Shift set to ${TK_TYPES[v].name}. Time Keep is recomputed.`:'Shift set back to Auto.');
 }
 VIEWS.timekeep=function(){
   const f=UI.tk,L=tkSorted(),doc=tkCur();
@@ -1566,7 +1641,8 @@ VIEWS.timekeep=function(){
     <select id="f-tk-id" data-filter="tk.id" style="flex:1 1 320px;max-width:560px">${L.map(x=>`<option value="${x.id}" ${x.id===doc.id?'selected':''}>${esc(fmtS(x.from))} – ${esc(fmt(x.to))} · ${esc(x.fileName||'file')}${x.note?' · '+esc(x.note):''}</option>`).join('')}</select>
     <button class="btn bad-ghost" data-act="tk-del" data-id="${doc.id}" data-write>${ic('trash')}Delete this upload</button></div>
     <p class="help" style="margin:8px 0 0">Uploaded ${esc(fmtTs(doc.createdAt))}${doc.byName?' by '+esc(doc.byName):''} · ${fmt(doc.from)} – ${fmt(doc.to)} · ${(doc.rows||[]).length} employee-day${(doc.rows||[]).length===1?'':'s'} of time logs${doc.bad?` · ${doc.bad} line${doc.bad===1?'':'s'} without a readable date or time skipped`:''}</p>
-    <div class="fbtns" role="group" aria-label="View" style="margin:12px 0 0"><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="day" aria-pressed="${f.mode!=='emp'}">${ic('cal')}<span>Per day</span></button><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="emp" aria-pressed="${f.mode==='emp'}">${ic('users')}<span>Cut-off total per employee</span></button></div></section>`;
+    <div class="fbtns" role="group" aria-label="View" style="margin:12px 0 0"><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="day" aria-pressed="${f.mode!=='emp'&&f.mode!=='roster'}">${ic('cal')}<span>Per day</span></button><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="emp" aria-pressed="${f.mode==='emp'}">${ic('users')}<span>Cut-off total per employee</span></button><button class="fbtn" data-act="fset" data-id="tk.mode" data-k="roster" aria-pressed="${f.mode==='roster'}">${ic('clock')}<span>Shift roster</span></button></div></section>`;
+  if(f.mode==='roster')return h+tkRosterView(doc);
   if(f.mode!=='emp')return h+tkDayView(doc);
   h+=fbtnsHtml('tk','Show employees',TK_TABS.map(k=>[k,all.filter(tkTest[k]).length,k==='All'?'users':k==='Not in 201 files'?'alert':'clock',k==='All'?'':k==='Not in 201 files'||k==='Overbreak'?'bad':'warn']),f.tab);
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
@@ -1654,6 +1730,7 @@ function tkDel(id){
   confirmBox('Delete this upload?',`This removes the time logs of <b>${esc(d.fileName||'this file')}</b> (${fmt(d.from)} – ${fmt(d.to)}) from Time Keep. The file on your computer is not affected.`,'Delete',async()=>{await remove('timekeep',id);if(UI.tk.id===id)UI.tk.id='';toast('Upload deleted.')});
 }
 async function tkXlsx(){
+  if(UI.tk.mode==='roster'){toast('Open Per day or Cut-off total per employee to export.');return}
   if(UI.tk.mode!=='emp')return tkDayXlsx();
   const doc=tkCur();const rows=tkFiltered(doc).filter(tkTest[UI.tk.tab]||tkTest.All);if(!rows.length){toast('There are no time logs to export.',{kind:'bad'});return}
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
@@ -1950,7 +2027,7 @@ async function attFromExcel(file){
   let best={n:0,text:''};
   wb.SheetNames.forEach(n=>{const csv=X.utils.sheet_to_csv(wb.Sheets[n],{blankrows:false});const p=parseAtt(csv);if(!p.err&&p.rows.length>best.n)best={n:p.rows.length,text:csv}});
   try{const r=tkParseBest(await tkCells(file));
-    if(r.rows.length){const ds=r.rows.map(x=>x.d).sort(),sh=tkShifts({rows:r.rows,from:ds[0]});
+    if(r.rows.length){const ds=r.rows.map(x=>x.d).sort(),sh=tkGapShifts({rows:r.rows,from:ds[0]});
       const hh=t=>{const[h,m]=t.split(':');return`${pad(+h%24)}:${m}`};
       if(sh.length>best.n)best={n:sh.length,text:['Employee No,Date,Time In,Time Out',...sh.map(x=>[x.emp,x.d,hh(x.t[0]),x.t.length>1?hh(x.t[x.t.length-1]):''].join(','))].join('\n')}}}catch(e){}
   if(!best.n)throw new Error('No attendance could be read from this Excel file. It needs Employee No., Date, Time In and Time Out columns, or be the biometrics device report.');
@@ -4451,6 +4528,7 @@ document.addEventListener('keydown',ev=>{
   if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='k'){ev.preventDefault();openSearch()}
 });
 let ft=null;
+document.addEventListener('change',ev=>{const k=ev.target.dataset&&ev.target.dataset.roster;if(!k)return;if(!canEdit('payroll')){toast('Your account can only view this part of the HRIS.',{kind:'bad'});renderView();return}tkRosterSet(k,ev.target.value).catch(()=>renderView())});
 document.addEventListener('input',ev=>{if(ev.target.dataset&&ev.target.dataset.pol)return polInput(ev.target);const k=ev.target.dataset&&ev.target.dataset.filter;if(!k)return;const[a,b]=k.split('.');UI[a][b]=ev.target.value;clearTimeout(ft);ft=setTimeout(renderView,ev.target.tagName==='INPUT'?140:0)});
 
 /* ---------------- global search ---------------- */
