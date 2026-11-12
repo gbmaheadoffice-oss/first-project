@@ -1433,7 +1433,10 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,Math.min(b,1800)-Math.max(a,1320));
 function tkRowell(e,ts,d){
-  let m=ts.map(tkMins),lone=null;const inn=m[0],s201=e.shiftStart?tkMins(e.shiftStart):360;
+  let m=ts.map(tkMins),lone=null;
+  // the time in or time out tapped twice within 2 minutes counts once
+  if(m.length>=3&&m[1]-m[0]<=2)m=m.slice(1);if(m.length>=3&&m[m.length-1]-m[m.length-2]<=2)m=m.slice(0,-1);
+  const inn=m[0],s201=e.shiftStart?tkMins(e.shiftStart):360;
   // 201 shift length: 8 h (6-2) or 9 h (6-3). A shift end before the start ("2:00" without AM/PM from the masterlist) is read as PM.
   let e201=e.shiftEnd?tkMins(e.shiftEnd):null;if(e201!=null){if(e201<=s201&&e201<720)e201+=720;if(e201<=s201)e201+=1440}
   // the shift worked that day: the start nearest the time in — the 201 start (day shift), 2:00 PM, or 6:00 PM (night shift)
@@ -1443,7 +1446,10 @@ function tkRowell(e,ts,d){
   // an odd number of logs whose last log is at or after the 8-hour end: the time in and time out are there and one break
   // was tapped only once (common on the night shift, e.g. one tap at 12:30 AM). The lone tap is the one that leaves the
   // shortest breaks when taken out; it counts as a break of its allowed length with no overbreak.
-  if(m.length%2&&m.length>=3&&m[m.length-1]>=start+480){let best=1,bt=Infinity;
+  // the time in was not logged: the first log is 2 hours or more after the start and the next log follows within
+  // 45 minutes, so the two are a break (e.g. 8:47 PM – 9:04 PM on the night shift), not a time in
+  const noIn=m.length>=2&&inn-start>=120&&m[1]-inn<45;
+  if(!noIn&&m.length%2&&m.length>=3&&m[m.length-1]>=start+480){let best=1,bt=Infinity;
     for(let k=1;k<m.length-1;k++){const r=m.filter((_,i)=>i!==k);let t=0;for(let j=1;j+1<r.length;j+=2)t+=r[j+1]-r[j];if(t<bt){bt=t;best=k}}
     lone=m[best];m=m.filter((_,i)=>i!==best)}
   const n=m.length;
@@ -1451,14 +1457,20 @@ function tkRowell(e,ts,d){
   // 201 says 6-3 but the time out is before the 6-3 end: that day was worked as 6-2, so no undertime for the last hour
   // OT still starts only at the 6-3 end (3 PM) for them
   const otFrom=start+len;if(len>480&&n>1&&n%2===0&&m[n-1]<start+len)len=480;
-  const end=start+len,meal=len>=540?60:30,odd=n%2===1,out=odd?null:m[n-1];
-  const late=Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
+  // the time out was not logged: the last two logs are within 45 minutes (a break, e.g. 3:03 AM – 3:20 AM) and the
+  // last one is not at the end of the 8- or 9-hour schedule
+  const near=x=>[start+480,start+540].some(t=>m[n-1]>=t-10&&m[n-1]<=t+15);
+  const noOut=!noIn&&n>=4&&n%2===0&&m[n-1]-m[n-2]<45&&!near();
+  const end=start+len,meal=len>=540?60:30,odd=n%2===1||noIn||noOut,out=odd?null:m[n-1];
+  const late=noIn?0:Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
   const breaks=[];let pre=0,post=0;
   const spans=[];for(let k=1;k+1<n;k+=2)spans.push([m[k],m[k+1]]);
   if(lone!=null){spans.push([lone,null]);spans.sort((x,y)=>x[0]-y[0])}
   for(const[a,b0]of spans){const allow=a<start+540?[15,meal,15][pre++]||0:post++?0:15;
     if(b0==null){breaks.push({a,b:a+allow,dur:allow,allow,ob:0,ot:a>=end,lone:1});continue}
     const dur=b0-a;breaks.push({a,b:b0,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
+  // with no time in or no time out the logs cannot be paired into breaks, so no overbreak is counted (HR fixes the day)
+  if(noIn||noOut)breaks.length=0;
   const obReg=breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0),ob=breaks.reduce((t,x)=>t+x.ob,0);
   // regular hours: always 8, less undertime only (a half day leaves early, so it shows as undertime). Late and overbreak are
   // their own columns and are not taken off here, like the Rowell DTR (LATE 1, REG HRS 8).
@@ -1468,7 +1480,7 @@ function tkRowell(e,ts,d){
   const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(otFrom,inn),oB=out==null?oA:out;
   const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.b,rB)),0));
   const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)-breaks.filter(x=>x.a>=otFrom&&x.ob).reduce((t,x)=>t+Math.min(x.ob,tkNight(x.a,x.b)),0)));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,otRaw,nd,ndot,odd,lone};
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
@@ -1512,7 +1524,7 @@ const tkDayOf=doc=>{const d=UI.tk.day;return d&&d>=doc.from&&d<=doc.to?d:doc.fro
 function tkDayCells(r){
   if(!r.log)return r.rest?{inn:'REST DAY',out:'REST DAY',cls:''}:r.leave?{inn:'LEAVE',out:'LEAVE',cls:'info'}:{inn:'ABSENT',out:'ABSENT',cls:'bad'};
   const t=r.log.t,c=r.c,odd=c?c.odd:t.length%2;
-  return{inn:tkT(t[0]),out:odd?'':tkT(t[t.length-1]),late:c?c.late:0,reg:c?c.reg:null,ot:c?c.ot:0,nd:c?c.nd:0,ndot:c?c.ndot:0,c,odd};
+  return{inn:c&&c.noIn?'':tkT(t[0]),out:odd?'':tkT(t[t.length-1]),late:c?c.late:0,reg:c?c.reg:null,ot:c?c.ot:0,nd:c?c.nd:0,ndot:c?c.ndot:0,c,odd};
 }
 function tkDayView(doc){
   const f=UI.tk,d=tkDayOf(doc),all=tkDayFiltered(doc,d),rows=all.filter(tkdTest[f.dtab]||tkdTest.All);
@@ -1531,9 +1543,9 @@ function tkDayView(doc){
   const cell=(v,cls='')=>`<td class="c num ${cls}">${v}</td>`;
   h+=`<div class="tw" style="margin-top:6px"><table class="tbl tk-day" style="min-width:1040px"><thead><tr class="tk-hd"><th>Employee</th><th>AC-No.</th><th class="c">IN</th><th class="c">OUT</th><th class="c">LATE<div class="sub">min</div></th><th class="c">REG HRS</th><th class="c">OT<div class="sub">hrs</div></th><th class="c">ND<div class="sub">hrs</div></th><th class="c">NDOT<div class="sub">hrs</div></th><th>Remarks</th></tr></thead><tbody>
   ${rows.map(r=>{const x=tkDayCells(r),c=x.c;
-    const rem=[!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?'<span class="chip warn">Missing log</span>':'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
+    const rem=[!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?`<span class="chip warn">Missing log${(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')}</span>`:'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
     return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}</div></td><td class="num">${esc(r.emp)}</td>
-      ${r.log?cell(x.inn)+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
+      ${r.log?cell(x.inn||'<span class="att-muted">—</span>')+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
         :cell(`<b class="tk-${x.cls}">${x.inn}</b>`)+cell(`<b class="tk-${x.cls}">${x.out}</b>`)+cell('')+cell('')+cell('')+cell('')+cell('')}
       <td><div class="dchips">${rem}</div></td></tr>`}).join('')}
   </tbody></table></div>`;
@@ -1581,11 +1593,11 @@ function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
   return`<div class="tw" style="margin:0"><table class="tbl" style="min-width:1080px"><thead><tr><th>Date</th><th>Schedule</th><th>Time In</th><th>Breaks (out – in)</th><th>Time Out</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular</th><th class="r">OT</th><th>Note</th></tr></thead><tbody>
   ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.meal===60?'1 hr':'30 min'} 2nd break</div></td>
-    <td class="num">${tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
+    <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
     <td class="r num"><b>${c.reg==null?'—':tkH(c.reg)}</b></td><td class="r num">${tkH(c.ot)}</td>
-    <td>${c.odd?`<span class="chip warn">Missing log</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}</td></tr>`}).join('')}
+    <td>${c.odd?`<span class="chip warn">Missing log${c.noIn?' (no time in)':c.noOut?' (no time out)':''}</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
 }
 function tkUpload(){
@@ -1625,7 +1637,7 @@ async function tkDayXlsx(){
     const aoa=xlInfo('TIME KEEP – DAILY',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`]]).concat([[parse(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}).toUpperCase()],COLS]);
     rows.forEach(r=>{const x=tkDayCells(r),c=x.c,num=m=>m?Math.round(m/60*100)/100:'';
       aoa.push([r.e?fullName(r.e):r.name||'',r.emp,r.e?r.e.client||'':'Not in 201 files',x.inn,x.out,r.log&&x.late?x.late:'',r.log&&x.reg!=null?num(x.reg):'',r.log?num(x.ot):'',r.log?num(x.nd):'',r.log?num(x.ndot):'',
-        [x.odd?'Missing log':'',c&&c.lone!=null?`One tap only at ${tkFt(c.lone)}`:'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
+        [x.odd?'Missing log'+(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':''):'',c&&c.lone!=null?`One tap only at ${tkFt(c.lone)}`:'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
     const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,9,28,10,10,10,9,7,7,7,26].map(w=>({wch:w}));
     X.utils.book_append_sheet(wb,ws,parse(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
   }
@@ -1648,7 +1660,7 @@ async function tkXlsx(){
   const wd=d=>parse(d).toLocaleDateString('en-US',{weekday:'short'});
   const aoa=xlInfo('TIME KEEP',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`],['BIOMETRICS FILE:',doc.fileName||'']]).concat([COLS]);const top=aoa.length-1;
   rows.forEach(r=>r.days.forEach((x,i)=>{const c=r.calc&&r.calc[i];aoa.push([r.emp,r.e?r.e.empNo||'':'',r.e?fullName(r.e):r.name||'',r.e?r.e.client||'':'Not in 201 files',x.d,wd(x.d),tkT(x.t[0]),x.t.length>1?tkT(x.t[x.t.length-1]):'',x.t.map(tkT).join(' | '),tkDec(tkHours(x.t)),
-    ...(c?[c.sched,c.late,c.ut,c.ob,c.reg==null?'':tkDec(c.reg),tkDec(c.ot)]:['','','','','','']),c?(c.odd?'Missing log':c.lone!=null?`One tap only at ${tkFt(c.lone)}`:''):x.t.length===1?'Only one log':x.t.length%2?'Odd number of logs':''])}));
+    ...(c?[c.sched,c.late,c.ut,c.ob,c.reg==null?'':tkDec(c.reg),tkDec(c.ot)]:['','','','','','']),c?(c.odd?'Missing log'+(c.noIn?' (no time in)':c.noOut?' (no time out)':''):c.lone!=null?`One tap only at ${tkFt(c.lone)}`:''):x.t.length===1?'Only one log':x.t.length%2?'Odd number of logs':''])}));
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,12,28,30,11,6,10,10,40,10,20,9,11,11,10,9,18].map(w=>({wch:w}));
   ws['!autofilter']={ref:X.utils.encode_range({s:{r:top,c:0},e:{r:aoa.length-1,c:COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Time Keep');
