@@ -730,7 +730,7 @@ const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees',
   'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves','apr-decide':'approvals',
   'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
-  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll',
+  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll','tk-fix':'payroll',
   'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
 const actOK=a=>!ACT_PART[a]||canEdit(ACT_PART[a]);
 function applyAccessCss(){
@@ -1461,6 +1461,13 @@ function tkShifts(doc){
     for(let i=0;i+1<ty.length;i++)if(ty[i]==='night'&&ty[i+1]!=='night'&&L.some(x=>x>=st[i]&&x<(d0+i+1)*1440+TK_CARRY))st[i+1]=Math.max(st[i+1],(d0+i+1)*1440+720);
     ty.forEach((t,i)=>{const a=st[i],b=i+1<st.length?st[i+1]:Infinity,base=(d0+i)*1440,ls=L.filter(x=>x>=a&&x<b);if(!ls.length)return;
       out.push({emp:g.emp,name:g.name,d:tkDayIso(d0+i),type:t,set:!tkSun(tkDayIso(d0+i))&&!!(doc.roster||{})[k+'|'+tkMon(tkDayIso(d0+i))],t:ls.map(x=>{const m=x-base;return`${pad(Math.floor(m/60))}:${pad(m%60)}`})})})});
+  // time in / time out entered by HR (doc.fixes {"<AC-No.>|<date>": {in,out,emp,byName,at}}): added to that duty day's
+  // logs. A time out earlier than the time in (or the start of the shift) is the next morning.
+  Object.entries(doc.fixes||{}).forEach(([key,f])=>{const i=key.lastIndexOf('|'),k=key.slice(0,i),d=key.slice(i+1);if(d<doc.from||d>doc.to||!f||!(f.in||f.out))return;
+    let r=out.find(x=>tkKey(x.emp)===k&&x.d===d);if(!r){const set=!tkSun(d)&&(doc.roster||{})[k+'|'+tkMon(d)],ty=set||(f.in?tkGuess(f.in,tkSun(d)):tkType(doc,k,d));r={emp:f.emp||k,name:'',d,type:ty,set:!!set,t:[]};out.push(r)}
+    const L=r.t.map(tkMins),ref=f.in?tkMins(f.in):L.length?L[0]:TK_TYPES[r.type]?TK_TYPES[r.type].start:360;
+    if(f.in)L.push(tkMins(f.in));if(f.out){let o=tkMins(f.out);if(o<=ref)o+=1440;L.push(o)}
+    r.t=L.sort((a,b)=>a-b).map(m=>`${pad(Math.floor(m/60))}:${pad(m%60)}`);r.hr=f});
   const res=out.sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
   TKSH.set(doc,res);return res;
 }
@@ -1594,11 +1601,13 @@ function tkDayView(doc){
   const cell=(v,cls='')=>`<td class="c num ${cls}">${v}</td>`;
   h+=`<div class="tw" style="margin-top:6px"><table class="tbl tk-day" style="min-width:1040px"><thead><tr class="tk-hd"><th>Employee</th><th>AC-No.</th><th class="c">IN</th><th class="c">OUT</th><th class="c">LATE<div class="sub">min</div></th><th class="c">REG HRS</th><th class="c">OT<div class="sub">hrs</div></th><th class="c">ND<div class="sub">hrs</div></th><th class="c">NDOT<div class="sub">hrs</div></th><th>Remarks</th></tr></thead><tbody>
   ${rows.map(r=>{const x=tkDayCells(r),c=x.c;
-    const rem=[r.carry?`<span class="chip info">${esc(tkCarryTxt(r,d,doc))}</span>`:'',!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?`<span class="chip warn">Missing log${(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')}</span>`:'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
+    const hrc=r.log&&r.log.hr?`<span class="chip info" title="${esc((r.log.hr.byName?'By '+r.log.hr.byName+', ':'')+fmtTs(r.log.hr.at))}">${[r.log.hr.in?'Time in':'',r.log.hr.out?'time out':''].filter(Boolean).join(' and ').replace(/^t/,'T')} entered by HR</span>`:'';
+    const fixb=r.e&&(x.odd||r.log&&r.log.hr||!r.log&&!r.rest&&!r.leave)?`<button type="button" class="btn ghost sm" data-act="tk-fix" data-id="${esc(r.k)}" data-k="${d}" data-write>${ic('edit')}${r.log&&r.log.hr?'Edit time in/out':'Enter time in/out'}</button>`:'';
+    const rem=[hrc,r.carry?`<span class="chip info">${esc(tkCarryTxt(r,d,doc))}</span>`:'',!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?`<span class="chip warn">Missing log${(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')}</span>`:'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
     return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}${r.log&&TK_TYPES[r.log.type]?` · <b>${TK_TYPES[r.log.type].name} shift</b>${r.log.set?' (roster)':''}`:''}</div></td><td class="num">${esc(r.emp)}</td>
       ${r.log?cell(x.inn||'<span class="att-muted">—</span>')+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
         :cell(`<b class="tk-${x.cls}">${x.inn}</b>`)+cell(`<b class="tk-${x.cls}">${x.out}</b>`)+cell('')+cell('')+cell('')+cell('')+cell('')}
-      <td><div class="dchips">${rem}</div>${x.odd?`<div class="sub">Logs: ${r.log.t.map(tkT).join(' · ')}</div>`:''}</td></tr>`}).join('')}
+      <td><div class="dchips">${rem}</div>${x.odd?`<div class="sub">Logs: ${r.log.t.map(tkT).join(' · ')}</div>`:''}${fixb?`<div style="margin-top:4px">${fixb}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 }
@@ -1676,7 +1685,7 @@ function tkRuleTable(r,wd){
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
     <td class="r num"><b>${c.reg==null?'—':tkH(c.reg)}</b></td><td class="r num">${tkH(c.ot)}</td>
-    <td>${c.odd?`<span class="chip warn">Missing log${c.noIn?' (no time in)':c.noOut?' (no time out)':''}</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}</td></tr>`}).join('')}
+    <td>${c.odd?`<span class="chip warn">Missing log${c.noIn?' (no time in)':c.noOut?' (no time out)':''}</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}${x.hr?'<span class="chip info">Entered by HR</span>':''}${r.e&&(c.odd||x.hr)?`<div style="margin-top:4px"><button type="button" class="btn ghost sm" data-act="tk-fix" data-id="${esc(r.k)}" data-k="${x.d}" data-write>${x.hr?'Edit':'Enter'} time in/out</button></div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
 }
 function tkUpload(){
@@ -1716,7 +1725,7 @@ async function tkDayXlsx(){
     const aoa=xlInfo('TIME KEEP – DAILY',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`]]).concat([[parse(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}).toUpperCase()],COLS]);
     rows.forEach(r=>{const x=tkDayCells(r),c=x.c,num=m=>m?Math.round(m/60*100)/100:'';
       aoa.push([r.e?fullName(r.e):r.name||'',r.emp,r.e?r.e.client||'':'Not in 201 files',x.inn,x.out,r.log&&x.late?x.late:'',r.log&&x.reg!=null?num(x.reg):'',r.log?num(x.ot):'',r.log?num(x.nd):'',r.log?num(x.ndot):'',
-        [r.carry?tkCarryTxt(r,d,doc):'',x.odd?'Missing log'+(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')+' – logs: '+r.log.t.map(tkT).join(', '):'',c&&c.lone!=null?`One tap only at ${tkFt(c.lone)}`:'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
+        [r.log&&r.log.hr?'Time in/out entered by HR':'',r.carry?tkCarryTxt(r,d,doc):'',x.odd?'Missing log'+(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')+' – logs: '+r.log.t.map(tkT).join(', '):'',c&&c.lone!=null?`One tap only at ${tkFt(c.lone)}`:'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
     const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,9,28,10,10,10,9,7,7,7,26].map(w=>({wch:w}));
     X.utils.book_append_sheet(wb,ws,parse(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
   }
@@ -1724,6 +1733,28 @@ async function tkDayXlsx(){
   const name=`GBMA Time Keep per day ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
   try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${n} day${n===1?'':'s'} to ${name}, one sheet per day.`)}
   catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
+}
+/* HR enters a missing time in and/or time out for one duty day. Saved in the upload as doc.fixes; the other logs stay
+   as they came from the biometrics device. Both fields blank = the entry is removed. */
+function tkFix(k,d){
+  const doc=tkCur();if(!doc)return;const e=tkIndex(S.employees)[k];if(!e)return;
+  const key=k+'|'+d,cur=(doc.fixes||{})[key]||{},sh=tkShifts(doc).find(x=>tkKey(x.emp)===k&&x.d===d);
+  const own=sh?sh.t.filter(t=>{if(!cur.in&&!cur.out)return true;const m=tkMins(t);return!(cur.in&&m===tkMins(cur.in))&&!(cur.out&&(m===tkMins(cur.out)||m===tkMins(cur.out)+1440))}):[];
+  const ty=sh?sh.type:tkType(doc,k,d),rule=tkRule(e),c=sh&&rule?rule.day(e,sh.t,d,ty):null;
+  openModal({title:`Time in / time out · ${esc(fullName(e))}`,
+    body:`<p class="help" style="margin:0"><b>${parse(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</b> · AC-No. ${esc(e.biometricId)} · ${TK_TYPES[ty]?TK_TYPES[ty].name+' shift':''}${c?` (${esc(c.sched)})`:''}</p>
+    <p class="help" style="margin:8px 0 0">Logs from the biometrics device: ${own.length?own.map(tkT).join(' · '):'<b>none</b>'}</p>
+    <div class="fg" style="margin-top:12px">${field({id:'fx-in',name:'in',label:'Time in',type:'time',value:cur.in||'',help:'Leave blank if the time in is in the logs above.'})}${field({id:'fx-out',name:'out',label:'Time out',type:'time',value:cur.out||'',help:'A time out earlier than the time in (e.g. 6:00 AM on a night shift) is counted the next morning.'})}</div>
+    ${cur.in||cur.out?`<p class="help" style="margin:4px 0 0">Entered by ${esc(cur.byName||'HR')} on ${esc(fmtTs(cur.at))}. Clear both fields and save to remove it.</p>`:''}`,
+    submitLabel:'Save',
+    onSubmit:async(fd,f)=>{
+      const tin=String(fd.get('in')||''),tout=String(fd.get('out')||'');
+      const fixes={...(doc.fixes||{})};
+      if(!tin&&!tout){if(!fixes[key]){setErr(f.querySelector('#fx-in'),'Enter the time in, the time out, or both.');return false}delete fixes[key]}
+      else fixes[key]={in:tin,out:tout,emp:e.biometricId,by:MEID,byName:ME.name||ME.email||'',at:new Date().toISOString()};
+      await save('timekeep',{...doc,fixes});
+      toast(!tin&&!tout?'Entry removed.':`Saved. ${fullName(e)}'s ${fmtS(d)} is recomputed.`);
+    }});
 }
 function tkDel(id){
   const d=S.timekeep.find(x=>x.id===id);if(!d)return;
@@ -4513,6 +4544,7 @@ const ACT={
   'tk-upload':()=>tkUpload(),
   'tk-view':(el,id)=>tkView(id),
   'tk-del':(el,id)=>tkDel(id),
+  'tk-fix':(el,id,k)=>tkFix(id,k),
   'tk-xlsx':()=>tkXlsx(),
   'tk-day':(el,id,k)=>{if(k){UI.tk.day=k;renderView()}}
 };
