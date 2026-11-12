@@ -1527,7 +1527,11 @@ function tkRowell(e,ts,d,type){
   const breaks=[];let pre=0,post=0;
   const spans=[];for(let k=1;k+1<n;k+=2)spans.push([m[k],m[k+1]]);
   if(lone!=null){spans.push([lone,null]);spans.sort((x,y)=>x[0]-y[0])}
-  for(const[a,b0]of spans){const allow=a<start+540?[15,meal,15][pre++]||0:post++?0:15;
+  // the meal break (1 hr on 6-3, 30 min on 6-2) is the longest break before the end of the shift, not always the 2nd one:
+  // many only tap their lunch break, which would otherwise get the 15-min allowance of the 1st break
+  let mealAt=-1,mx=-1;spans.forEach(([a,b0],i)=>{if(a<start+540&&b0!=null&&b0-a>mx){mx=b0-a;mealAt=i}});
+  if(mealAt<0)mealAt=spans.findIndex(([a])=>a<start+540);
+  for(const[i,[a,b0]]of spans.entries()){const allow=a<start+540?(i===mealAt?meal:pre++<2?15:0):post++?0:15;
     if(b0==null){breaks.push({a,b:a+allow,dur:allow,allow,ob:0,ot:a>=end,lone:1});continue}
     const dur=b0-a;breaks.push({a,b:b0,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
   // with no time in or no time out the logs cannot be paired into breaks, so no overbreak is counted (HR fixes the day)
