@@ -1510,9 +1510,11 @@ const tkNum=m=>m?String(Math.round(m/60*100)/100):'';
 function tkDayRows(doc,d){
   if(!doc)return[];const idx=tkIndex(S.employees),all=tkIndex(ALL_EMPLOYEES||S.employees),logs={},sites=new Set();
   tkShifts(doc).forEach(r=>{const k=tkKey(r.emp),e=idx[k];if(e&&e.client)sites.add(e.client);if(r.d===d)logs[k]=r});
+  // logs on this date that belong to the shift of the night before (e.g. 12:26 AM – 6:00 AM)
+  const raw={};(doc.rows||[]).forEach(r=>{if(r.d===d)raw[tkKey(r.emp)]=r.t});
   const out=[],seen=new Set();
   S.employees.filter(e=>e.biometricId&&sites.has(e.client)&&(isActive(e)||logs[tkKey(e.biometricId)])&&!(e.hireDate&&e.hireDate>d)).forEach(e=>{const k=tkKey(e.biometricId);if(seen.has(k))return;seen.add(k);
-    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,c:lg&&rule?rule.day(e,lg.t,d):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
+    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,carry:!lg&&raw[k]?raw[k]:null,c:lg&&rule?rule.day(e,lg.t,d):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
   Object.keys(logs).forEach(k=>{if(seen.has(k)||all[k])return;const lg=logs[k];out.push({k,emp:lg.emp,name:lg.name,e:null,rule:null,log:lg,c:null})});
   return out.sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
 }
@@ -1521,6 +1523,7 @@ const tkdTest={'All':()=>true,'Present':r=>!!r.log,'Late':r=>!!(r.c&&r.c.late),'
 function tkDayFiltered(doc,d){const f=UI.tk,q=f.q.trim().toLowerCase();
   return tkDayRows(doc,d).filter(r=>(!f.client||(r.e&&r.e.client===f.client))&&(!q||[r.emp,r.name,r.e&&fullName(r.e),r.e&&r.e.empNo,r.e&&r.e.client].join(' ').toLowerCase().includes(q)))}
 const tkDayOf=doc=>{const d=UI.tk.day;return d&&d>=doc.from&&d<=doc.to?d:doc.from};
+const tkCarryTxt=(r,d,doc)=>`Logs ${r.carry.map(tkT).join(', ')} are the end of the ${d>doc.from?fmtS(addDays(d,-1))+' night shift':'night shift before this cut-off'}`;
 function tkDayCells(r){
   if(!r.log)return r.rest?{inn:'REST DAY',out:'REST DAY',cls:''}:r.leave?{inn:'LEAVE',out:'LEAVE',cls:'info'}:{inn:'ABSENT',out:'ABSENT',cls:'bad'};
   const t=r.log.t,c=r.c,odd=c?c.odd:t.length%2;
@@ -1543,11 +1546,11 @@ function tkDayView(doc){
   const cell=(v,cls='')=>`<td class="c num ${cls}">${v}</td>`;
   h+=`<div class="tw" style="margin-top:6px"><table class="tbl tk-day" style="min-width:1040px"><thead><tr class="tk-hd"><th>Employee</th><th>AC-No.</th><th class="c">IN</th><th class="c">OUT</th><th class="c">LATE<div class="sub">min</div></th><th class="c">REG HRS</th><th class="c">OT<div class="sub">hrs</div></th><th class="c">ND<div class="sub">hrs</div></th><th class="c">NDOT<div class="sub">hrs</div></th><th>Remarks</th></tr></thead><tbody>
   ${rows.map(r=>{const x=tkDayCells(r),c=x.c;
-    const rem=[!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?`<span class="chip warn">Missing log${(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')}</span>`:'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
+    const rem=[r.carry?`<span class="chip info">${esc(tkCarryTxt(r,d,doc))}</span>`:'',!r.e?'<span class="chip bad">Not in 201 files</span>':'',x.odd?`<span class="chip warn">Missing log${(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')}</span>`:'',c&&c.lone!=null?`<span class="chip">One tap only at ${tkFt(c.lone)}</span>`:'',c&&c.ut?`<span class="chip warn">Undertime ${c.ut}m</span>`:'',c&&c.ob?`<span class="chip bad">Overbreak ${c.ob}m</span>`:'',r.log&&!r.rule&&r.e?'<span class="chip">No time keep rules for this site yet</span>':''].join('');
     return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}</div></td><td class="num">${esc(r.emp)}</td>
       ${r.log?cell(x.inn||'<span class="att-muted">—</span>')+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
         :cell(`<b class="tk-${x.cls}">${x.inn}</b>`)+cell(`<b class="tk-${x.cls}">${x.out}</b>`)+cell('')+cell('')+cell('')+cell('')+cell('')}
-      <td><div class="dchips">${rem}</div></td></tr>`}).join('')}
+      <td><div class="dchips">${rem}</div>${x.odd?`<div class="sub">Logs: ${r.log.t.map(tkT).join(' · ')}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 }
@@ -1637,7 +1640,7 @@ async function tkDayXlsx(){
     const aoa=xlInfo('TIME KEEP – DAILY',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`]]).concat([[parse(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}).toUpperCase()],COLS]);
     rows.forEach(r=>{const x=tkDayCells(r),c=x.c,num=m=>m?Math.round(m/60*100)/100:'';
       aoa.push([r.e?fullName(r.e):r.name||'',r.emp,r.e?r.e.client||'':'Not in 201 files',x.inn,x.out,r.log&&x.late?x.late:'',r.log&&x.reg!=null?num(x.reg):'',r.log?num(x.ot):'',r.log?num(x.nd):'',r.log?num(x.ndot):'',
-        [x.odd?'Missing log'+(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':''):'',c&&c.lone!=null?`One tap only at ${tkFt(c.lone)}`:'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
+        [r.carry?tkCarryTxt(r,d,doc):'',x.odd?'Missing log'+(c&&c.noIn?' (no time in)':c&&c.noOut?' (no time out)':'')+' – logs: '+r.log.t.map(tkT).join(', '):'',c&&c.lone!=null?`One tap only at ${tkFt(c.lone)}`:'',c&&c.ut?`Undertime ${c.ut}m`:'',c&&c.ob?`Overbreak ${c.ob}m`:''].filter(Boolean).join(', ')])});
     const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,9,28,10,10,10,9,7,7,7,26].map(w=>({wch:w}));
     X.utils.book_append_sheet(wb,ws,parse(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
   }
