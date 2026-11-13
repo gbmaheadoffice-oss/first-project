@@ -746,6 +746,8 @@ function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:
 async function save(col,obj){
   if(!mayWrite(col)){toast('Your account can only view this part of the HRIS.',{kind:'bad'});throw{code:'invalid_argument'}}
   obj=clone(obj);obj.updatedAt=new Date().toISOString();if(!obj.createdAt)obj.createdAt=obj.updatedAt;
+  /* the employee page shows memos as text: keep the full wording (End of probation notices are built from fields) */
+  if(col==='memos'){try{obj.text=obj.status==='Draft'?'':memoText(obj)}catch(e){}}
   if(MODE==='db'){
     try{await DB.collection(col).doc(obj.id).set(obj)}
     catch(e){if(e&&e.code==='invalid_argument'){document.body.classList.add('ro');toast('You have view-only access to these records.',{kind:'bad'})}else toast('Could not save. Check your connection and try again.',{kind:'bad'});throw e}
@@ -4097,7 +4099,8 @@ function viewMemo(id){
   const cat=memoCat(m),hol=cat==='hol';
   const btn=(i,l,c='ghost')=>`<button type="button" class="btn ${c}" id="${i}" data-write>${l}</button>`;
   openModal({title:`${esc(m.no)} · ${esc(m.type)}`,wide:1,
-    body:`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip">${ic(hol?'cal':'memo')}${esc(MEMO_CATS[cat].name)} · ${esc(recGroup(m))}</span>${hol?(m.event&&m.event.date?`<span class="chip info">${ic('cal')}Holiday ${fmt(m.event.date)}</span>`:''):statusChip(m.status)}${sampleChip(m)}${m.sentAt?`<span class="chip ok">${ic('check')}Sent to employee's account ${fmtTs(m.sentAt)}</span>`:''}${m.statusAt?`<span class="help" style="color:var(--muted)">Updated ${fmtTs(m.statusAt)} by ${uname(m.statusBy)}</span>`:''}</div>
+    body:`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip">${ic(hol?'cal':'memo')}${esc(MEMO_CATS[cat].name)} · ${esc(recGroup(m))}</span>${hol?(m.event&&m.event.date?`<span class="chip info">${ic('cal')}Holiday ${fmt(m.event.date)}</span>`:''):statusChip(m.status)}${sampleChip(m)}${m.sentAt?`<span class="chip ok">${ic('check')}Sent to employee's account ${fmtTs(m.sentAt)}</span>`:''}${m.ackAt?`<span class="chip ok">${ic('check')}Employee acknowledged on the employee page ${fmtTs(m.ackAt)}</span>`:''}${m.statusAt?`<span class="help" style="color:var(--muted)">Updated ${fmtTs(m.statusAt)} by ${uname(m.statusBy)}</span>`:''}</div>
+    ${m.acks&&Object.keys(m.acks).length?`<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">${ic('check')} Acknowledged on the employee page by ${Object.keys(m.acks).length} employee${Object.keys(m.acks).length===1?'':'s'}</summary><div class="rows" style="margin-top:6px">${Object.entries(m.acks).sort((a,b)=>a[1]<b[1]?-1:1).map(([eid,at])=>`<div class="row"><div class="grow"><span class="nm">${esc(EMP[eid]?fullName(EMP[eid]):'Former employee')}</span><div class="meta">${esc(EMP[eid]?EMP[eid].client||'':'')}</div></div><span class="dt">${fmtTs(at)}</span></div>`).join('')}</div></details>`:''}
     ${m.status==='Draft'?`<div class="banner">${ic('info')}<span class="grow">This notice has not been sent. Review it, then click <b>Send to employee</b>.</span></div>`:''}
     ${memoDoc(m)}`,
     foot:m.status==='Draft'
@@ -4277,6 +4280,7 @@ function renderDrawer(){
   </header><div class="dbody">${statusBanner(e)}${body}${drawerTab==='overview'&&(e.statusHistory||[]).length?`<section class="sect"><h4>Status history</h4><div class="rows">${e.statusHistory.slice().reverse().map(h=>`<div class="row"><div class="grow"><span class="nm">${esc(h.status)}</span>${h.reason?` · ${esc(h.reason)}`:''}${h.details?`<div class="meta" style="overflow-wrap:anywhere">${esc(h.details)}</div>`:''}</div><span class="dt">${h.date?fmt(h.date):fmtTs(h.at)}</span></div>`).join('')}</div></section>`:''}</div></div>`;
   DR.querySelector('#dr-x').onclick=()=>DR.close();
   const nb=DR.querySelector('.dbody');nb.scrollTop=st;
+  if(drawerTab==='overview')empAcctSection(e,nb);
   DR.querySelectorAll('[data-doc]').forEach(cb=>cb.addEventListener('change',async()=>{const o=clone(EMP[drawerEmp]);o.docs=o.docs||{};if(cb.checked)o.docs[cb.dataset.doc]=true;else delete o.docs[cb.dataset.doc];cb.disabled=true;try{await save('employees',o)}catch(err){cb.checked=!cb.checked}cb.disabled=false}));
   DR.querySelectorAll('[data-upload]').forEach(inp=>inp.addEventListener('change',()=>{const fl=[...inp.files];inp.value='';if(fl.length)uploadFiles(e.id,inp.dataset.upload,fl)}));
   if(ASSETS)DR.querySelectorAll('.doc').forEach(li=>{
@@ -4284,6 +4288,34 @@ function renderDrawer(){
     li.addEventListener('dragleave',()=>li.classList.remove('drop'));
     li.addEventListener('drop',ev=>{ev.preventDefault();li.classList.remove('drop');const fl=[...(ev.dataTransfer&&ev.dataTransfer.files||[])];if(fl.length)uploadFiles(e.id,li.dataset.dockey,fl)});
   });
+}
+
+/* ---------------- Employee page account (admins only) ----------------
+   Deployed employees sign in at /employee/ with their ID number and a password HR gives them. They see only their own
+   leaves, permits, overtime and memos (server function hris-me); they cannot open the HRIS. */
+const EACCT={};
+const EMP_PAGE=location.origin+'/employee/';
+function empAcctSection(e,box){
+  if(!(ME&&ME.role==='admin'&&USER&&USER.admin))return;
+  const a=EACCT[e.id];
+  const sec=document.createElement('section');sec.className='sect';sec.id='dr-acct';
+  sec.innerHTML=`<h4>Employee page account</h4>`+(a===undefined?`<p class="help" style="color:var(--muted)">Checking…</p>`
+    :a===null?`<p class="help" style="margin:0 0 8px">No account yet. With an account, ${esc(e.firstName||'the employee')} can see the status of their leave, permit to work and overtime requests, and read and acknowledge memos at <b>${esc(EMP_PAGE)}</b>.</p><button type="button" class="btn sm" id="ea-new">${ic('plus')}Create account</button>`
+    :`<dl class="kv"><div><dt>Sign-in</dt><dd>ID number <b>${esc(e.empNo)}</b> at ${esc(EMP_PAGE)}</dd></div><div><dt>Account</dt><dd>${a.active?`<span class="chip ok">${ic('check')}Active</span>`:`<span class="chip bad">Turned off</span>`}${a.mustChange?' <span class="chip warn">Temporary password not yet changed</span>':''}</dd></div><div><dt>Last sign-in</dt><dd>${a.lastSignIn?fmtTs(a.lastSignIn):'Never'}</dd></div></dl>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn sm ghost" id="ea-pw">Set a new password</button>${a.active?`<button type="button" class="btn sm bad-ghost" id="ea-off">Turn off</button>`:`<button type="button" class="btn sm ghost" id="ea-on">Turn on</button>`}</div>`);
+  box.appendChild(sec);
+  if(a===undefined)USER.admin({action:'emp_get',employeeId:e.id}).then(r=>{EACCT[e.id]=r.account||null;if(drawerEmp===e.id&&DR.open)renderDrawer()},err=>{sec.querySelector('.help').textContent='Could not check the account: '+err.message});
+  const on=(s,fn)=>{const b=sec.querySelector(s);if(b)b.onclick=fn};
+  const call=async(body,f)=>{try{const r=await USER.admin({...body,employeeId:e.id});EACCT[e.id]=r.account||null;renderDrawer();return r}
+    catch(err){if(!f){toast(err.message,{kind:'bad'});return false}f.querySelectorAll('.formerr').forEach(x=>x.remove());f.querySelector('.mbody').insertAdjacentHTML('afterbegin',`<div class="formerr" role="alert">${esc(err.message)}</div>`);return false}};
+  const pwModal=(make)=>openModal({title:make?'Create employee page account':'Set a new password',submitLabel:make?'Create account':'Set password',
+    body:`<p style="margin:0 0 12px">For <b>${esc(fullName(e))}</b>. They sign in at <b>${esc(EMP_PAGE)}</b> with their ID number <b>${esc(e.empNo)}</b>${make?'':'. Their old password stops working'}. On first sign-in they must choose their own password.</p>`+passField(tempPass()),
+    onSubmit:async(fd,f)=>{const pw=String(fd.get('password')||'');const r=await call({action:make?'emp_create':'emp_password',password:pw},f);if(r===false)return false;
+      const txt=`GBMA Employee Page\n${EMP_PAGE}\nEmployee ID: ${e.empNo}\nTemporary password: ${pw}\nYou will be asked to choose your own password when you sign in.`;
+      try{await navigator.clipboard.writeText(txt);toast('Done. The sign-in details are copied: paste them in a message to the employee.')}catch(err){toast(`Done. Give the employee: ID ${e.empNo}, password ${pw}.`)}}});
+  on('#ea-new',()=>pwModal(true));on('#ea-pw',()=>pwModal(false));
+  on('#ea-off',()=>confirmBox('Turn off this account?',`<b>${esc(fullName(e))}</b> can no longer sign in to the employee page. You can turn it on again later.`,'Turn off',async()=>{if(await call({action:'emp_disable'})!==false)toast('Employee page account turned off.')}));
+  on('#ea-on',async()=>{if(await call({action:'emp_enable'})!==false)toast('Employee page account turned on.')});
 }
 
 /* ---------------- 201 document uploads ---------------- */

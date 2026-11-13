@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GBMA Employee Page</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+/* Employee page for deployed employees: their own leave, permit to work and overtime requests, and memos to acknowledge.
+   Same colors as the HRIS. All data comes from the server function hris-me, which returns only the signed-in employee's records. */
+:root{
+  --bg:#f6f5f1; --surface:#ffffff; --surface-2:#f2f0ea; --ink:#121a2c; --muted:#596175; --line:#e4e1d9;
+  --side:#0f1e3f; --gold:#f3c623; --btn:#0f1e3f; --btn-ink:#ffffff; --btn-hover:#1b2f5c;
+  --ok:#1b6e45; --ok-bg:#e1f2e8; --warn:#8a5300; --warn-bg:#fcefd6; --bad:#ac2a20; --bad-bg:#fae4e1; --info:#28589c; --info-bg:#e4ecf8; --neutral:#4d5568; --neutral-bg:#ecebe5;
+  --focus:#2f6fd6; --scrim:rgba(9,15,32,.52); --shadow:0 1px 2px rgba(15,30,63,.05),0 6px 18px rgba(15,30,63,.05);
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; --r:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0b1120; --surface:#131b2e; --surface-2:#1a2339; --ink:#e8ecf5; --muted:#a0a9bd; --line:#27324c;
+  --side:#08102a; --btn:#f3c623; --btn-ink:#0f1e3f; --btn-hover:#f7d65a;
+  --ok:#72d6a0; --ok-bg:#133526; --warn:#f3c26b; --warn-bg:#382a0f; --bad:#ff9186; --bad-bg:#3b1a18; --info:#90b6f0; --info-bg:#172a49; --neutral:#b4bccd; --neutral-bg:#212b43;
+  --focus:#90b6f0; --scrim:rgba(0,0,0,.62); --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0b1120; --surface:#131b2e; --surface-2:#1a2339; --ink:#e8ecf5; --muted:#a0a9bd; --line:#27324c;
+  --side:#08102a; --btn:#f3c623; --btn-ink:#0f1e3f; --btn-hover:#f7d65a;
+  --ok:#72d6a0; --ok-bg:#133526; --warn:#f3c26b; --warn-bg:#382a0f; --bad:#ff9186; --bad-bg:#3b1a18; --info:#90b6f0; --info-bg:#172a49; --neutral:#b4bccd; --neutral-bg:#212b43;
+  --focus:#90b6f0; --scrim:rgba(0,0,0,.62); --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+[hidden]{display:none!important}
+.top{background:var(--side);color:#fff;border-bottom:3px solid var(--gold);padding:calc(14px + env(safe-area-inset-top,0px)) 16px 14px}
+.top .in{max-width:720px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.logo{width:44px;height:44px;border-radius:50%;background:#fff;display:grid;place-items:center;flex:none}
+.logo svg{width:26px;height:26px}
+.brand{flex:1;min-width:0}
+.brand b{display:block;font-size:17px;font-weight:800;line-height:1.2}
+.brand span{color:var(--gold);font-size:11.5px;font-weight:700;letter-spacing:.06em}
+.out{background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:10px;min-height:40px;padding:0 12px;font-weight:600;cursor:pointer}
+.out:hover{background:rgba(255,255,255,.1)}
+main{max-width:720px;margin:0 auto;padding:18px 16px 48px;display:flex;flex-direction:column;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px}
+h1{font-size:22px;margin:0;line-height:1.25}
+h2{font-size:18px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.sub{color:var(--muted);margin:2px 0 0;font-size:15px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 18px;border-radius:12px;border:0;background:var(--btn);color:var(--btn-ink);font-weight:700;cursor:pointer;text-decoration:none}
+.btn:hover{background:var(--btn-hover)}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--surface-2)}
+.btn.ok{background:var(--ok);color:#fff}
+.forms{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:700;background:var(--neutral-bg);color:var(--neutral);white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}.chip.warn{background:var(--warn-bg);color:var(--warn)}.chip.bad{background:var(--bad-bg);color:var(--bad)}.chip.info{background:var(--info-bg);color:var(--info)}
+.cnt{background:var(--bad);color:#fff;border-radius:999px;font-size:12.5px;min-width:22px;height:22px;display:inline-grid;place-items:center;padding:0 6px}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.tabs button{flex:none;min-height:42px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:600;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--btn);color:var(--btn-ink);border-color:var(--btn)}
+.list{display:flex;flex-direction:column}
+.item{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line);text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;cursor:default}
+.list .item:first-child{border-top:0}
+button.item{cursor:pointer}
+button.item:hover .nm{text-decoration:underline}
+.item .grow{flex:1;min-width:0}
+.nm{font-weight:700;display:block;overflow-wrap:anywhere}
+.meta{color:var(--muted);font-size:14.5px;overflow-wrap:anywhere}
+.empty{color:var(--muted);margin:0}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bad);flex:none;margin-top:8px}
+.dot.read{background:transparent;border:2px solid var(--line)}
+.gate{min-height:100vh;display:grid;place-items:center;padding:16px}
+.gate .box{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(15,30,63,.10);overflow:hidden}
+.gate .top{padding:20px 22px}
+.gate form{padding:20px 22px 24px;display:flex;flex-direction:column;gap:14px}
+.gate h2{margin:0;font-size:20px}
+.gate p{margin:0;color:var(--muted);font-size:15px}
+label{font-weight:600;font-size:15px;display:flex;flex-direction:column;gap:6px}
+input[type=text],input[type=password]{min-height:48px;border:1px solid var(--line);border-radius:12px;padding:0 14px;background:var(--surface);font-size:17px}
+.msg{border-radius:10px;padding:10px 12px;font-size:15px;font-weight:600}
+.msg.bad{background:var(--bad-bg);color:var(--bad)}.msg.ok{background:var(--ok-bg);color:var(--ok)}
+dialog{border:0;border-radius:16px;padding:0;width:min(680px,calc(100% - 24px));max-height:calc(100% - 24px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:var(--scrim)}
+.dh{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.dh h2{flex:1;margin:0;font-size:18px}
+.x{width:44px;height:44px;border:0;background:none;border-radius:10px;cursor:pointer;font-size:22px;line-height:1;color:var(--muted)}
+.x:hover{background:var(--surface-2)}
+.db{padding:16px 18px}
+.memo{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15.5px;background:var(--surface-2);border-radius:12px;padding:14px;margin:0}
+.mhead{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0 0 12px;font-size:15px}
+.mhead dt{color:var(--muted)}.mhead dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.df{padding:14px 18px 18px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.note{font-size:14px;color:var(--muted);margin:0}
+.loading{color:var(--muted);text-align:center;padding:40px 0}
+</style>
+</head>
+<body>
+<div id="app"><p class="loading">Loading…</p></div>
+<dialog id="dlg" aria-labelledby="dlg-t"></dialog>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.min.js"></script>
+<script src="/hris/config.js"></script>
+<script>
+(function(){
+"use strict";
+const CFG=window.HRIS_CONFIG;
+const sb=window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true}});
+const app=document.getElementById('app'),dlg=document.getElementById('dlg');
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmt=d=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(d||'');return m?`${MON[+m[2]-1]} ${+m[3]}, ${m[1]}`:''};
+const fmtTs=t=>{if(!t)return'';const d=new Date(t);return isNaN(d)?'':d.toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})};
+const LOGO=`<div class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="11" cy="10" r="4.5" fill="#f3c623"/><circle cx="22" cy="11.5" r="3.6" fill="#0f1e3f"/><path d="M2.5 26c0-5.2 3.8-8.8 8.5-8.8s8.5 3.6 8.5 8.8z" fill="#f3c623"/><path d="M17.6 19.1c1.2-.9 2.7-1.4 4.4-1.4 4 0 7 3 7 7.6h-9.3c-.1-2.4-.8-4.5-2.1-6.2z" fill="#0f1e3f"/></svg></div>`;
+const brand=`${LOGO}<div class="brand"><b>Employee Page</b><span>GOLDEN BEAR MANPOWER AGENCY</span></div>`;
+
+async function call(body){
+  const{data,error}=await sb.functions.invoke('hris-me',{body});
+  if(error){let m='',st=error.context&&error.context.status;try{m=(await error.context.json()).error}catch(e){}
+    if(st===401){await sb.auth.signOut();showLogin({kind:'bad',text:'Your session ended. Please sign in again.'});throw{handled:true}}
+    throw{message:m||'Could not reach the server. Check your internet connection and try again.'}}
+  return data;
+}
+
+/* ---------- sign in ---------- */
+function gateBox(inner){app.innerHTML=`<div class="gate"><div class="box"><div class="top"><div class="in">${brand}</div></div>${inner}</div></div>`;return app.querySelector('form')}
+function showLogin(note){
+  const f=gateBox(`<form novalidate>
+    <h2>Sign in</h2><p>For GBMA employees deployed at our clients.</p>
+    ${note?`<div class="msg ${note.kind}" role="alert">${esc(note.text)}</div>`:''}
+    <label>Employee ID<input type="text" name="empNo" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="e.g. GBMA04-26-042" required></label>
+    <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn" type="submit">Sign in</button>
+    <p>No account or forgot your password? Ask GBMA HR.</p></form>`);
+  f.empNo.focus();
+  f.onsubmit=async ev=>{ev.preventDefault();
+    const no=f.empNo.value.trim(),pw=f.password.value;
+    if(!no||!pw)return showLogin({kind:'bad',text:'Enter your Employee ID and password.'});
+    const b=f.querySelector('[type=submit]');b.disabled=true;b.textContent='Signing in…';
+    try{
+      const r=await call({action:'who',empNo:no});
+      if(!r||!r.email)return showLogin({kind:'bad',text:'Wrong Employee ID or password.'});
+      const{error}=await sb.auth.signInWithPassword({email:r.email,password:pw});
+      if(error)return showLogin({kind:'bad',text:/bann/i.test(error.message)?'Your account is turned off. Please contact GBMA HR.':/rate|many/i.test(error.message)?'Too many tries. Wait a few minutes and try again.':'Wrong Employee ID or password.'});
+      load();
+    }catch(e){if(!e.handled)showLogin({kind:'bad',text:e.message})}
+  };
+}
+function showSetPassword(note){
+  const f=gateBox(`<form novalidate>
+    <h2>Choose your own password</h2><p>Replace the temporary password HR gave you. Use at least 8 characters and keep it to yourself.</p>
+    ${note?`<div class="msg ${note.kind}" role="alert">${esc(note.text)}</div>`:''}
+    <label>New password<input type="password" name="p1" autocomplete="new-password" minlength="8" required></label>
+    <label>Type it again<input type="password" name="p2" autocomplete="new-password" minlength="8" required></label>
+    <button class="btn" type="submit">Save password</button>
+    <button class="btn ghost" type="button" id="so">Sign out</button></form>`);
+  f.p1.focus();f.querySelector('#so').onclick=signOut;
+  f.onsubmit=async ev=>{ev.preventDefault();
+    if(f.p1.value.length<8)return showSetPassword({kind:'bad',text:'Use at least 8 characters.'});
+    if(f.p1.value!==f.p2.value)return showSetPassword({kind:'bad',text:'The two passwords do not match.'});
+    const b=f.querySelector('[type=submit]');b.disabled=true;b.textContent='Saving…';
+    try{await call({action:'password',password:f.p1.value});load()}catch(e){if(!e.handled)showSetPassword({kind:'bad',text:e.message})}
+  };
+}
+async function signOut(){await sb.auth.signOut();showLogin({kind:'ok',text:'You are signed out.'})}
+
+/* ---------- the employee's page ---------- */
+let D=null,tab='memos';
+const CHIP={Pending:'warn',Approved:'ok',Issued:'ok',Declined:'bad',Cancelled:'',Canceled:''};
+const chip=s=>`<span class="chip ${CHIP[s]||''}">${esc(s==='Pending'?'Waiting for approval':s||'—')}</span>`;
+async function load(){
+  try{
+    const{data}=await sb.auth.getSession();
+    if(!data.session)return showLogin();
+    const am=data.session.user.app_metadata||{};
+    if(am.hris_role!=='employee'){app.innerHTML=`<div class="gate"><div class="box"><div class="top"><div class="in">${brand}</div></div><form><h2>This page is for employees</h2><p>You are signed in with an HRIS staff account.</p><a class="btn" href="/hris/">Go to the HRIS</a><button class="btn ghost" type="button" id="so">Sign out</button></form></div></div>`;app.querySelector('#so').onclick=signOut;return}
+    D=await call({action:'me'});
+    if(D.mustChange)return showSetPassword();
+    draw();
+  }catch(e){if(!e.handled)app.innerHTML=`<main><div class="card"><div class="msg bad" role="alert">${esc(e.message)}</div><p style="margin:12px 0 0"><button class="btn" id="re">Try again</button></p></div></main>`,app.querySelector('#re').onclick=load}
+}
+function draw(){
+  const e=D.employee,unread=D.memos.filter(m=>!m.ackAt).length;
+  const tabs=[['memos','Memos',unread],['leaves','Leaves',0],['permits','Permits to work',0],['overtime','Overtime',0]];
+  const lists={
+    memos:()=>D.memos.length?D.memos.map(m=>`<button class="item" data-memo="${esc(m.id)}"><span class="dot ${m.ackAt?'read':''}" aria-hidden="true"></span><div class="grow"><span class="nm">${esc(m.subject||m.type)}</span><div class="meta">${esc(m.type)} · ${fmt(m.issuedOn)}${m.no?` · ${esc(m.no)}`:''}</div></div>${m.ackAt?'<span class="chip ok">Acknowledged</span>':'<span class="chip bad">New</span>'}</button>`).join(''):'<p class="empty">No memos for you.</p>',
+    leaves:()=>D.leaves.length?D.leaves.map(l=>`<div class="item"><div class="grow"><span class="nm">${esc(l.type||'Leave')}</span><div class="meta">${fmt(l.from)}${l.to&&l.to!==l.from?` – ${fmt(l.to)}`:''}${l.days!=null?` · ${l.days} day${l.days==1?'':'s'}`:''}${l.unpaidDays?` · ${l.unpaidDays} without pay`:''}</div>${l.remarks?`<div class="meta">HR remarks: ${esc(l.remarks)}</div>`:''}</div>${chip(l.status)}</div>`).join(''):'<p class="empty">No leave requests yet.</p>',
+    permits:()=>D.permits.length?D.permits.map(p=>`<div class="item"><div class="grow"><span class="nm">Return to work on ${fmt(p.returnDate)||'—'}</span><div class="meta">${p.no?esc(p.no)+' · ':''}after ${esc((p.leaveType||'').toLowerCase())} leave ${fmt(p.leaveFrom)}${p.leaveTo&&p.leaveTo!==p.leaveFrom?` – ${fmt(p.leaveTo)}`:''}</div></div>${chip(p.status==='Approved'?'Issued':p.status)}</div>`).join(''):'<p class="empty">No permits to work yet.</p>',
+    overtime:()=>D.overtime.length?D.overtime.map(o=>`<div class="item"><div class="grow"><span class="nm">${fmt(o.date)} · ${o.hours} hour${o.hours===1?'':'s'}</span>${o.reason?`<div class="meta">${esc(o.reason)}</div>`:''}</div>${chip(o.status)}</div>`).join(''):'<p class="empty">No overtime requests yet.</p>'};
+  app.innerHTML=`<header class="top"><div class="in">${brand}<button class="out" id="so">Sign out</button></div></header>
+  <main>
+    <section class="card" aria-label="Your details"><h1>Hello, ${esc(e.firstName||e.name)}!</h1><p class="sub">${esc(e.name)} · ${esc(e.empNo)}</p><p class="sub">${esc(e.position||'')}${e.client?` · ${esc(e.client)}`:''}${e.site?` (${esc(e.site)})`:''}</p></section>
+    ${unread?`<div class="msg bad" role="status">You have ${unread} new memo${unread===1?'':'s'}. Please open and acknowledge ${unread===1?'it':'them'}.</div>`:''}
+    <section class="card"><h2>File a request</h2><div class="forms">
+      <a class="btn ghost" href="${esc(D.forms.leave)}" target="_blank" rel="noopener">Leave form</a>
+      <a class="btn ghost" href="${esc(D.forms.permit)}" target="_blank" rel="noopener">Permit to work</a>
+      <a class="btn ghost" href="${esc(D.forms.overtime)}" target="_blank" rel="noopener">Overtime request</a></div>
+      <p class="note" style="margin-top:10px">Requests you file show up below within about 5 minutes.</p></section>
+    <div class="tabs" role="tablist">${tabs.map(([k,l,n])=>`<button role="tab" aria-selected="${tab===k}" data-tab="${k}">${l}${n?` <span class="cnt">${n}</span>`:''}</button>`).join('')}</div>
+    <section class="card" role="tabpanel"><div class="list">${lists[tab]()}</div></section>
+    <p class="note" style="text-align:center"><button class="btn ghost" id="rf">Refresh</button></p>
+  </main>`;
+  app.querySelector('#so').onclick=signOut;
+  app.querySelector('#rf').onclick=async ev=>{ev.target.disabled=true;ev.target.textContent='Refreshing…';await load()};
+  app.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;draw();const t=app.querySelector(`[data-tab="${tab}"]`);if(t)t.focus()});
+  app.querySelectorAll('[data-memo]').forEach(b=>b.onclick=()=>openMemo(b.dataset.memo));
+}
+function openMemo(id){
+  const m=D.memos.find(x=>x.id===id);if(!m)return;
+  const text=m.text||`To: ${m.to}\nFrom: ${m.from}\nDate: ${fmt(m.issuedOn)}\nRe: ${m.subject}\n\n${m.body}${m.responseDue?`\n\nPlease submit your written explanation on or before ${fmt(m.responseDue)}.`:''}`;
+  dlg.innerHTML=`<div class="dh"><h2 id="dlg-t">${esc(m.subject||m.type)}</h2><button class="x" id="dx" aria-label="Close">×</button></div>
+    <div class="db"><dl class="mhead"><dt>Type</dt><dd>${esc(m.type)}</dd>${m.no?`<dt>Memo no.</dt><dd>${esc(m.no)}</dd>`:''}<dt>Date</dt><dd>${fmt(m.issuedOn)}</dd>${m.holiday&&m.holiday.date?`<dt>Holiday</dt><dd>${fmt(m.holiday.date)}</dd>`:''}${m.responseDue?`<dt>Explain by</dt><dd>${fmt(m.responseDue)}</dd>`:''}</dl>
+    <pre class="memo">${esc(text)}</pre></div>
+    <div class="df" id="dfoot">${m.ackAt?`<div class="msg ok">You acknowledged this memo on ${esc(fmtTs(m.ackAt))}.</div>`:`<button class="btn ok" id="ack">I have received and read this memo</button><p class="note">This tells HR that you received the memo. ${m.responseDue?'It does not replace your written explanation.':''}</p>`}</div>`;
+  dlg.querySelector('#dx').onclick=()=>dlg.close();
+  const a=dlg.querySelector('#ack');
+  if(a)a.onclick=async()=>{a.disabled=true;a.textContent='Saving…';
+    try{const r=await call({action:'ack',id});m.ackAt=r.ackAt;dlg.close();draw()}
+    catch(e){if(e.handled)return dlg.close();a.disabled=false;a.textContent='I have received and read this memo';dlg.querySelector('#dfoot').insertAdjacentHTML('afterbegin',`<div class="msg bad" role="alert">${esc(e.message)}</div>`)}};
+  dlg.showModal();
+}
+dlg.addEventListener('click',e=>{if(e.target===dlg)dlg.close()});
+sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT'&&D){D=null}});
+load();
+})();
+</script>
+</body>
+</html>

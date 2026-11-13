@@ -5,6 +5,8 @@
 //   hris_access  per part of the HRIS: { view, edit, sites } (sites: null = all sites, or the sites allowed);
 //                set for "staff"/"viewer"; the role follows from it (no Edit ticked anywhere = viewer)
 //   approver     "HR" | "Owner" | ""  (preselected in the Approve/Decline window)
+// Employee page accounts (hris_role "employee", employee_id = 201 record id) are made from the employee's 201
+// file with the emp_* actions; they are left out of the staff list and cannot be changed with the staff actions.
 // Accounts made before this have no hris_role and count as staff with full access; the database rules read
 // hris_role (viewers cannot change records), the HRIS screens apply the per-part and per-site access.
 import { createClient } from "npm:@supabase/supabase-js@2.50.0";
@@ -60,6 +62,12 @@ async function all() {
   return out;
 }
 const goodPassword = (p: string) => p.length >= 8;
+// deno-lint-ignore no-explicit-any
+const isEmp = (u: any) => u?.app_metadata?.hris_role === "employee";
+const empEmail = (empId: string) => `emp.${empId.toLowerCase().replace(/[^a-z0-9]/g, "")}@employees.gbma.local`;
+// deno-lint-ignore no-explicit-any
+const empView = (u: any) => u ? ({ id: u.id, active: !u.banned_until || new Date(u.banned_until) < new Date(), lastSignIn: u.last_sign_in_at ?? null,
+  createdAt: u.created_at, mustChange: u.app_metadata?.must_change === true }) : null;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -73,7 +81,41 @@ Deno.serve(async (req) => {
   const b = await req.json().catch(() => ({}));
   const action = s(b.action), id = s(b.id);
   try {
-    if (action === "list") return json({ users: (await all()).map(view) });
+    if (action === "list") return json({ users: (await all()).filter((u) => !isEmp(u)).map(view) });
+
+    if (action.startsWith("emp_")) {
+      const empId = s(b.employeeId);
+      const { data: row } = await sb.from("hris_docs").select("data").eq("collection", "employees").eq("id", empId).maybeSingle();
+      if (!row) return json({ error: "That 201 file no longer exists." }, 404);
+      const e = row.data as Record<string, unknown>;
+      const acct = (await all()).find((u) => isEmp(u) && u.app_metadata?.employee_id === empId);
+      if (action === "emp_get") return json({ account: empView(acct) });
+      const password = String(b.password ?? "");
+      if (action === "emp_create") {
+        if (acct) return json({ error: "This employee already has an account." }, 400);
+        if (!goodPassword(password)) return json({ error: "The temporary password needs at least 8 characters." }, 400);
+        const name = [s(e.firstName), s(e.lastName)].filter(Boolean).join(" ");
+        const { data, error } = await sb.auth.admin.createUser({
+          email: empEmail(empId), password, email_confirm: true, user_metadata: { full_name: name },
+          app_metadata: { hris_role: "employee", employee_id: empId, must_change: true },
+        });
+        if (error) return json({ error: error.message }, 400);
+        return json({ account: empView(data.user) });
+      }
+      if (!acct) return json({ error: "This employee has no account yet." }, 404);
+      if (action === "emp_password") {
+        if (!goodPassword(password)) return json({ error: "The temporary password needs at least 8 characters." }, 400);
+        const { data, error } = await sb.auth.admin.updateUserById(acct.id, { password, app_metadata: { ...acct.app_metadata, must_change: true } });
+        if (error) throw error;
+        return json({ account: empView(data.user) });
+      }
+      if (action === "emp_disable" || action === "emp_enable") {
+        const { data, error } = await sb.auth.admin.updateUserById(acct.id, { ban_duration: action === "emp_disable" ? OFF : "none" });
+        if (error) throw error;
+        return json({ account: empView(data.user) });
+      }
+      return json({ error: "Unknown action." }, 400);
+    }
 
     if (action === "create") {
       const email = s(b.email).toLowerCase(), name = s(b.name), password = String(b.password ?? "");
@@ -94,7 +136,8 @@ Deno.serve(async (req) => {
     const { data: got, error: gerr } = await sb.auth.admin.getUserById(id);
     if (gerr || !got?.user) return json({ error: "That account no longer exists." }, 404);
     const u = got.user, self = id === me.user.id;
-    const admins = async () => (await all()).filter((x) => role(x.app_metadata) === "admin" && view(x).active && x.id !== id).length;
+    if (isEmp(u)) return json({ error: "This is an employee page account. Manage it from the employee's 201 file." }, 400);
+    const admins = async () => (await all()).filter((x) => !isEmp(x) && role(x.app_metadata) === "admin" && view(x).active && x.id !== id).length;
 
     if (action === "update") {
       const r = s(b.role), ap = s(b.approver), name = s(b.name);

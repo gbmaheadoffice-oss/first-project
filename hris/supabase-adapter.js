@@ -95,6 +95,8 @@ async function enter(user){
   /* a fresh token carries access changed in Settings since the last sign-in */
   try{const{data,error}=await sb.auth.refreshSession();if(data&&data.user)user=data.user;
     if(error&&/bann/i.test(error.message||'')){await sb.auth.signOut();entering=false;return showLogin({kind:'bad',text:OFF_MSG})}}catch(e){}
+  /* employee page accounts have no HRIS access: send them to their own page */
+  if((user.app_metadata||{}).hris_role==='employee'){location.replace('/employee/');return}
   const meta=user.user_metadata||{};
   let name=meta.full_name||'';
   try{const{data}=await sb.from('hris_profiles').select('name').eq('id',user.id).maybeSingle();if(!name&&data&&data.name)name=data.name}catch(e){}
