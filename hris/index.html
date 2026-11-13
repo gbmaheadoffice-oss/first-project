@@ -3194,10 +3194,10 @@ function empForm(id,pre){
   <fieldset><legend>Contact person (emergency)</legend><div class="fg">
     ${F('emergencyName','Contact person')}${F('emergencyPhone','Contact number',{type:'tel'})}${F('emergencyRelation','Relationship')}
   </div></fieldset>
-  <fieldset><legend>Payroll bank account · ${BANK} only</legend><div class="fg">
+  <fieldset><legend>Payroll bank account · ${BANK} only</legend>${id?'':`<p class="help" style="margin:0 0 8px">Required for every new hire: the AUB account name, account number and a photo of the account number.</p>`}<div class="fg">
     <div class="field"><label for="ef-bank">Bank</label><input id="ef-bank" value="${BANK}" readonly aria-readonly="true" style="background:var(--surface-2)"></div>
-    ${field({id:'ef-bankAccountName',name:'bankAccountName',label:'Account name',value:(e.bank&&e.bank.accountName)||'',help:'As printed on the ATM card or passbook.'})}
-    ${field({id:'ef-bankAccountNo',name:'bankAccountNo',label:'AUB account number',value:(e.bank&&e.bank.accountNo)||'',attrs:'inputmode="numeric" autocomplete="off" placeholder="Digits only"',help:'Digits only. Spaces and dashes are removed.'})}
+    ${field({id:'ef-bankAccountName',name:'bankAccountName',label:'Account name',req:!id,value:(e.bank&&e.bank.accountName)||'',help:'As printed on the ATM card or passbook.'})}
+    ${field({id:'ef-bankAccountNo',name:'bankAccountNo',label:'AUB account number',req:!id,value:(e.bank&&e.bank.accountNo)||'',attrs:'inputmode="numeric" autocomplete="off" placeholder="Digits only"',help:'Digits only. Spaces and dashes are removed.'})}
     <div class="field full"><span class="flabel" id="ef-bankproof-l">Photo of the account number${(e.bank&&(e.bank.proof||[]).length)?'':' <span class="req" aria-hidden="true">*</span>'}</span>
       <p class="help" style="margin:0">A clear photo or scan of the ATM card, passbook or bank certificate showing the account number, so HR can cross-check it against the typed number. Required when an account number is entered.${(e.bank&&(e.bank.proof||[]).length)?' A new photo replaces the current one.':''}</p>
       ${(e.bank&&(e.bank.proof||[]).length)?`<p class="help" style="margin:0"><span class="chip ok">${ic('pclip')}Current photo on file</span></p>`:''}
@@ -3247,6 +3247,8 @@ function empForm(id,pre){
       if(bl&&f.dataset.blok!==bl.id){f.dataset.blok=bl.id;f.querySelector('.mbody').insertAdjacentHTML('afterbegin',`<div class="formerr" role="alert">${ic('alert')} <b>Blocklisted match:</b> ${esc(fullName(bl))} (${esc(bl.empNo)}) was blocklisted${bl.blocklistDate?' on '+fmt(bl.blocklistDate):''} for <b>${esc(bl.blocklistReason||'an unrecorded reason')}</b>${bl.blocklistDetails?`: ${esc(bl.blocklistDetails)}`:''}. Check that this is a different person. To save anyway, click <b>${id?'Save changes':'Add employee'}</b> again.</div>`);f.querySelector('.mbody').scrollTop=0;return false}
       const prevBank=(id&&EMP[id]&&EMP[id].bank)||{};
       const acct=String(fd.get('bankAccountNo')||'').replace(/[\s-]/g,'');
+      if(!id&&!String(fd.get('bankAccountName')||'').trim()){setErr(f.querySelector('#ef-bankAccountName'),'A new hire needs an AUB account. Enter the account name.');return false}
+      if(!id&&!acct){setErr(f.querySelector('#ef-bankAccountNo'),'A new hire needs an AUB account. Enter the AUB account number.');return false}
       if(acct&&!/^\d{10,16}$/.test(acct)){setErr(f.querySelector('#ef-bankAccountNo'),'Enter the AUB account number using digits only (10 to 16 digits).');return false}
       const newProof=(staged.__bank||[]).length>0;
       if(acct&&!newProof&&!(prevBank.proof||[]).length){const b=f.querySelector('#ef-bankproof')||f.querySelector('#ef-bankAccountNo');setErr(b,'Attach a photo of the account number so HR can cross-check it.');return false}
