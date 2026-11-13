@@ -189,6 +189,7 @@ button.row:hover .nm{text-decoration:underline}
 .tbl th{text-align:left;font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;padding:12px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 .tbl td{padding:14px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .tbl tr:last-child td{border-bottom:0}
+.tbl tfoot .tk-total td{border-top:2px solid var(--ink);background:var(--surface-2)}
 .tbl tr.click{cursor:pointer}
 .tbl tr.click:hover td{background:var(--surface-2)}
 .tbl .nm{font-weight:700}
@@ -1559,7 +1560,7 @@ function tkEmpRows(doc){
   tkShifts(doc).forEach(r=>{const k=tkKey(r.emp);const e=idx[k]||null;if(!e&&all[k])return;const g=by[k]||(by[k]={k,emp:r.emp,name:r.name,e,days:[]});g.days.push(r)});
   return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t,x.d,x.type)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
     const s={days:g.days.length,inc:g.days.filter((x,i)=>calc?calc[i].odd:x.t.length%2).length,mins:g.days.reduce((t,x)=>t+tkHours(x.t),0)};
-    if(calc)Object.assign(s,{late:sum('late'),ut:sum('ut'),ob:sum('ob'),reg:sum('reg'),ot:sum('ot')});
+    if(calc)Object.assign(s,{late:sum('late'),ut:sum('ut'),ob:sum('ob'),reg:sum('reg'),ot:sum('ot'),nd:sum('nd'),ndot:sum('ndot')});
     return{...g,rule,calc,s}})
     .sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
 }
@@ -1668,11 +1669,11 @@ VIEWS.timekeep=function(){
     <label class="sr" for="f-tk-client">Client company</label><select id="f-tk-client" data-filter="tk.client" style="flex:1 1 220px;max-width:320px"><option value="">All client companies</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>
     ${searchBox('f-tk-q','tk.q',f.q,'Search employee, AC-No., site')}</div>`;
   if(!rows.length)h+=emptyBlock('No employees here','Try another tab, site or search.');
-  else h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1280px"><thead><tr><th>Employee</th><th>AC-No.</th><th>Site Location</th><th class="r">Days with Logs</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular Hours</th><th class="r">OT</th><th class="r">Hours (first to last log)</th><th>Remarks</th></tr></thead><tbody>
+  else h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1440px"><thead><tr><th>Employee</th><th>AC-No.</th><th>Site Location</th><th class="r">Days with Logs</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular Hours</th><th class="r">OT</th><th class="r">ND</th><th class="r">NDOT</th><th class="r">Hours (first to last log)</th><th>Remarks</th></tr></thead><tbody>
     ${rows.map(r=>`<tr class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"><td><div class="nm">${tkWho(r)}</div><div class="sub">${r.e?esc(r.e.empNo||''):'Name from the biometrics file'}</div></td>
-      <td class="num">${esc(r.emp)}</td><td>${r.e?esc(r.e.client||'—'):'—'}</td><td class="r num">${r.s.days}</td>${r.rule?`<td class="r num ${r.s.late?'att-warn':''}">${tkH(r.s.late)}</td><td class="r num ${r.s.ut?'att-warn':''}">${tkH(r.s.ut)}</td><td class="r num ${r.s.ob?'att-bad':''}">${tkH(r.s.ob)}</td><td class="r num"><b>${tkH(r.s.reg)}</b></td><td class="r num">${tkH(r.s.ot)}</td>`:`<td colspan="5" class="att-muted" style="text-align:center">No time keep rules for this site yet</td>`}<td class="r num">${tkH(r.s.mins)}</td>
+      <td class="num">${esc(r.emp)}</td><td>${r.e?esc(r.e.client||'—'):'—'}</td><td class="r num">${r.s.days}</td>${r.rule?`<td class="r num ${r.s.late?'att-warn':''}">${tkH(r.s.late)}</td><td class="r num ${r.s.ut?'att-warn':''}">${tkH(r.s.ut)}</td><td class="r num ${r.s.ob?'att-bad':''}">${tkH(r.s.ob)}</td><td class="r num"><b>${tkH(r.s.reg)}</b></td><td class="r num">${tkH(r.s.ot)}</td><td class="r num">${tkH(r.s.nd)}</td><td class="r num">${tkH(r.s.ndot)}</td>`:`<td colspan="7" class="att-muted" style="text-align:center">No time keep rules for this site yet</td>`}<td class="r num">${tkH(r.s.mins)}</td>
       <td><div class="dchips">${r.e?'':'<span class="chip bad">Not in 201 files</span>'}${r.s.inc?`<span class="chip warn">${r.s.inc} day${r.s.inc===1?'':'s'} with a missing log</span>`:''}</div></td></tr>`).join('')}
-    </tbody></table></div>`;
+    </tbody>${(()=>{const T=k=>rows.reduce((t,r)=>t+(r.s[k]||0),0);return`<tfoot><tr class="tk-total"><td colspan="3"><b>TOTAL · ${rows.length} employee${rows.length===1?'':'s'}</b><div class="sub">${fmtS(doc.from)} – ${fmt(doc.to)}</div></td><td class="r num"><b>${T('days')}</b></td><td class="r num"><b>${tkH(T('late'))}</b></td><td class="r num"><b>${tkH(T('ut'))}</b></td><td class="r num"><b>${tkH(T('ob'))}</b></td><td class="r num"><b>${tkH(T('reg'))}</b></td><td class="r num"><b>${tkH(T('ot'))}</b></td><td class="r num"><b>${tkH(T('nd'))}</b></td><td class="r num"><b>${tkH(T('ndot'))}</b></td><td class="r num"><b>${tkH(T('mins'))}</b></td><td>${T('inc')?`<span class="chip warn">${T('inc')} missing-log day${T('inc')===1?'':'s'}</span>`:''}</td></tr></tfoot>`})()}</table></div>`;
   return h+'</section>';
 };
 function tkView(k){
@@ -1724,6 +1725,30 @@ function tkUpload(){
       toast(`Uploaded ${fname}: ${new Set(parsed.rows.map(r=>tkKey(r.emp))).size} employees, ${fmt(doc.from)} – ${fmt(doc.to)}.`);
     }});
 }
+/* Cut-off summary: one line per employee for the whole cut-off (from the per-day rows, so absences, leaves and rest days
+   are counted too), plus a TOTAL line. It is the last sheet of both Time Keep exports. */
+function tkCutSummary(doc){
+  const by={},order=[];
+  for(let d=doc.from;d<=doc.to;d=addDays(d,1))tkDayFiltered(doc,d).forEach(r=>{
+    let g=by[r.k];if(!g){g=by[r.k]={name:r.e?fullName(r.e):r.name||'',emp:r.emp,client:r.e?r.e.client||'':'Not in 201 files',e:r.e,present:0,absent:0,leave:0,rest:0,miss:0,late:0,ut:0,ob:0,reg:0,ot:0,nd:0,ndot:0};order.push(g)}
+    if(!r.log){if(r.rest)g.rest++;else if(r.leave)g.leave++;else g.absent++;return}
+    g.present++;const c=r.c;if(c?c.odd:r.log.t.length%2)g.miss++;
+    if(c){g.late+=c.late||0;g.ut+=c.ut||0;g.ob+=c.ob||0;g.reg+=c.reg||0;g.ot+=c.ot||0;g.nd+=c.nd||0;g.ndot+=c.ndot||0}});
+  return order;
+}
+const TK_SUM_COLS=['NAME','AC-NO.','SITE','DAYS PRESENT','ABSENT','LEAVE','REST DAY','MISSING LOG','LATE (MIN)','UNDERTIME (MIN)','OVERBREAK (MIN)','REG HRS','OT','ND','NDOT'];
+const TK_SUM_KEYS=['present','absent','leave','rest','miss','late','ut','ob','reg','ot','nd','ndot'];
+// regular hours, OT, ND and NDOT in hours (2 decimals); the rest are counts or minutes
+const tkSumVal=(k,v)=>['reg','ot','nd','ndot'].includes(k)?tkDec(v):v;
+function tkSummarySheet(X,doc){
+  const rows=tkCutSummary(doc);if(!rows.length)return null;
+  const tot={};TK_SUM_KEYS.forEach(k=>tot[k]=rows.reduce((t,g)=>t+g[k],0));
+  const aoa=xlInfo('TIME KEEP – CUT-OFF SUMMARY',[['CLIENT:',UI.tk.client||'All client companies'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`]]).concat([[`SUMMARY · ${fmt(doc.from).toUpperCase()} – ${fmt(doc.to).toUpperCase()}`],TK_SUM_COLS]);
+  rows.forEach(g=>aoa.push([g.name,g.emp,g.client,...TK_SUM_KEYS.map(k=>tkSumVal(k,g[k]))]));
+  aoa.push([`TOTAL (${rows.length} employee${rows.length===1?'':'s'})`,'','',...TK_SUM_KEYS.map(k=>tkSumVal(k,tot[k]))]);
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,9,24,9,8,7,8,9,9,11,11,9,8,8,8].map(w=>({wch:w}));
+  return ws;
+}
 async function tkDayXlsx(){
   const doc=tkCur();if(!doc)return;
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
@@ -1740,6 +1765,7 @@ async function tkDayXlsx(){
     X.utils.book_append_sheet(wb,ws,parse(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
   }
   if(!n){toast('There are no time logs to export.',{kind:'bad'});return}
+  const sw=tkSummarySheet(X,doc);if(sw)X.utils.book_append_sheet(wb,sw,'SUMMARY');
   const name=`GBMA Time Keep per day ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
   try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${n} day${n===1?'':'s'} to ${name}, one sheet per day.`)}
   catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
@@ -1806,6 +1832,7 @@ async function tkXlsx(){
   const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[12,12,28,30,11,6,10,10,40,10,20,9,11,11,10,9,18].map(w=>({wch:w}));
   ws['!autofilter']={ref:X.utils.encode_range({s:{r:top,c:0},e:{r:aoa.length-1,c:COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Time Keep');
+  const sw=tkSummarySheet(X,doc);if(sw)X.utils.book_append_sheet(wb,sw,'SUMMARY');
   const name=`GBMA Time Keep ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
   try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
   catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
