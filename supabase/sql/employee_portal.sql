@@ -30,4 +30,7 @@ $$;
 revoke all on function public.hris_employee_login_email(text) from public, anon, authenticated;
 grant execute on function public.hris_employee_login_email(text) to service_role;
 
+-- the server functions (hris-admin, hris-me) read 201 files, requests and memos, and hris-me records memo acknowledgments
+grant select, update on public.hris_docs to service_role;
+
 select 'ok' as result;
