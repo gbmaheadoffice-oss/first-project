@@ -463,6 +463,29 @@ body.ro [data-write]{display:none!important}
   .memo-meta{grid-template-columns:84px 1fr}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* Payroll payslips: shown in the payslip window and printed (two per A4 / letter page) */
+.pslip{--ink:#111;--muted:#555;--line:#bbb;border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13px;background:#fff;color:var(--ink)}
+.pslip .ps-hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:8px}
+.pslip .ps-hd b{font-size:15px;letter-spacing:.02em}.pslip .ps-hd span{font-weight:700;letter-spacing:.12em}
+.pslip .ps-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 18px;margin-bottom:10px}
+.pslip .ps-info div{display:flex;gap:6px}.pslip .ps-info i{font-style:normal;color:var(--muted);min-width:78px}
+.pslip .ps-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.pslip table{width:100%;border-collapse:collapse}.pslip th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);padding:3px 0}
+.pslip td{padding:2px 0;vertical-align:top}.pslip td.q{color:var(--muted);text-align:right;padding-right:8px;white-space:nowrap}.pslip td.a{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pslip tr.t td{border-top:1px solid var(--line);font-weight:700;padding-top:4px}
+.pslip .ps-net{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:8px 10px;border:2px solid var(--ink);border-radius:8px;font-weight:700;font-size:15px}
+.pslip .ps-sign{display:flex;justify-content:space-between;gap:20px;margin-top:22px;font-size:12px;color:var(--muted)}.pslip .ps-sign span{flex:1;border-top:1px solid var(--muted);padding-top:3px}
+.pslip .ps-note{margin-top:6px;font-size:11.5px;color:var(--muted)}
+@media (max-width:620px){.pslip .ps-info,.pslip .ps-cols{grid-template-columns:minmax(0,1fr)}}
+#prt{display:none}
+@media print{
+  body.printing>*:not(#prt){display:none!important}
+  body.printing{background:#fff!important}
+  body.printing #prt{display:block}
+  #prt .pslip{--ink:#000;--muted:#444;--line:#999;background:#fff;color:#000;break-inside:avoid;page-break-inside:avoid;margin:0 0 14px;border-radius:0}
+  #prt .pslip:nth-child(2n){break-after:page;page-break-after:always}
+  #prt .pslip .ps-info,#prt .pslip .ps-cols{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 </style>
 
 <a class="skip" href="#view">Skip to main content</a>
@@ -685,7 +708,7 @@ let ME={role:'',approver:'',access:null}; // the signed-in account's access (Set
 // (sites: null = all). Accounts made before per-part access (no access saved) keep full access, view-only
 // ones without Edit. The database stops view-only accounts from changing records; the rest is applied here.
 const PARTS={approvals:'Approvals',applicants:'Applicants',employees:'201 Files',leaves:'Leave Management',attendance:'Attendance',evaluations:'Evaluations & Regularization',comms:'Company Communications',da:'DA & Grievances',payroll:'Payroll'};
-const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'da',grievances:'da',cmemos:'comms',timekeep:'payroll',settings:'admin'};
+const PART_OF={approvals:'approvals',applicants:'applicants',employees:'employees',leaves:'leaves',permits:'leaves',leavereport:'leaves',attendance:'attendance',attpolicy:'attendance',overtime:'attendance',otreport:'attendance',evaluations:'evaluations',memos:'da',grievances:'da',cmemos:'comms',timekeep:'payroll',payrun:'payroll',settings:'admin'};
 const COL_PART={employees:'employees',leaves:'leaves',permits:'leaves',attendance:'attendance',overtime:'attendance',memos:'comms',grievances:'da',applicants:'applicants',clientevals:'evaluations',evalinvites:'evaluations',config:'attendance',timekeep:'payroll'};
 const acc=p=>{
   if(ME.role==='admin')return{view:true,edit:true,sites:null};
@@ -731,7 +754,7 @@ const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees',
   'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves','apr-decide':'approvals',
   'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
-  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll','tk-fix':'payroll',
+  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll','tk-fix':'payroll','pr-ded':'payroll',
   'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
 const actOK=a=>!ACT_PART[a]||canEdit(ACT_PART[a]);
 function applyAccessCss(){
@@ -740,7 +763,7 @@ function applyAccessCss(){
   st.textContent=hide.length?hide.map(a=>`[data-act="${a}"]`).join(',')+'{display:none!important}':'';
 }
 const LS='manpower-hris-v1';
-const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:'',mode:'day',day:'',dtab:'All'},otrep:{tab:'All',mode:'day',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
+const UI={app:{tab:'New',q:'',pos:''},emp:{q:'',client:'',dept:'',type:'st:Active',tag:'',inc:false},leave:{tab:'Pending',q:''},permit:{tab:'Pending',q:''},ot:{tab:'Pending',q:''},apr:{tab:'All',step:'all',q:''},tk:{id:'',tab:'All',client:'',q:'',mode:'day',day:'',dtab:'All'},pr:{q:'',client:''},otrep:{tab:'All',mode:'day',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',q:''},lrep:{tab:'All',from:today().slice(0,8)+'01',to:(d=>iso(new Date(d.getFullYear(),d.getMonth()+1,0)))(new Date()),client:'',type:'',q:''},ev:{scope:'prob',q:''},grv:{tab:'Open',q:''},memo:{tab:'All',type:'',q:'',part:'Notice to Explain'},cmemo:{tab:'Open',type:'',q:''},hol:{tab:'Upcoming',type:'',q:''},att:{month:today().slice(0,7),from:'',to:'',preset:'',custom:false,client:'',tab:'All',q:''}};
 
 function persistLocal(){try{localStorage.setItem(LS,JSON.stringify({...S,attset:ATTSET}))}catch(e){}}
 async function save(col,obj){
@@ -879,11 +902,12 @@ const ROUTES={
   cmemos:{t:'Company Communications',nav:'Inter-office Memo',icon:'send'},
   grievances:{t:'DA & Grievances',nav:'Grievances',icon:'users'},
   timekeep:{t:'Payroll',nav:'Time Keep',icon:'clock'},
+  payrun:{t:'Payroll',nav:'Payroll (Rowell)',icon:'wallet'},
   settings:{t:'Settings',nav:'Settings',icon:'gear'}
 };
 let route=(location.hash||'').slice(1);if(!ROUTES[route])route='dashboard';
 let groupOpen=true;
-const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'send',routes:['cmemos']},dag:{name:'DA & Grievances',icon:'memo',routes:['memos','grievances']},pay:{name:'Payroll',icon:'wallet',routes:['timekeep']}};
+const NAV_GROUPS={req:{name:'Leave Management',icon:'cal',routes:['leaves','permits','leavereport']},att:{name:'Attendance',icon:'clock',routes:['attendance','overtime','otreport','attpolicy']},comm:{name:'Company Communications',icon:'send',routes:['cmemos']},dag:{name:'DA & Grievances',icon:'memo',routes:['memos','grievances']},pay:{name:'Payroll',icon:'wallet',routes:['timekeep','payrun']}};
 const lastOf={};for(const g in NAV_GROUPS){const R=NAV_GROUPS[g].routes;lastOf[g]=R.includes(route)?route:R[0]}
 const groupOf=r=>Object.keys(NAV_GROUPS).find(g=>NAV_GROUPS[g].routes.includes(r));
 function go(r){if(!ROUTES[r])return;route=r;try{history.pushState(null,'','#'+r)}catch(e){}closeSide();render(true)}
@@ -1837,6 +1861,220 @@ async function tkXlsx(){
   const sw=tkSummarySheet(X,doc);if(sw)X.utils.book_append_sheet(wb,sw,'SUMMARY');
   const name=`GBMA Time Keep ${doc.from} to ${doc.to}${UI.tk.client?' - '+UI.tk.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
   try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
+  catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
+}
+/* ---- Payroll (Rowell) ----
+   Pay for one Time Keep upload (one cut-off), computed from the Time Keep per-day rows, so every fix made in Time Keep
+   (edited logs, shift roster) changes the pay too. Labor Code rates; hourly rate = daily salary ÷ 8.
+   Day rate: ordinary day 100%, rest day (Sunday unless the 201 file says otherwise) 130%, special non-working holiday 130%
+   (150% on a rest day), regular holiday 200% (260% on a rest day). OT = 125% of the hourly rate on an ordinary day,
+   130% of the day rate on a rest day or holiday. ND = +10% of the day's hourly rate (10 PM – 6 AM); NDOT = +10% of the OT rate.
+   A regular holiday not worked is paid 100% when the employee was present or on paid leave on the workday before it.
+   Basic pay counts 8 hours for each day worked; late, undertime and overbreak (in regular hours) are deducted at that day's
+   rate. Overbreak after the shift is already off the OT. Days with a missing log are not paid until fixed in Time Keep.
+   Paid leave = approved leave days taken from SIL / leave credits. Holidays come from the holiday memos.
+   SSS, PhilHealth and Pag-IBIG (employee share, 2025 tables) on the 201 monthly salary (daily × 26 when blank), split
+   over the cut-offs of the month; withholding tax from the BIR table of the cut-off (semi-monthly / weekly / monthly) on
+   gross less late/undertime/overbreak and contributions. The 201 allowance is not part of this payroll (user's choice).
+   HR adds other deductions (cash advance, loans, …) and can skip a contribution for one cut-off: saved in the upload as
+   doc.pay {"<AC-No.>": {ded:[{label,amount}], skip:['sss','ph','pi','tax'], byName, at}}. */
+const PR_SITE=c=>/^rowell/i.test(c||'');
+const prNum=v=>{const n=parseFloat(unComma(v));return n>0?n:0};
+// holidays from the holiday memos: date -> {kind:'rh'|'sh', name}
+function prHolidays(){
+  const m={};S.memos.forEach(x=>{if(!HOL_TYPES.includes(x.type)||x.status==='Draft')return;const ev=x.event||{},d=ev.date;if(!d)return;
+    const kind=x.type==='Regular Holiday'||(x.type==='Holiday Work Schedule'&&ev.kind==='Regular holiday')?'rh':'sh';
+    if(!m[d]||kind==='rh')m[d]={kind,name:ev.name||''}});
+  return m;
+}
+const prMult=(hol,rest)=>hol==='rh'?(rest?2.6:2):hol==='sh'?(rest?1.5:1.3):rest?1.3:1;
+// part of one leave day that is paid: the days taken from leave credits (SIL, VL, SL, …) over the days of the leave
+const prLeavePaid=l=>usesCredits(l)?Math.min(1,creditUsed(l)/Math.max(1,l.days||0)):0;
+// SSS 2025: employee 5% of the monthly salary credit (₱5,000 – ₱35,000, steps of ₱500)
+const prSSS=ms=>{const msc=ms<5250?5000:ms>=34750?35000:5000+Math.floor((ms-4750)/500)*500;return r2(msc*0.05)};
+// PhilHealth 2025: employee 2.5% of the monthly salary (floor ₱10,000, ceiling ₱100,000)
+const prPH=ms=>r2(Math.min(Math.max(ms,10000),100000)*0.025);
+// Pag-IBIG: employee 2% (1% at ₱1,500 or less) of the monthly salary up to ₱10,000
+const prPI=ms=>r2(Math.min(ms,10000)*(ms<=1500?0.01:0.02));
+// BIR withholding tax tables (from 2023): [over, base tax, rate over it]
+const PR_TAX={semi:[[0,0,0],[10417,0,.15],[16667,937.5,.2],[33333,4270.7,.25],[83333,16770.7,.3],[333333,91770.7,.35]],
+  weekly:[[0,0,0],[4808,0,.15],[7692,432.6,.2],[15385,1971.2,.25],[38462,7740.45,.3],[153846,42355.65,.35]],
+  monthly:[[0,0,0],[20833,0,.15],[33333,1875,.2],[66667,8541.8,.25],[166667,33541.8,.3],[666667,183541.8,.35]]};
+const prTax=(x,kind)=>{let b=PR_TAX[kind][0];PR_TAX[kind].forEach(t=>{if(x>=t[0])b=t});return r2(Math.max(0,b[1]+b[2]*(x-b[0])))};
+const PR_KIND={semi:'semi-monthly',weekly:'weekly',monthly:'monthly'};
+const PR_GOV=[['sss','SSS'],['ph','PhilHealth'],['pi','Pag-IBIG'],['tax','Withholding tax']];
+const PR_EARN=[['basic','Basic pay (ordinary days)','d'],['rest','Rest day / Sunday work','d'],['sh','Special holiday work','d'],['rh','Regular holiday work','d'],['rhoff','Regular holiday pay (not worked)','d'],['leave','Paid leave','d'],['ot','Overtime','h'],['nd','Night differential','h'],['ndot','Night differential on OT','h']];
+const PR_TARD=[['late','Late'],['ut','Undertime'],['ob','Overbreak']];
+// one employee's pay for the cut-off; g = {k, e, days:{date: Time Keep day row}}
+function prCalc(doc,g,hol){
+  const e=g.e,daily=prNum(e.dailySalary),hr=daily/8,set=(doc.pay||{})[g.k]||{},skip=set.skip||[];
+  const E={};PR_EARN.forEach(([k])=>E[k]={n:0,a:0});const T={};PR_TARD.forEach(([k])=>T[k]={m:0,a:0});
+  const st={worked:0,absent:0,miss:0,rest:0,unpaidLeave:0},missDays=[],holDays=[];
+  // the workday before a holiday (the employee's rest days skipped): present or on paid leave? Before this cut-off: yes.
+  const before=d=>{let x=addDays(d,-1);for(let i=0;i<7&&isRest(e,x);i++)x=addDays(x,-1);if(x<doc.from)return true;const r=g.days[x];if(!r)return false;
+    if(r.log)return!(r.c&&r.c.odd);if(hol[x])return true;return!!(r.leave&&prLeavePaid(r.leave)>0)};
+  Object.keys(g.days).sort().forEach(d=>{const r=g.days[d],h=hol[d],kind=h?h.kind:'',rest=isRest(e,d);
+    if(h)holDays.push(d);
+    if(r.log){const c=r.c;
+      if(!c||c.odd||c.reg==null){st.miss++;missDays.push(d);return}
+      const m=prMult(kind,rest),rate=hr*m,key=kind||(rest?'rest':'basic'),otr=rate*(m>1?1.3:1.25);
+      E[key].n++;E[key].a+=8*rate;st.worked++;
+      const obReg=c.breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0);
+      [['late',c.late],['ut',c.ut],['ob',obReg]].forEach(([k,v])=>{T[k].m+=v||0;T[k].a+=(v||0)/60*rate});
+      E.ot.n+=c.ot/60;E.ot.a+=c.ot/60*otr;E.nd.n+=c.nd/60;E.nd.a+=c.nd/60*rate*0.1;E.ndot.n+=c.ndot/60;E.ndot.a+=c.ndot/60*otr*0.1;
+      return}
+    if(kind==='rh'&&!rest){if(before(d)){E.rhoff.n++;E.rhoff.a+=daily}return}
+    if(kind==='sh'&&!rest)return; // special non-working day not worked: no work, no pay
+    if(r.rest){st.rest++;return}
+    if(r.leave){const p=prLeavePaid(r.leave);E.leave.n+=p;E.leave.a+=p*daily;if(p<1)st.unpaidLeave+=1-p;return}
+    st.absent++});
+  Object.values(E).forEach(x=>{x.a=r2(x.a)});Object.values(T).forEach(x=>{x.a=r2(x.a)});
+  const gross=r2(Object.values(E).reduce((t,x)=>t+x.a,0)),tard=r2(Object.values(T).reduce((t,x)=>t+x.a,0));
+  const sp=cutoffSpec(e.client),kind=sp.kind==='weekly'?'weekly':sp.starts.length>=2?'semi':'monthly',share=kind==='weekly'?12/52:kind==='semi'?1/sp.starts.length:1;
+  const ms=prNum(e.monthlySalary)||r2(daily*26),paid=gross>0;
+  const G={sss:paid&&!skip.includes('sss')?r2(prSSS(ms)*share):0,ph:paid&&!skip.includes('ph')?r2(prPH(ms)*share):0,pi:paid&&!skip.includes('pi')?r2(prPI(ms)*share):0};
+  const taxable=r2(Math.max(0,gross-tard-G.sss-G.ph-G.pi));G.tax=skip.includes('tax')?0:prTax(taxable,kind);
+  const other=(set.ded||[]).map(x=>({label:x.label||'Other deduction',amount:r2(prNum(x.amount))})).filter(x=>x.amount>0),otherT=r2(other.reduce((t,x)=>t+x.amount,0));
+  const ded=r2(tard+G.sss+G.ph+G.pi+G.tax+otherT);
+  return{k:g.k,e,daily,hr,E,T,G,gross,tard,taxable,other,otherT,ded,net:r2(gross-ded),st,missDays,holDays,ms,kind,share,skip,set};
+}
+// one line per Rowell employee in the upload (limited to the sites the account may see)
+function prRows(doc){
+  if(!doc)return[];const hol=prHolidays(),by={},order=[];
+  for(let d=doc.from;d<=doc.to;d=addDays(d,1))tkDayRows(doc,d).forEach(r=>{if(!r.e||!PR_SITE(r.e.client))return;
+    let g=by[r.k];if(!g){g=by[r.k]={k:r.k,e:r.e,days:{}};order.push(g)}g.days[d]=r});
+  return order.map(g=>prCalc(doc,g,hol));
+}
+function prFiltered(doc){const f=UI.pr,q=f.q.trim().toLowerCase();
+  return prRows(doc).filter(p=>(!f.client||p.e.client===f.client)&&(!q||[fullName(p.e),p.e.empNo,p.e.biometricId,p.e.client,p.e.position].join(' ').toLowerCase().includes(q)))}
+const prM=v=>v?amt(r2(v).toFixed(2)):'<span class="att-muted">—</span>';
+const prHrs=v=>String(r2(v));
+const prEarnSum=(p,keys)=>r2(keys.reduce((t,k)=>t+p.E[k].a,0));
+const prDocs=()=>tkSorted().filter(x=>tkShifts(x).some(r=>{const e=tkIndex(S.employees)[tkKey(r.emp)];return e&&PR_SITE(e.client)}));
+const prCur=()=>{const L=prDocs();return L.find(x=>x.id===UI.tk.id)||L[0]||null};
+// payday of the cut-off the upload starts in (Attendance → Cut-offs & Late Counting)
+const prPayday=(client,doc)=>{const sp=cutoffSpec(client),p=specPeriods(sp,doc.from,doc.from)[0];return p?payDate(sp,p):''};
+function prWarn(p){
+  const w=[];if(!p.daily)w.push('<span class="chip bad">No daily salary in 201 file</span>');
+  if(p.st.miss)w.push(`<span class="chip warn" title="${esc(p.missDays.map(fmtS).join(', '))}">${p.st.miss} missing-log day${p.st.miss===1?'':'s'} not paid</span>`);
+  if(p.st.absent)w.push(`<span class="chip">${p.st.absent} absent</span>`);
+  if(p.st.unpaidLeave)w.push(`<span class="chip">${r2(p.st.unpaidLeave)} leave day${p.st.unpaidLeave===1?'':'s'} without pay</span>`);
+  if(p.skip.length)w.push(`<span class="chip info">No ${p.skip.map(k=>PR_GOV.find(x=>x[0]===k)[1]).join(', ')} this cut-off</span>`);
+  return w.join('');
+}
+VIEWS.payrun=function(){
+  const f=UI.pr,L=prDocs(),doc=prCur();
+  let h=groupTabs()+ph('Payroll · Rowell',`Pay for each cut-off, computed from <b>Time Keep</b> (regular hours, late, undertime, overbreak, OT, ND, NDOT) and the <b>daily salary</b> in each 201 file. Fix logs and shifts in Time Keep; the pay here follows.`,
+    doc?`<button class="btn ghost" data-act="pr-xlsx">${ic('download')}Export to Excel</button><button class="btn" data-act="pr-print">${ic('memo')}Print payslips</button>`:'');
+  if(!doc)return h+emptyBlock('No Rowell time logs yet','Upload the Rowell biometrics file in Payroll → Time Keep. The payroll for that cut-off appears here.');
+  const hol=prHolidays(),inCut=Object.keys(hol).filter(d=>d>=doc.from&&d<=doc.to).sort();
+  const sp=cutoffSpec('Rowell'),pay=prPayday('Rowell',doc);
+  h+=`<section class="card" style="margin-bottom:14px"><div class="toolbar" style="margin:0;flex-wrap:wrap;align-items:center">
+    <label for="f-pr-id" style="font-weight:700">Cut-off</label>
+    <select id="f-pr-id" data-filter="tk.id" style="flex:1 1 320px;max-width:560px">${L.map(x=>`<option value="${x.id}" ${x.id===doc.id?'selected':''}>${esc(fmtS(x.from))} – ${esc(fmt(x.to))} · ${esc(x.fileName||'file')}${x.note?' · '+esc(x.note):''}</option>`).join('')}</select></div>
+    <div class="dchips" style="margin-top:10px"><span class="chip">${fmt(doc.from)} – ${fmt(doc.to)}</span>${pay?`<span class="chip info">Payday ${fmt(pay)}</span>`:''}<span class="chip">Cut-off: ${esc(specLabel(sp))}</span>
+    ${inCut.length?inCut.map(d=>`<span class="chip warn">${ic('cal')}${fmtS(d)} ${hol[d].kind==='rh'?'Regular holiday':'Special holiday'}${hol[d].name?' · '+esc(hol[d].name):''}</span>`).join(''):'<span class="chip">No holiday in this cut-off</span>'}</div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">How the pay is computed</summary><ul class="help" style="margin:8px 0 0;padding-left:18px">
+      <li>Hourly rate = daily salary ÷ 8. Basic pay = 8 hours for each day worked; <b>late, undertime and overbreak</b> are deducted at that day's rate.</li>
+      <li>Rest day / Sunday work 130%. Special non-working holiday 130% (150% on a rest day). Regular holiday 200% (260% on a rest day).</li>
+      <li>Regular holiday not worked: 100% when present or on paid leave on the workday before. Special holiday not worked: no work, no pay.</li>
+      <li>OT 125% of the hourly rate (130% of the day rate on a rest day or holiday), in the 30-minute blocks from Time Keep. ND +10% (10 PM – 6 AM). NDOT +10% of the OT rate.</li>
+      <li>Paid leave = approved leave taken from SIL / leave credits. Days with a <b>missing log</b> are not paid until fixed in Time Keep.</li>
+      <li>SSS, PhilHealth and Pag-IBIG: employee share (2025 tables) on the 201 monthly salary (daily × 26 when blank), split over the cut-offs of the month. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
+      <li>Holidays are read from the holiday memos (Company Communications). The 201 allowance is not included.</li></ul></details></section>`;
+  const all=prFiltered(doc),clients=[...new Set(prRows(doc).map(p=>p.e.client))].sort();
+  h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
+    ${clients.length>1?`<label class="sr" for="f-pr-client">Site</label><select id="f-pr-client" data-filter="pr.client" style="flex:1 1 220px;max-width:320px"><option value="">All Rowell sites</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
+    ${searchBox('f-pr-q','pr.q',f.q,'Search employee, ID no., AC-No.')}</div>`;
+  if(!all.length)return h+emptyBlock('No employees here','Try another cut-off or search.')+'</section>';
+  const BAS=['basic','rest','sh','rh','rhoff','leave'];
+  const tot=k=>r2(all.reduce((t,p)=>t+(typeof k==='function'?k(p):p[k]),0));
+  h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1500px"><thead><tr><th>Employee</th><th class="r">Daily rate</th><th class="r">Days worked</th><th class="r">Basic, rest day, holiday &amp; leave</th><th class="r">OT</th><th class="r">ND / NDOT</th><th class="r">Gross pay</th><th class="r">Late / UT / Overbreak</th><th class="r">SSS</th><th class="r">PhilHealth</th><th class="r">Pag-IBIG</th><th class="r">Tax</th><th class="r">Other deductions</th><th class="r">Net pay</th><th>Remarks</th></tr></thead><tbody>
+  ${all.map(p=>`<tr class="click" data-act="pr-view" data-id="${esc(p.k)}" tabindex="0"><td><div class="nm">${esc(fullName(p.e))}</div><div class="sub">${esc(p.e.empNo||'')}${p.e.empNo?' · ':''}AC-No. ${esc(p.e.biometricId)}</div></td>
+    <td class="r num">${prM(p.daily)}</td><td class="r num">${p.st.worked}</td><td class="r num">${prM(prEarnSum(p,BAS))}</td><td class="r num">${prM(p.E.ot.a)}${p.E.ot.n?`<div class="sub">${prHrs(p.E.ot.n)} h</div>`:''}</td><td class="r num">${prM(p.E.nd.a+p.E.ndot.a)}</td>
+    <td class="r num"><b>${prM(p.gross)}</b></td><td class="r num">${prM(p.tard)}</td><td class="r num">${prM(p.G.sss)}</td><td class="r num">${prM(p.G.ph)}</td><td class="r num">${prM(p.G.pi)}</td><td class="r num">${prM(p.G.tax)}</td><td class="r num">${prM(p.otherT)}</td>
+    <td class="r num"><b>${prM(p.net)}</b></td><td><div class="dchips">${prWarn(p)}</div></td></tr>`).join('')}
+  </tbody><tfoot><tr class="tk-total"><td><b>TOTAL · ${all.length} employee${all.length===1?'':'s'}</b></td><td></td><td class="r num"><b>${tot(p=>p.st.worked)}</b></td><td class="r num"><b>${prM(tot(p=>prEarnSum(p,BAS)))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.ot.a))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.nd.a+p.E.ndot.a))}</b></td><td class="r num"><b>${prM(tot('gross'))}</b></td><td class="r num"><b>${prM(tot('tard'))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.sss))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.ph))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.pi))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.tax))}</b></td><td class="r num"><b>${prM(tot('otherT'))}</b></td><td class="r num"><b>${prM(tot('net'))}</b></td><td></td></tr></tfoot></table></div>`;
+  return h+'</section>';
+};
+// the payslip of one employee (shown in the window and printed)
+function prSlip(p,doc){
+  const e=p.e,pay=prPayday(e.client,doc),b=e.bank||{};
+  const row=(l,q,a)=>`<tr><td>${l}</td><td class="q">${q}</td><td class="a">${amt(r2(a).toFixed(2))}</td></tr>`;
+  const earn=PR_EARN.filter(([k])=>p.E[k].a).map(([k,l,u])=>row(l,u==='d'?`${prHrs(p.E[k].n)} day${p.E[k].n===1?'':'s'}`:`${prHrs(p.E[k].n)} h`,p.E[k].a)).join('')||'<tr><td colspan="3" class="q" style="text-align:left">No pay this cut-off</td></tr>';
+  const ded=PR_TARD.filter(([k])=>p.T[k].a).map(([k,l])=>row(l,`${p.T[k].m} min`,p.T[k].a)).join('')+PR_GOV.filter(([k])=>p.G[k]).map(([k,l])=>row(l,'',p.G[k])).join('')+p.other.map(x=>row(esc(x.label),'',x.amount)).join('');
+  return`<div class="pslip"><div class="ps-hd"><b>GOLDEN BEAR MANPOWER AGENCY</b><span>PAYSLIP</span></div>
+    <div class="ps-info"><div><i>Name</i><b>${esc(fullName(e))}</b></div><div><i>Period</i>${fmt(doc.from)} – ${fmt(doc.to)}</div>
+    <div><i>ID no.</i>${esc(e.empNo||'—')}</div><div><i>Payday</i>${pay?fmt(pay):'—'}</div>
+    <div><i>Site</i>${esc(e.client||'')}</div><div><i>Daily rate</i>₱${amt(r2(p.daily).toFixed(2))}</div>
+    <div><i>Position</i>${esc(e.position||'—')}</div><div><i>${esc(BANK)}</i>${b.accountNo?'•••• '+esc(String(b.accountNo).replace(/\D/g,'').slice(-4)):'—'}</div></div>
+    <div class="ps-cols"><table><thead><tr><th colspan="3">Earnings</th></tr></thead><tbody>${earn}<tr class="t"><td colspan="2">Gross pay</td><td class="a">${amt(p.gross.toFixed(2))}</td></tr></tbody></table>
+    <table><thead><tr><th colspan="3">Deductions</th></tr></thead><tbody>${ded||'<tr><td colspan="3" class="q" style="text-align:left">None</td></tr>'}<tr class="t"><td colspan="2">Total deductions</td><td class="a">${amt(p.ded.toFixed(2))}</td></tr></tbody></table></div>
+    <div class="ps-net"><span>NET PAY</span><span>₱${amt(p.net.toFixed(2))}</span></div>
+    <div class="ps-note">Days worked ${p.st.worked}${p.st.absent?` · absent ${p.st.absent}`:''}${p.st.miss?` · ${p.st.miss} day${p.st.miss===1?'':'s'} with a missing log not paid (${p.missDays.map(fmtS).join(', ')})`:''}</div>
+    <div class="ps-sign"><span>Received by (signature over printed name)</span><span style="flex:0 0 30%">Date</span></div></div>`;
+}
+function prView(k){
+  const doc=prCur(),p=prRows(doc).find(x=>x.k===k);if(!p)return;
+  openModal({title:`Payslip · ${esc(fullName(p.e))}`,wide:1,
+    body:`${p.daily?'':'<div class="formerr">There is no daily salary in this 201 file, so no pay can be computed. Add it with <b>Edit 201 file</b>.</div>'}${p.st.miss?`<div class="silline warn">${ic('alert')}<span>${p.st.miss} day${p.st.miss===1?' has':'s have'} a missing log (${p.missDays.map(fmtS).join(', ')}) and ${p.st.miss===1?'is':'are'} not paid. Fix the logs in <b>Time Keep</b> to include ${p.st.miss===1?'it':'them'}.</span></div>`:''}
+    ${prSlip(p,doc)}
+    <p class="help" style="margin:10px 0 0">Monthly salary used for SSS, PhilHealth and Pag-IBIG: ₱${amt(p.ms.toFixed(2))}${prNum(p.e.monthlySalary)?'':' (daily × 26)'} · ${p.kind==='semi'?'half of the monthly share':p.kind==='weekly'?'12/52 of the monthly share':'the full monthly share'} this cut-off · tax on ₱${amt(p.taxable.toFixed(2))} (${PR_KIND[p.kind]} table)${p.set.byName?` · other deductions by ${esc(p.set.byName)}, ${esc(fmtTs(p.set.at))}`:''}.</p>`,
+    foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="button" class="btn ghost" data-close data-act="open-emp" data-id="${p.e.id}">${ic('users')}Open 201 file</button><button type="button" class="btn ghost" data-act="pr-ded" data-id="${esc(p.k)}" data-write>${ic('edit')}Deductions</button><button type="button" class="btn" data-close data-act="pr-print" data-id="${esc(p.k)}">${ic('memo')}Print payslip</button>`});
+}
+// other deductions (cash advance, loans, …) and skipping a contribution for this cut-off
+function prDed(k){
+  const doc=prCur(),p=prRows(doc).find(x=>x.k===k);if(!p)return;
+  const row=(x={})=>`<div class="pd-row" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input aria-label="Deduction" placeholder="e.g. Cash advance" maxlength="60" value="${esc(x.label||'')}" style="flex:1 1 auto"><input aria-label="Amount" inputmode="decimal" placeholder="0.00" value="${x.amount?esc(amt(x.amount)):''}" style="max-width:140px;text-align:right"><button type="button" class="icon-btn" data-rm aria-label="Remove this deduction">${ic('x')}</button></div>`;
+  openModal({title:`Deductions · ${esc(fullName(p.e))}`,
+    body:`<p class="help" style="margin:0">${fmt(doc.from)} – ${fmt(doc.to)}. Late, undertime and overbreak, SSS, PhilHealth, Pag-IBIG and tax are computed. Add other deductions here (cash advance, loans, uniform, …).</p>
+    <div id="pd-rows" style="margin-top:8px">${(p.set.ded||[]).map(row).join('')}</div>
+    <button type="button" class="btn ghost sm" id="pd-add" style="margin-top:8px">${ic('plus')}Add deduction</button>
+    <fieldset style="margin-top:14px"><legend>Deduct this cut-off</legend>${PR_GOV.map(([g,l])=>`<label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" name="gov" value="${g}" ${p.skip.includes(g)?'':'checked'}> ${l}${g==='tax'?'':` (₱${amt(r2((g==='sss'?prSSS:g==='ph'?prPH:prPI)(p.ms)*p.share).toFixed(2))})`}</label>`).join('')}
+    <p class="help" style="margin:6px 0 0">Untick one when it is already deducted in another cut-off.</p></fieldset>`,
+    onOpen:f=>{const box=f.querySelector('#pd-rows');
+      f.querySelector('#pd-add').addEventListener('click',()=>{box.insertAdjacentHTML('beforeend',row());box.lastElementChild.querySelector('input').focus()});
+      box.addEventListener('click',ev=>{const b=ev.target.closest('[data-rm]');if(b)b.closest('.pd-row').remove()});
+      if(!box.children.length)f.querySelector('#pd-add').click()},
+    onSubmit:async(fd,f)=>{
+      const ded=[];for(const r of f.querySelectorAll('.pd-row')){const[l,a]=r.querySelectorAll('input');const label=l.value.trim(),v=unComma(a.value);
+        if(!label&&!v)continue;if(!label){setErr(l,'Enter what the deduction is for.');return false}if(!(parseFloat(v)>0)){setErr(a,'Enter an amount.');return false}ded.push({label,amount:r2(parseFloat(v))})}
+      const on=fd.getAll('gov'),skip=PR_GOV.map(x=>x[0]).filter(g=>!on.includes(g)),pay={...(doc.pay||{})};
+      if(ded.length||skip.length)pay[k]={ded,skip,emp:p.e.biometricId,by:MEID,byName:ME.name||ME.email||'',at:new Date().toISOString()};else delete pay[k];
+      await save('timekeep',{...doc,pay});toast(`Saved. ${fullName(p.e)}'s net pay is recomputed.`);
+    }});
+}
+// print the payslips shown (or one): two per page
+function prPrint(k){
+  const doc=prCur();if(!doc)return;const list=k?prRows(doc).filter(p=>p.k===k):prFiltered(doc);
+  if(!list.length){toast('There are no payslips to print.',{kind:'bad'});return}
+  let box=document.getElementById('prt');if(!box){box=document.createElement('div');box.id='prt';document.body.appendChild(box)}
+  box.innerHTML=list.map(p=>prSlip(p,doc)).join('');document.body.classList.add('printing');
+  const done=()=>{document.body.classList.remove('printing');box.innerHTML='';window.removeEventListener('afterprint',done)};
+  window.addEventListener('afterprint',done);
+  try{window.print()}catch(err){toast('Printing is not available in this view.',{kind:'bad'})}
+  setTimeout(()=>{if(document.body.classList.contains('printing')&&!matchMedia('print').matches)done()},1500);
+}
+async function prXlsx(){
+  const doc=prCur();if(!doc)return;const rows=prFiltered(doc);if(!rows.length){toast('There is no payroll to export.',{kind:'bad'});return}
+  const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
+  if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
+  let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
+  const COLS=['NAME','ID NO.','AC-NO.','SITE','DAILY RATE','DAYS WORKED','BASIC PAY','REST DAY PAY','SPECIAL HOLIDAY PAY','REGULAR HOLIDAY PAY','HOLIDAY PAY (NOT WORKED)','PAID LEAVE','OT HRS','OT PAY','ND HRS','ND PAY','NDOT HRS','NDOT PAY','GROSS PAY','LATE','UNDERTIME','OVERBREAK','SSS','PHILHEALTH','PAG-IBIG','WITHHOLDING TAX','OTHER DEDUCTIONS','TOTAL DEDUCTIONS','NET PAY','REMARKS'];
+  const MONEY=new Set(COLS.map((c,i)=>/RATE|PAY|LATE|UNDERTIME|OVERBREAK|SSS|PHILHEALTH|PAG-IBIG|TAX|DEDUCTIONS/.test(c)&&!/HRS|DAYS/.test(c)?i:-1));
+  const pay=prPayday('Rowell',doc);
+  const aoa=xlInfo('PAYROLL',[['CLIENT:',UI.pr.client||'Rowell'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`],['PAYDAY:',pay?fmt(pay):'']]).concat([[`PAYROLL · ${fmt(doc.from).toUpperCase()} – ${fmt(doc.to).toUpperCase()}`],COLS]);const top=aoa.length-1;
+  const line=p=>[fullName(p.e),p.e.empNo||'',p.e.biometricId||'',p.e.client||'',p.daily,p.st.worked,p.E.basic.a,p.E.rest.a,p.E.sh.a,p.E.rh.a,p.E.rhoff.a,p.E.leave.a,r2(p.E.ot.n),p.E.ot.a,r2(p.E.nd.n),p.E.nd.a,r2(p.E.ndot.n),p.E.ndot.a,p.gross,p.T.late.a,p.T.ut.a,p.T.ob.a,p.G.sss,p.G.ph,p.G.pi,p.G.tax,p.otherT,p.ded,p.net,
+    [!p.daily?'No daily salary in 201 file':'',p.st.miss?`Missing log not paid: ${p.missDays.map(fmtS).join(', ')}`:'',p.st.absent?`Absent ${p.st.absent}`:'',p.other.map(x=>`${x.label} ${amt(x.amount.toFixed(2))}`).join(', ')].filter(Boolean).join('; ')];
+  const L=rows.map(line);aoa.push(...L);
+  aoa.push([`TOTAL (${rows.length} employee${rows.length===1?'':'s'})`,'','','',''].concat(COLS.slice(5,-1).map((c,j)=>r2(L.reduce((t,r)=>t+(+r[j+5]||0),0)))).concat(['']));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,10,8,22,10,8,...Array(22).fill(12),12,40].map(w=>({wch:w}));
+  for(let r=top+1;r<aoa.length;r++)MONEY.forEach(c=>{if(c<0)return;const x=ws[X.utils.encode_cell({r,c})];if(x&&x.t==='n')x.z='#,##0.00'});
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:top,c:0},e:{r:aoa.length-2,c:COLS.length-1}})};
+  const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Payroll');
+  wb.Props={Title:'Payroll',Author:'Golden Bear Manpower Agency HRIS',CreatedDate:new Date()};
+  const name=`GBMA Payroll Rowell ${doc.from} to ${doc.to}${UI.pr.client?' - '+UI.pr.client:''}.xlsx`.replace(/[\\/:*?"<>|]/g,'');
+  try{await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})])});toast(`Exported the payroll of ${rows.length} employee${rows.length===1?'':'s'} to ${name}.`)}
   catch(err){const c=err&&err.code;if(c==='declined')toast('Export cancelled.');else toast('The file could not be saved in this view.',{kind:'bad'})}
 }
 /* ---- Leave Summary Report: approved leaves in a period and whether each one has a Permit to Work ---- */
@@ -4638,6 +4876,10 @@ const ACT={
   'tk-del':(el,id)=>tkDel(id),
   'tk-fix':(el,id,k)=>tkFix(id,k),
   'tk-xlsx':()=>tkXlsx(),
+  'pr-view':(el,id)=>prView(id),
+  'pr-ded':(el,id)=>prDed(id),
+  'pr-xlsx':()=>prXlsx(),
+  'pr-print':(el,id)=>prPrint(id),
   'tk-day':(el,id,k)=>{if(k){UI.tk.day=k;renderView()}}
 };
 document.addEventListener('click',ev=>{
