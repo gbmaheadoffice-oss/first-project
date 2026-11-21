@@ -1877,7 +1877,7 @@ async function tkXlsx(){
    over the cut-offs of the month; withholding tax from the BIR table of the cut-off (semi-monthly / weekly / monthly) on
    gross less late/undertime/overbreak and contributions. The 201 allowance is not part of this payroll (user's choice).
    HR adds other deductions (cash advance, loans, …) and can skip a contribution for one cut-off: saved in the upload as
-   doc.pay {"<AC-No.>": {ded:[{label,amount}], skip:['sss','ph','pi','tax'], byName, at}}. */
+   doc.pay {"<AC-No.>": {ded:[{label,amount}], skip:['sss','ph','pi','tax','hmo'], byName, at}}. */
 const PR_SITE=c=>/^rowell/i.test(c||'');
 const prNum=v=>{const n=parseFloat(unComma(v));return n>0?n:0};
 // national holidays from the proclamations (2026: Proc. 1006 s. 2025; Eid'l Fitr Proc. 1189, Eid'l Adha Proc. 1264).
@@ -1914,7 +1914,9 @@ const PR_TAX={semi:[[0,0,0],[10417,0,.15],[16667,937.5,.2],[33333,4270.7,.25],[8
   monthly:[[0,0,0],[20833,0,.15],[33333,1875,.2],[66667,8541.8,.25],[166667,33541.8,.3],[666667,183541.8,.35]]};
 const prTax=(x,kind)=>{let b=PR_TAX[kind][0];PR_TAX[kind].forEach(t=>{if(x>=t[0])b=t});return r2(Math.max(0,b[1]+b[2]*(x-b[0])))};
 const PR_KIND={semi:'semi-monthly',weekly:'weekly',monthly:'monthly'};
-const PR_GOV=[['sss','SSS'],['ph','PhilHealth'],['pi','Pag-IBIG'],['tax','Withholding tax']];
+const PR_GOV=[['sss','SSS'],['ph','PhilHealth'],['pi','Pag-IBIG'],['tax','Withholding tax'],['hmo','HMO']];
+// HMO (user's rule, 2026-11-21): ₱298 a month, half (₱149) in each of the 1st and 2nd cut-off; not deducted before tax
+const PR_HMO=298;
 const PR_EARN=[['basic','Basic pay (ordinary days)','d'],['rest','Rest day / Sunday work','d'],['sh','Special holiday work','d'],['rh','Regular holiday work','d'],['rhoff','Regular holiday pay (not worked)','d'],['leave','Paid leave','d'],['ot','Overtime','h'],['nd','Night differential','h'],['ndot','Night differential on OT','h']];
 const PR_TARD=[['late','Late'],['ut','Undertime'],['ob','Overbreak']];
 // one employee's pay for the cut-off; g = {k, e, days:{date: Time Keep day row}}
@@ -1945,9 +1947,9 @@ function prCalc(doc,g,hol){
   const sp=cutoffSpec(e.client),kind=sp.kind==='weekly'?'weekly':sp.starts.length>=2?'semi':'monthly',share=kind==='weekly'?12/52:kind==='semi'?1/sp.starts.length:1;
   const ms=prNum(e.monthlySalary)||r2(daily*26),paid=gross>0;
   const G={sss:paid&&!skip.includes('sss')?r2(prSSS(ms)*share):0,ph:paid&&!skip.includes('ph')?prPH(gross):0,pi:paid&&!skip.includes('pi')?PR_PI:0};
-  const taxable=r2(Math.max(0,gross-tard-G.sss-G.ph-G.pi));G.tax=skip.includes('tax')?0:prTax(taxable,kind);
+  const taxable=r2(Math.max(0,gross-tard-G.sss-G.ph-G.pi));G.tax=skip.includes('tax')?0:prTax(taxable,kind);G.hmo=paid&&!skip.includes('hmo')?r2(PR_HMO*share):0;
   const other=(set.ded||[]).map(x=>({label:x.label||'Other deduction',amount:r2(prNum(x.amount))})).filter(x=>x.amount>0),otherT=r2(other.reduce((t,x)=>t+x.amount,0));
-  const ded=r2(tard+G.sss+G.ph+G.pi+G.tax+otherT),phER=G.ph; // employer's PhilHealth share = the employee's
+  const ded=r2(tard+G.sss+G.ph+G.pi+G.tax+G.hmo+otherT),phER=G.ph; // employer's PhilHealth share = the employee's
   return{k:g.k,e,daily,hr,E,T,G,phER,gross,tard,taxable,other,otherT,ded,net:r2(gross-ded),st,missDays,holDays,ms,kind,share,skip,set};
 }
 // one line per Rowell employee in the upload (limited to the sites the account may see)
@@ -1992,7 +1994,7 @@ VIEWS.payrun=function(){
       <li>Regular holiday not worked: 100% when present or on paid leave on the workday before. Special holiday not worked: no work, no pay.</li>
       <li>OT 125% of the hourly rate (130% of the day rate on a rest day or holiday), in the 30-minute blocks from Time Keep. ND +10% (10 PM – 6 AM). NDOT +10% of the OT rate.</li>
       <li>Paid leave = approved leave taken from SIL / leave credits. Days with a <b>missing log</b> are not paid until fixed in Time Keep.</li>
-      <li>Pag-IBIG: ₱200 every cut-off. PhilHealth: 5% of the cut-off gross pay, 2.5% from the employee (deducted) and 2.5% from the employer (shown in the Excel register). SSS: employee share (2025 table) on the 201 monthly salary (daily × 26 when blank), split over the cut-offs of the month. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
+      <li>Pag-IBIG: ₱200 every cut-off. HMO: ₱298 a month, ₱149 each cut-off. PhilHealth: 5% of the cut-off gross pay, 2.5% from the employee (deducted) and 2.5% from the employer (shown in the Excel register). SSS: employee share (2025 table) on the 201 monthly salary (daily × 26 when blank), split over the cut-offs of the month. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
       <li>Holidays: the national regular holidays and special non-working days proclaimed for the year, plus any holiday memo (Company Communications). The 201 allowance is not included.</li></ul></details></section>`;
   const all=prFiltered(doc),clients=[...new Set(prRows(doc).map(p=>p.e.client))].sort();
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
@@ -2001,12 +2003,12 @@ VIEWS.payrun=function(){
   if(!all.length)return h+emptyBlock('No employees here','Try another cut-off or search.')+'</section>';
   const BAS=['basic','rest','sh','rh','rhoff','leave'];
   const tot=k=>r2(all.reduce((t,p)=>t+(typeof k==='function'?k(p):p[k]),0));
-  h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1500px"><thead><tr><th>Employee</th><th class="r">Daily rate</th><th class="r">Days worked</th><th class="r">Basic, rest day, holiday &amp; leave</th><th class="r">OT</th><th class="r">ND / NDOT</th><th class="r">Gross pay</th><th class="r">Late / UT / Overbreak</th><th class="r">SSS</th><th class="r">PhilHealth</th><th class="r">Pag-IBIG</th><th class="r">Tax</th><th class="r">Other deductions</th><th class="r">Net pay</th><th>Remarks</th></tr></thead><tbody>
+  h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1500px"><thead><tr><th>Employee</th><th class="r">Daily rate</th><th class="r">Days worked</th><th class="r">Basic, rest day, holiday &amp; leave</th><th class="r">OT</th><th class="r">ND / NDOT</th><th class="r">Gross pay</th><th class="r">Late / UT / Overbreak</th><th class="r">SSS</th><th class="r">PhilHealth</th><th class="r">Pag-IBIG</th><th class="r">Tax</th><th class="r">HMO</th><th class="r">Other deductions</th><th class="r">Net pay</th><th>Remarks</th></tr></thead><tbody>
   ${all.map(p=>`<tr class="click" data-act="pr-view" data-id="${esc(p.k)}" tabindex="0"><td><div class="nm">${esc(fullName(p.e))}</div><div class="sub">${esc(p.e.empNo||'')}${p.e.empNo?' · ':''}AC-No. ${esc(p.e.biometricId)}</div></td>
     <td class="r num">${prM(p.daily)}</td><td class="r num">${p.st.worked}</td><td class="r num">${prM(prEarnSum(p,BAS))}</td><td class="r num">${prM(p.E.ot.a)}${p.E.ot.n?`<div class="sub">${prHrs(p.E.ot.n)} h</div>`:''}</td><td class="r num">${prM(p.E.nd.a+p.E.ndot.a)}</td>
-    <td class="r num"><b>${prM(p.gross)}</b></td><td class="r num">${prM(p.tard)}</td><td class="r num">${prM(p.G.sss)}</td><td class="r num">${prM(p.G.ph)}</td><td class="r num">${prM(p.G.pi)}</td><td class="r num">${prM(p.G.tax)}</td><td class="r num">${prM(p.otherT)}</td>
+    <td class="r num"><b>${prM(p.gross)}</b></td><td class="r num">${prM(p.tard)}</td><td class="r num">${prM(p.G.sss)}</td><td class="r num">${prM(p.G.ph)}</td><td class="r num">${prM(p.G.pi)}</td><td class="r num">${prM(p.G.tax)}</td><td class="r num">${prM(p.G.hmo)}</td><td class="r num">${prM(p.otherT)}</td>
     <td class="r num"><b>${prM(p.net)}</b></td><td><div class="dchips">${prWarn(p)}</div></td></tr>`).join('')}
-  </tbody><tfoot><tr class="tk-total"><td><b>TOTAL · ${all.length} employee${all.length===1?'':'s'}</b></td><td></td><td class="r num"><b>${tot(p=>p.st.worked)}</b></td><td class="r num"><b>${prM(tot(p=>prEarnSum(p,BAS)))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.ot.a))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.nd.a+p.E.ndot.a))}</b></td><td class="r num"><b>${prM(tot('gross'))}</b></td><td class="r num"><b>${prM(tot('tard'))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.sss))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.ph))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.pi))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.tax))}</b></td><td class="r num"><b>${prM(tot('otherT'))}</b></td><td class="r num"><b>${prM(tot('net'))}</b></td><td></td></tr></tfoot></table></div>`;
+  </tbody><tfoot><tr class="tk-total"><td><b>TOTAL · ${all.length} employee${all.length===1?'':'s'}</b></td><td></td><td class="r num"><b>${tot(p=>p.st.worked)}</b></td><td class="r num"><b>${prM(tot(p=>prEarnSum(p,BAS)))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.ot.a))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.nd.a+p.E.ndot.a))}</b></td><td class="r num"><b>${prM(tot('gross'))}</b></td><td class="r num"><b>${prM(tot('tard'))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.sss))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.ph))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.pi))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.tax))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.hmo))}</b></td><td class="r num"><b>${prM(tot('otherT'))}</b></td><td class="r num"><b>${prM(tot('net'))}</b></td><td></td></tr></tfoot></table></div>`;
   return h+'</section>';
 };
 // the payslip of one employee (shown in the window and printed)
@@ -2039,10 +2041,10 @@ function prDed(k){
   const doc=prCur(),p=prRows(doc).find(x=>x.k===k);if(!p)return;
   const row=(x={})=>`<div class="pd-row" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input aria-label="Deduction" placeholder="e.g. Cash advance" maxlength="60" value="${esc(x.label||'')}" style="flex:1 1 auto"><input aria-label="Amount" inputmode="decimal" placeholder="0.00" value="${x.amount?esc(amt(x.amount)):''}" style="max-width:140px;text-align:right"><button type="button" class="icon-btn" data-rm aria-label="Remove this deduction">${ic('x')}</button></div>`;
   openModal({title:`Deductions · ${esc(fullName(p.e))}`,
-    body:`<p class="help" style="margin:0">${fmt(doc.from)} – ${fmt(doc.to)}. Late, undertime and overbreak, SSS, PhilHealth, Pag-IBIG and tax are computed. Add other deductions here (cash advance, loans, uniform, …).</p>
+    body:`<p class="help" style="margin:0">${fmt(doc.from)} – ${fmt(doc.to)}. Late, undertime and overbreak, SSS, PhilHealth, Pag-IBIG, tax and HMO are computed. Add other deductions here (cash advance, loans, uniform, …).</p>
     <div id="pd-rows" style="margin-top:8px">${(p.set.ded||[]).map(row).join('')}</div>
     <button type="button" class="btn ghost sm" id="pd-add" style="margin-top:8px">${ic('plus')}Add deduction</button>
-    <fieldset style="margin-top:14px"><legend>Deduct this cut-off</legend>${PR_GOV.map(([g,l])=>`<label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" name="gov" value="${g}" ${p.skip.includes(g)?'':'checked'}> ${l}${g==='tax'?'':` (₱${amt((g==='pi'?PR_PI:g==='ph'?prPH(p.gross):r2(prSSS(p.ms)*p.share)).toFixed(2))})`}</label>`).join('')}
+    <fieldset style="margin-top:14px"><legend>Deduct this cut-off</legend>${PR_GOV.map(([g,l])=>`<label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" name="gov" value="${g}" ${p.skip.includes(g)?'':'checked'}> ${l}${g==='tax'?'':` (₱${amt((g==='hmo'?r2(PR_HMO*p.share):g==='pi'?PR_PI:g==='ph'?prPH(p.gross):r2(prSSS(p.ms)*p.share)).toFixed(2))})`}</label>`).join('')}
     <p class="help" style="margin:6px 0 0">Untick one when it is already deducted in another cut-off.</p></fieldset>`,
     onOpen:f=>{const box=f.querySelector('#pd-rows');
       f.querySelector('#pd-add').addEventListener('click',()=>{box.insertAdjacentHTML('beforeend',row());box.lastElementChild.querySelector('input').focus()});
@@ -2072,15 +2074,15 @@ async function prXlsx(){
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
   let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
-  const COLS=['NAME','ID NO.','AC-NO.','SITE','DAILY RATE','DAYS WORKED','BASIC PAY','REST DAY PAY','SPECIAL HOLIDAY PAY','REGULAR HOLIDAY PAY','HOLIDAY PAY (NOT WORKED)','PAID LEAVE','OT HRS','OT PAY','ND HRS','ND PAY','NDOT HRS','NDOT PAY','GROSS PAY','LATE','UNDERTIME','OVERBREAK','SSS','PHILHEALTH','PAG-IBIG','WITHHOLDING TAX','OTHER DEDUCTIONS','TOTAL DEDUCTIONS','NET PAY','PHILHEALTH (EMPLOYER)','REMARKS'];
-  const MONEY=new Set(COLS.map((c,i)=>/RATE|PAY|LATE|UNDERTIME|OVERBREAK|SSS|PHILHEALTH|PAG-IBIG|TAX|DEDUCTIONS/.test(c)&&!/HRS|DAYS/.test(c)?i:-1));
+  const COLS=['NAME','ID NO.','AC-NO.','SITE','DAILY RATE','DAYS WORKED','BASIC PAY','REST DAY PAY','SPECIAL HOLIDAY PAY','REGULAR HOLIDAY PAY','HOLIDAY PAY (NOT WORKED)','PAID LEAVE','OT HRS','OT PAY','ND HRS','ND PAY','NDOT HRS','NDOT PAY','GROSS PAY','LATE','UNDERTIME','OVERBREAK','SSS','PHILHEALTH','PAG-IBIG','WITHHOLDING TAX','HMO','OTHER DEDUCTIONS','TOTAL DEDUCTIONS','NET PAY','PHILHEALTH (EMPLOYER)','REMARKS'];
+  const MONEY=new Set(COLS.map((c,i)=>/RATE|PAY|LATE|UNDERTIME|OVERBREAK|SSS|PHILHEALTH|PAG-IBIG|TAX|HMO|DEDUCTIONS/.test(c)&&!/HRS|DAYS/.test(c)?i:-1));
   const pay=prPayday('Rowell',doc);
   const aoa=xlInfo('PAYROLL',[['CLIENT:',UI.pr.client||'Rowell'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`],['PAYDAY:',pay?fmt(pay):'']]).concat([[`PAYROLL · ${fmt(doc.from).toUpperCase()} – ${fmt(doc.to).toUpperCase()}`],COLS]);const top=aoa.length-1;
-  const line=p=>[fullName(p.e),p.e.empNo||'',p.e.biometricId||'',p.e.client||'',p.daily,p.st.worked,p.E.basic.a,p.E.rest.a,p.E.sh.a,p.E.rh.a,p.E.rhoff.a,p.E.leave.a,r2(p.E.ot.n),p.E.ot.a,r2(p.E.nd.n),p.E.nd.a,r2(p.E.ndot.n),p.E.ndot.a,p.gross,p.T.late.a,p.T.ut.a,p.T.ob.a,p.G.sss,p.G.ph,p.G.pi,p.G.tax,p.otherT,p.ded,p.net,p.phER,
+  const line=p=>[fullName(p.e),p.e.empNo||'',p.e.biometricId||'',p.e.client||'',p.daily,p.st.worked,p.E.basic.a,p.E.rest.a,p.E.sh.a,p.E.rh.a,p.E.rhoff.a,p.E.leave.a,r2(p.E.ot.n),p.E.ot.a,r2(p.E.nd.n),p.E.nd.a,r2(p.E.ndot.n),p.E.ndot.a,p.gross,p.T.late.a,p.T.ut.a,p.T.ob.a,p.G.sss,p.G.ph,p.G.pi,p.G.tax,p.G.hmo,p.otherT,p.ded,p.net,p.phER,
     [!p.daily?'No daily salary in 201 file':'',p.st.miss?`Missing log not paid: ${p.missDays.map(fmtS).join(', ')}`:'',p.st.absent?`Absent ${p.st.absent}`:'',p.other.map(x=>`${x.label} ${amt(x.amount.toFixed(2))}`).join(', ')].filter(Boolean).join('; ')];
   const L=rows.map(line);aoa.push(...L);
   aoa.push([`TOTAL (${rows.length} employee${rows.length===1?'':'s'})`,'','','',''].concat(COLS.slice(5,-1).map((c,j)=>r2(L.reduce((t,r)=>t+(+r[j+5]||0),0)))).concat(['']));
-  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,10,8,22,10,8,...Array(23).fill(12),12,40].map(w=>({wch:w}));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,10,8,22,10,8,...Array(24).fill(12),12,40].map(w=>({wch:w}));
   for(let r=top+1;r<aoa.length;r++)MONEY.forEach(c=>{if(c<0)return;const x=ws[X.utils.encode_cell({r,c})];if(x&&x.t==='n')x.z='#,##0.00'});
   ws['!autofilter']={ref:X.utils.encode_range({s:{r:top,c:0},e:{r:aoa.length-2,c:COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Payroll');
