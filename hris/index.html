@@ -1872,7 +1872,7 @@ async function tkXlsx(){
    A regular holiday not worked is paid 100% when the employee was present or on paid leave on the workday before it.
    Basic pay counts 8 hours for each day worked; late, undertime and overbreak (in regular hours) are deducted at that day's
    rate. Overbreak after the shift is already off the OT. Days with a missing log are not paid until fixed in Time Keep.
-   Paid leave = approved leave days taken from SIL / leave credits. Holidays come from the holiday memos.
+   Paid leave = approved leave days taken from SIL / leave credits. Holidays = PH_HOLIDAYS (proclamations) + holiday memos.
    SSS, PhilHealth and Pag-IBIG (employee share, 2025 tables) on the 201 monthly salary (daily × 26 when blank), split
    over the cut-offs of the month; withholding tax from the BIR table of the cut-off (semi-monthly / weekly / monthly) on
    gross less late/undertime/overbreak and contributions. The 201 allowance is not part of this payroll (user's choice).
@@ -1880,9 +1880,20 @@ async function tkXlsx(){
    doc.pay {"<AC-No.>": {ded:[{label,amount}], skip:['sss','ph','pi','tax'], byName, at}}. */
 const PR_SITE=c=>/^rowell/i.test(c||'');
 const prNum=v=>{const n=parseFloat(unComma(v));return n>0?n:0};
-// holidays from the holiday memos: date -> {kind:'rh'|'sh', name}
+// national holidays from the proclamations (2026: Proc. 1006 s. 2025; Eid'l Fitr Proc. 1189, Eid'l Adha Proc. 1264).
+// Add the next year here when it is proclaimed; a holiday memo adds local/declared holidays on top of this list.
+const PH_HOLIDAYS={
+  '2026-01-01':['rh',"New Year's Day"],'2026-02-17':['sh','Chinese New Year'],'2026-03-20':['rh',"Eid'l Fitr"],
+  '2026-04-02':['rh','Maundy Thursday'],'2026-04-03':['rh','Good Friday'],'2026-04-04':['sh','Black Saturday'],
+  '2026-04-09':['rh','Araw ng Kagitingan'],'2026-05-01':['rh','Labor Day'],'2026-05-27':['rh',"Eid'l Adha"],
+  '2026-06-12':['rh','Independence Day'],'2026-08-21':['sh','Ninoy Aquino Day'],'2026-08-31':['rh','National Heroes Day'],
+  '2026-11-01':['sh',"All Saints' Day"],'2026-11-02':['sh',"All Souls' Day"],'2026-11-30':['rh','Bonifacio Day'],
+  '2026-12-08':['sh','Feast of the Immaculate Conception'],'2026-12-24':['sh','Christmas Eve'],'2026-12-25':['rh','Christmas Day'],
+  '2026-12-30':['rh','Rizal Day'],'2026-12-31':['sh','Last Day of the Year']};
+// holidays: the national list above plus the holiday memos: date -> {kind:'rh'|'sh', name}
 function prHolidays(){
-  const m={};S.memos.forEach(x=>{if(!HOL_TYPES.includes(x.type)||x.status==='Draft')return;const ev=x.event||{},d=ev.date;if(!d)return;
+  const m={};Object.entries(PH_HOLIDAYS).forEach(([d,[kind,name]])=>{m[d]={kind,name}});
+  S.memos.forEach(x=>{if(!HOL_TYPES.includes(x.type)||x.status==='Draft')return;const ev=x.event||{},d=ev.date;if(!d)return;
     const kind=x.type==='Regular Holiday'||(x.type==='Holiday Work Schedule'&&ev.kind==='Regular holiday')?'rh':'sh';
     if(!m[d]||kind==='rh')m[d]={kind,name:ev.name||''}});
   return m;
@@ -1981,7 +1992,7 @@ VIEWS.payrun=function(){
       <li>OT 125% of the hourly rate (130% of the day rate on a rest day or holiday), in the 30-minute blocks from Time Keep. ND +10% (10 PM – 6 AM). NDOT +10% of the OT rate.</li>
       <li>Paid leave = approved leave taken from SIL / leave credits. Days with a <b>missing log</b> are not paid until fixed in Time Keep.</li>
       <li>SSS, PhilHealth and Pag-IBIG: employee share (2025 tables) on the 201 monthly salary (daily × 26 when blank), split over the cut-offs of the month. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
-      <li>Holidays are read from the holiday memos (Company Communications). The 201 allowance is not included.</li></ul></details></section>`;
+      <li>Holidays: the national regular holidays and special non-working days proclaimed for the year, plus any holiday memo (Company Communications). The 201 allowance is not included.</li></ul></details></section>`;
   const all=prFiltered(doc),clients=[...new Set(prRows(doc).map(p=>p.e.client))].sort();
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
     ${clients.length>1?`<label class="sr" for="f-pr-client">Site</label><select id="f-pr-client" data-filter="pr.client" style="flex:1 1 220px;max-width:320px"><option value="">All Rowell sites</option>${clients.map(c=>`<option value="${esc(c)}" ${c===f.client?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
