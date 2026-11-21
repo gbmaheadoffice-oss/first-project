@@ -1932,7 +1932,8 @@ const PR_KIND={semi:'semi-monthly',weekly:'weekly',monthly:'monthly'};
 const PR_GOV=[['sss','SSS'],['ph','PhilHealth'],['pi','Pag-IBIG'],['tax','Withholding tax'],['hmo','HMO']];
 // HMO (user's rule, 2026-11-21): ₱298 a month, half (₱149) in each of the 1st and 2nd cut-off; not deducted before tax
 const PR_HMO=298;
-const PR_EARN=[['basic','Basic pay (ordinary days)','d'],['rest','Rest day / Sunday work','d'],['sh','Special holiday work','d'],['rh','Regular holiday work','d'],['rhoff','Regular holiday pay (not worked)','d'],['leave','Paid leave','d'],['ot','Overtime','h'],['nd','Night differential','h'],['ndot','Night differential on OT','h']];
+const PR_EARN=[['basic','Basic pay (ordinary days)','d'],['rest','Rest day / Sunday work','d'],['sh','Special holiday work','d'],['rh','Regular holiday work','d'],['rhoff','Regular holiday pay (not worked)','d'],['leave','Paid leave','d'],['ot','Overtime (ordinary day)','h'],['otrest','Rest day / Sunday OT','h'],['otsh','Special holiday OT','h'],['otrh','Regular holiday OT','h'],['nd','Night differential','h'],['ndot','Night differential on OT','h']];
+const PR_OTK=['ot','otrest','otsh','otrh'],prOT=(p,f)=>r2(PR_OTK.reduce((t,k)=>t+p.E[k][f],0));
 const PR_TARD=[['late','Late'],['ut','Undertime'],['ob','Overbreak']];
 // one employee's pay for the cut-off; g = {k, e, days:{date: Time Keep day row}}
 function prCalc(doc,g,hol,phm){
@@ -1950,7 +1951,7 @@ function prCalc(doc,g,hol,phm){
       E[key].n++;E[key].a+=8*rate;st.worked++;
       const obReg=c.breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0);
       [['late',c.late],['ut',c.ut],['ob',obReg]].forEach(([k,v])=>{T[k].m+=v||0;T[k].a+=(v||0)/60*rate});
-      E.ot.n+=c.ot/60;E.ot.a+=c.ot/60*otr;E.nd.n+=c.nd/60;E.nd.a+=c.nd/60*rate*0.1;E.ndot.n+=c.ndot/60;E.ndot.a+=c.ndot/60*otr*0.1;
+      const ok=kind?'ot'+kind:rest?'otrest':'ot';E[ok].n+=c.ot/60;E[ok].a+=c.ot/60*otr;E.nd.n+=c.nd/60;E.nd.a+=c.nd/60*rate*0.1;E.ndot.n+=c.ndot/60;E.ndot.a+=c.ndot/60*otr*0.1;
       return}
     if(kind==='rh'&&!rest){if(before(d)){E.rhoff.n++;E.rhoff.a+=daily}return}
     if(kind==='sh'&&!rest)return; // special non-working day not worked: no work, no pay
@@ -2028,10 +2029,10 @@ VIEWS.payrun=function(){
   const tot=k=>r2(all.reduce((t,p)=>t+(typeof k==='function'?k(p):p[k]),0));
   h+=`<div class="tw" style="margin-top:6px"><table class="tbl" style="min-width:1500px"><thead><tr><th>Employee</th><th class="r">Daily rate</th><th class="r">Days worked</th><th class="r">Basic, rest day, holiday &amp; leave</th><th class="r">OT</th><th class="r">ND / NDOT</th><th class="r">Gross pay</th><th class="r">Late / UT / Overbreak</th><th class="r">SSS</th><th class="r">PhilHealth</th><th class="r">Pag-IBIG</th><th class="r">Tax</th><th class="r">HMO</th><th class="r">Other deductions</th><th class="r">Net pay</th><th>Remarks</th></tr></thead><tbody>
   ${all.map(p=>`<tr class="click" data-act="pr-view" data-id="${esc(p.k)}" tabindex="0"><td><div class="nm">${esc(fullName(p.e))}</div><div class="sub">${esc(p.e.empNo||'')}${p.e.empNo?' · ':''}AC-No. ${esc(p.e.biometricId)}</div></td>
-    <td class="r num">${prM(p.daily)}</td><td class="r num">${p.st.worked}</td><td class="r num">${prM(prEarnSum(p,BAS))}</td><td class="r num">${prM(p.E.ot.a)}${p.E.ot.n?`<div class="sub">${prHrs(p.E.ot.n)} h</div>`:''}</td><td class="r num">${prM(p.E.nd.a+p.E.ndot.a)}</td>
+    <td class="r num">${prM(p.daily)}</td><td class="r num">${p.st.worked}</td><td class="r num">${prM(prEarnSum(p,BAS))}</td><td class="r num">${prM(prOT(p,'a'))}${prOT(p,'n')?`<div class="sub">${prHrs(prOT(p,'n'))} h</div>`:''}</td><td class="r num">${prM(p.E.nd.a+p.E.ndot.a)}</td>
     <td class="r num"><b>${prM(p.gross)}</b></td><td class="r num">${prM(p.tard)}</td><td class="r num">${prM(p.G.sss)}</td><td class="r num">${prM(p.G.ph)}</td><td class="r num">${prM(p.G.pi)}</td><td class="r num">${prM(p.G.tax)}</td><td class="r num">${prM(p.G.hmo)}</td><td class="r num">${prM(p.otherT)}</td>
     <td class="r num"><b>${prM(p.net)}</b></td><td><div class="dchips">${prWarn(p)}</div></td></tr>`).join('')}
-  </tbody><tfoot><tr class="tk-total"><td><b>TOTAL · ${all.length} employee${all.length===1?'':'s'}</b></td><td></td><td class="r num"><b>${tot(p=>p.st.worked)}</b></td><td class="r num"><b>${prM(tot(p=>prEarnSum(p,BAS)))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.ot.a))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.nd.a+p.E.ndot.a))}</b></td><td class="r num"><b>${prM(tot('gross'))}</b></td><td class="r num"><b>${prM(tot('tard'))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.sss))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.ph))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.pi))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.tax))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.hmo))}</b></td><td class="r num"><b>${prM(tot('otherT'))}</b></td><td class="r num"><b>${prM(tot('net'))}</b></td><td></td></tr></tfoot></table></div>`;
+  </tbody><tfoot><tr class="tk-total"><td><b>TOTAL · ${all.length} employee${all.length===1?'':'s'}</b></td><td></td><td class="r num"><b>${tot(p=>p.st.worked)}</b></td><td class="r num"><b>${prM(tot(p=>prEarnSum(p,BAS)))}</b></td><td class="r num"><b>${prM(tot(p=>prOT(p,'a')))}</b></td><td class="r num"><b>${prM(tot(p=>p.E.nd.a+p.E.ndot.a))}</b></td><td class="r num"><b>${prM(tot('gross'))}</b></td><td class="r num"><b>${prM(tot('tard'))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.sss))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.ph))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.pi))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.tax))}</b></td><td class="r num"><b>${prM(tot(p=>p.G.hmo))}</b></td><td class="r num"><b>${prM(tot('otherT'))}</b></td><td class="r num"><b>${prM(tot('net'))}</b></td><td></td></tr></tfoot></table></div>`;
   return h+'</section>';
 };
 // the payslip of one employee (shown in the window and printed)
@@ -2097,15 +2098,15 @@ async function prXlsx(){
   const dl=window.claude&&typeof window.claude.use==='function'?await window.claude.use('downloads').catch(()=>null):null;
   if(!dl){toast('Excel export is not available in this view.',{kind:'bad'});return}
   let X;try{X=await loadXLSXW()}catch(err){toast('The Excel library could not load. Check your connection and try again.',{kind:'bad'});return}
-  const COLS=['NAME','ID NO.','AC-NO.','SITE','DAILY RATE','DAYS WORKED','BASIC PAY','REST DAY PAY','SPECIAL HOLIDAY PAY','REGULAR HOLIDAY PAY','HOLIDAY PAY (NOT WORKED)','PAID LEAVE','OT HRS','OT PAY','ND HRS','ND PAY','NDOT HRS','NDOT PAY','GROSS PAY','LATE','UNDERTIME','OVERBREAK','SSS','PHILHEALTH','PAG-IBIG','WITHHOLDING TAX','HMO','OTHER DEDUCTIONS','TOTAL DEDUCTIONS','NET PAY','PHILHEALTH (EMPLOYER)','REMARKS'];
+  const COLS=['NAME','ID NO.','AC-NO.','SITE','DAILY RATE','DAYS WORKED','BASIC PAY','REST DAY PAY','SPECIAL HOLIDAY PAY','REGULAR HOLIDAY PAY','HOLIDAY PAY (NOT WORKED)','PAID LEAVE','OT HRS','OT PAY','REST DAY OT HRS','REST DAY OT PAY','SPECIAL HOLIDAY OT HRS','SPECIAL HOLIDAY OT PAY','REGULAR HOLIDAY OT HRS','REGULAR HOLIDAY OT PAY','ND HRS','ND PAY','NDOT HRS','NDOT PAY','GROSS PAY','LATE','UNDERTIME','OVERBREAK','SSS','PHILHEALTH','PAG-IBIG','WITHHOLDING TAX','HMO','OTHER DEDUCTIONS','TOTAL DEDUCTIONS','NET PAY','PHILHEALTH (EMPLOYER)','REMARKS'];
   const MONEY=new Set(COLS.map((c,i)=>/RATE|PAY|LATE|UNDERTIME|OVERBREAK|SSS|PHILHEALTH|PAG-IBIG|TAX|HMO|DEDUCTIONS/.test(c)&&!/HRS|DAYS/.test(c)?i:-1));
   const pay=prPayday('Rowell',doc);
   const aoa=xlInfo('PAYROLL',[['CLIENT:',UI.pr.client||'Rowell'],['COVERED PERIOD:',`${fmt(doc.from)} – ${fmt(doc.to)}`],['PAYDAY:',pay?fmt(pay):'']]).concat([[`PAYROLL · ${fmt(doc.from).toUpperCase()} – ${fmt(doc.to).toUpperCase()}`],COLS]);const top=aoa.length-1;
-  const line=p=>[fullName(p.e),p.e.empNo||'',p.e.biometricId||'',p.e.client||'',p.daily,p.st.worked,p.E.basic.a,p.E.rest.a,p.E.sh.a,p.E.rh.a,p.E.rhoff.a,p.E.leave.a,r2(p.E.ot.n),p.E.ot.a,r2(p.E.nd.n),p.E.nd.a,r2(p.E.ndot.n),p.E.ndot.a,p.gross,p.T.late.a,p.T.ut.a,p.T.ob.a,p.G.sss,p.G.ph,p.G.pi,p.G.tax,p.G.hmo,p.otherT,p.ded,p.net,p.phER,
+  const line=p=>[fullName(p.e),p.e.empNo||'',p.e.biometricId||'',p.e.client||'',p.daily,p.st.worked,p.E.basic.a,p.E.rest.a,p.E.sh.a,p.E.rh.a,p.E.rhoff.a,p.E.leave.a,...PR_OTK.flatMap(k=>[r2(p.E[k].n),p.E[k].a]),r2(p.E.nd.n),p.E.nd.a,r2(p.E.ndot.n),p.E.ndot.a,p.gross,p.T.late.a,p.T.ut.a,p.T.ob.a,p.G.sss,p.G.ph,p.G.pi,p.G.tax,p.G.hmo,p.otherT,p.ded,p.net,p.phER,
     [!p.daily?'No daily salary in 201 file':'',p.st.miss?`Missing log not paid: ${p.missDays.map(fmtS).join(', ')}`:'',p.st.absent?`Absent ${p.st.absent}`:'',p.other.map(x=>`${x.label} ${amt(x.amount.toFixed(2))}`).join(', ')].filter(Boolean).join('; ')];
   const L=rows.map(line);aoa.push(...L);
   aoa.push([`TOTAL (${rows.length} employee${rows.length===1?'':'s'})`,'','','',''].concat(COLS.slice(5,-1).map((c,j)=>r2(L.reduce((t,r)=>t+(+r[j+5]||0),0)))).concat(['']));
-  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,10,8,22,10,8,...Array(24).fill(12),12,40].map(w=>({wch:w}));
+  const ws=X.utils.aoa_to_sheet(aoa);ws['!cols']=[30,10,8,22,10,8,...Array(30).fill(12),12,40].map(w=>({wch:w}));
   for(let r=top+1;r<aoa.length;r++)MONEY.forEach(c=>{if(c<0)return;const x=ws[X.utils.encode_cell({r,c})];if(x&&x.t==='n')x.z='#,##0.00'});
   ws['!autofilter']={ref:X.utils.encode_range({s:{r:top,c:0},e:{r:aoa.length-2,c:COLS.length-1}})};
   const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,'Payroll');
