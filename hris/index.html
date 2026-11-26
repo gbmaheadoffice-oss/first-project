@@ -754,7 +754,7 @@ const ACT_PART={'add-emp':'employees','edit-emp':'employees',upload:'employees',
   'file-leave':'leaves','req-permit':'leaves',decide:'leaves',del:'leaves','apr-decide':'approvals',
   'att-edit':'attendance','att-import':'attendance','decide-ot':'attendance','link-ot':'attendance','pol-save':'attendance','pol-discard':'attendance',
   eval:'evaluations','client-eval':'evaluations','link-ceval':'evaluations',regularize:'evaluations',
-  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll','tk-fix':'payroll','pr-ded':'payroll',
+  'issue-memo':'da','grv-new':'da','issue-cmemo':'comms','issue-hol':'comms','app-sync':'applicants','tk-upload':'payroll','tk-del':'payroll','tk-fix':'payroll','tk-sched':'payroll','pr-ded':'payroll',
   'clear-sample':'admin','user-add':'admin','user-edit':'admin','user-pass':'admin','user-onoff':'admin','user-reload':'admin'};
 const actOK=a=>!ACT_PART[a]||canEdit(ACT_PART[a]);
 function applyAccessCss(){
@@ -1501,6 +1501,9 @@ function tkShifts(doc){
     const L=r.t.map(tkMins),ref=f.in?tkMins(f.in):L.length?L[0]:TK_TYPES[r.type]?TK_TYPES[r.type].start:360;
     if(f.in)L.push(tkMins(f.in));if(f.out){let o=tkMins(f.out);if(o<=ref)o+=1440;L.push(o)}
     r.t=L.sort((a,b)=>a-b).map(m=>`${pad(Math.floor(m/60))}:${pad(m%60)}`);r.hr=f});
+  // 6-2 / 6-3 picked by HR for one person on one date (doc.sched {"<AC-No.>|<date>": 480|540}); without it the
+  // schedule comes from the number of breaks (see tkRowell)
+  const sc=doc.sched||{};out.forEach(r=>{const v=sc[tkKey(r.emp)+'|'+r.d];if(v===480||v===540)r.len=v});
   const res=out.sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
   TKSH.set(doc,res);return res;
 }
@@ -1517,7 +1520,8 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 // OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
 const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,Math.min(b,1800)-Math.max(a,1320));
-function tkRowell(e,ts,d,type,hr){
+function tkRowell(e,ts,d,type,hr,setLen){
+  // setLen: 480 (6-2) or 540 (6-3) picked by HR for this day in Time Keep; it wins over the guess from the breaks
   // hr: the day's logs were entered by HR (Time Keep → edit logs): the first is the time in and the last the time out,
   // so the guesses for a missing time in / time out below are not applied
   let m=ts.map(tkMins),lone=null;
@@ -1544,21 +1548,23 @@ function tkRowell(e,ts,d,type,hr){
   // 3 breaks or more (after the schedule end too) = 6-3 (9 hours, breaks 15 / 30 / 15 = 1 hr, OT from the 9th hour);
   // 2 or fewer = 6-2 (8 hours, breaks 15 / 15 = 30 min, OT from the 8th hour). Sundays and 2-10 are always 8 hours.
   const nb=(n>=2?Math.floor((n-2)/2):0)+(lone!=null?1:0);
-  let len=sun||start===840?480:nb>=3?540:480;
+  let len=setLen===480||setLen===540?setLen:sun||start===840?480:nb>=3?540:480;
   // 201 says 6-3 but the time out is before the 6-3 end: that day was worked as 6-2, so no undertime for the last hour
   // OT still starts only at the 6-3 end (3 PM) for them
-  const otFrom=start+len;if(len>480&&n>1&&n%2===0&&m[n-1]<start+len)len=480;
+  const otFrom=start+len;if(!setLen&&len>480&&n>1&&n%2===0&&m[n-1]<start+len)len=480;
   // the time out was not logged: the last two logs are within 45 minutes (a break, e.g. 3:03 AM – 3:20 AM) and the
   // last one is not at the end of the 8- or 9-hour schedule
   const near=x=>[start+480,start+540].some(t=>m[n-1]>=t-10&&m[n-1]<=t+15);
   const noOut=!hr&&!noIn&&n>=4&&n%2===0&&m[n-1]-m[n-2]<45&&!near();
-  const end=start+len,meal=nb>=3?30:15,odd=n%2===1||noIn||noOut,out=odd?null:m[n-1];
+  const end=start+len,meal=len>=540?30:15,odd=n%2===1||noIn||noOut,out=odd?null:m[n-1];
   const late=noIn?0:Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
   const breaks=[];
   const spans=[];for(let k=1;k+1<n;k+=2)spans.push([m[k],m[k+1]]);
   if(lone!=null){spans.push([lone,null]);spans.sort((x,y)=>x[0]-y[0])}
-  // allowances in order (user, 2026-11-26): 2 breaks = 15 / 15; 3 breaks = 15 / 30 / 15 (the 2nd is the lunch); a 4th = 0
-  for(const[i,[a,b0]]of spans.entries()){const allow=i===1?meal:i<3?15:0;
+  // allowances in order (user, 2026-11-26): within 6-3 = 15 / 30 / 15 (1 hr), within 6-2 = 15 / 15 (30 min), any more = 0;
+  // the first break after the schedule end (OT) = 15, any more = 0
+  let pre=0,post=0;
+  for(const[i,[a,b0]]of spans.entries()){const allow=a<end?((len>=540?[15,30,15]:[15,15])[pre++]||0):post++?0:15;
     if(b0==null){breaks.push({a,b:a+allow,dur:allow,allow,ob:0,ot:a>=end,lone:1});continue}
     const dur=b0-a;breaks.push({a,b:b0,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
   // with no time in or no time out the logs cannot be paired into breaks, so no overbreak is counted (HR fixes the day)
@@ -1579,7 +1585,7 @@ function tkRowell(e,ts,d,type,hr){
   // 4 hrs OT with 7 min late = 3.88 hrs OT (not 7.88 regular hours). Only the part over the OT is deducted as late/overbreak.
   const lateOff=out==null?0:Math.min(ot,late+ob),otNet=ot-lateOff;
   const ndot=out==null?0:Math.min(otNet,otBlock(tkNight(oA,oB)));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,len,setLen:!!setLen,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
@@ -1591,7 +1597,7 @@ const tkCur=()=>{const L=tkSorted();return L.find(x=>x.id===UI.tk.id)||L[0]||nul
 function tkEmpRows(doc){
   if(!doc)return[];const idx=tkIndex(S.employees),all=tkIndex(ALL_EMPLOYEES||S.employees),by={};
   tkShifts(doc).forEach(r=>{const k=tkKey(r.emp);const e=idx[k]||null;if(!e&&all[k])return;const g=by[k]||(by[k]={k,emp:r.emp,name:r.name,e,days:[]});g.days.push(r)});
-  return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t,x.d,x.type,!!x.hr)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
+  return Object.values(by).map(g=>{const rule=tkRule(g.e),calc=rule?g.days.map(x=>rule.day(g.e,x.t,x.d,x.type,!!x.hr,x.len)):null,sum=k=>calc.reduce((t,c)=>t+(c[k]||0),0);
     const s={days:g.days.length,inc:g.days.filter((x,i)=>calc?calc[i].odd:x.t.length%2).length,mins:g.days.reduce((t,x)=>t+tkHours(x.t),0)};
     if(calc)Object.assign(s,{late:sum('late'),ut:sum('ut'),ob:sum('ob'),reg:sum('reg'),ot:sum('ot'),nd:sum('nd'),ndot:sum('ndot')});
     return{...g,rule,calc,s}})
@@ -1613,7 +1619,7 @@ function tkDayRows(doc,d){
   const raw={};(doc.rows||[]).forEach(r=>{if(r.d===d)raw[tkKey(r.emp)]=r.t});
   const out=[],seen=new Set();
   S.employees.filter(e=>e.biometricId&&sites.has(e.client)&&(isActive(e)||logs[tkKey(e.biometricId)])&&!(e.hireDate&&e.hireDate>d)).forEach(e=>{const k=tkKey(e.biometricId);if(seen.has(k))return;seen.add(k);
-    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,carry:!lg&&raw[k]?raw[k]:null,c:lg&&rule?rule.day(e,lg.t,d,lg.type,!!lg.hr):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
+    const lg=logs[k],rule=tkRule(e);out.push({k,emp:e.biometricId,e,rule,log:lg||null,carry:!lg&&raw[k]?raw[k]:null,c:lg&&rule?rule.day(e,lg.t,d,lg.type,!!lg.hr,lg.len):null,rest:!lg&&isRest(e,d),leave:!lg&&!isRest(e,d)&&leaveOn(e.id,d)})});
   Object.keys(logs).forEach(k=>{if(seen.has(k)||all[k])return;const lg=logs[k];out.push({k,emp:lg.emp,name:lg.name,e:null,rule:null,log:lg,c:null})});
   return out.sort((a,b)=>a.e&&b.e?sortName(a.e,b.e):a.e?-1:b.e?1:a.emp.localeCompare(b.emp,undefined,{numeric:true}));
 }
@@ -1651,7 +1657,7 @@ function tkDayView(doc){
     return`<tr ${r.log?`class="click" data-act="tk-view" data-id="${esc(r.k)}" tabindex="0"`:''}><td><div class="nm">${r.e?esc(fullName(r.e)):esc(r.name||'Unknown name')}</div><div class="sub">${r.e?esc(r.e.client||''):'Name from the biometrics file'}${r.log&&TK_TYPES[r.log.type]?` · <b>${TK_TYPES[r.log.type].name} shift</b>${r.log.set?' (roster)':''}`:''}</div></td><td class="num">${esc(r.emp)}</td>
       ${r.log?cell(x.inn||'<span class="att-muted">—</span>')+cell(x.out||'<span class="att-muted">—</span>')+cell(x.late||'',x.late?'att-warn':'')+cell(x.reg==null?'':`<b>${tkNum(x.reg)}</b>`)+cell(tkNum(x.ot))+cell(tkNum(x.nd))+cell(tkNum(x.ndot))
         :cell(`<b class="tk-${x.cls}">${x.inn}</b>`)+cell(`<b class="tk-${x.cls}">${x.out}</b>`)+cell('')+cell('')+cell('')+cell('')+cell('')}
-      <td><div class="dchips">${rem}</div>${x.odd?`<div class="sub">Logs: ${r.log.t.map(tkT).join(' · ')}</div>`:''}${fixb?`<div style="margin-top:4px">${fixb}</div>`:''}</td></tr>`}).join('')}
+      <td><div class="dchips">${rem}</div>${x.odd?`<div class="sub">Logs: ${r.log.t.map(tkT).join(' · ')}</div>`:''}${fixb||c?`<div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${fixb}${r.e?tkSchedBtns(r.k,d,c):''}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
   return h+'</section>';
 }
@@ -1724,12 +1730,12 @@ function tkView(k){
 function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
   return`<div class="tw" style="margin:0"><table class="tbl" style="min-width:1080px"><thead><tr><th>Date</th><th>Schedule</th><th>Time In</th><th>Breaks (out – in)</th><th>Time Out</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular</th><th class="r">OT</th><th>Note</th></tr></thead><tbody>
-  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.meal===30?'breaks 15 / 30 / 15':'breaks 15 / 15'}</div></td>
+  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.len>=540?'6-3, breaks 15 / 30 / 15':'6-2, breaks 15 / 15'}${c.setLen?' · set by HR':''}</div></td>
     <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
     <td class="r num"><b>${c.reg==null?'—':tkH(c.reg)}</b></td><td class="r num">${tkH(c.ot)}${c.lateOff?`<div class="sub" title="Late and overbreak are taken off the OT">${tkH(c.otBlk)} less ${tkH(c.lateOff)} late/OB</div>`:''}</td>
-    <td>${c.odd?`<span class="chip warn">Missing log${c.noIn?' (no time in)':c.noOut?' (no time out)':''}</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}${x.hr?`<span class="chip info">${tkHrTxt(x.hr)}</span>`:''}${r.e?`<div style="margin-top:4px"><button type="button" class="btn ghost sm" data-act="tk-fix" data-id="${esc(r.k)}" data-k="${x.d}" data-write>Edit logs</button></div>`:''}</td></tr>`}).join('')}
+    <td>${c.odd?`<span class="chip warn">Missing log${c.noIn?' (no time in)':c.noOut?' (no time out)':''}</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}${x.hr?`<span class="chip info">${tkHrTxt(x.hr)}</span>`:''}${r.e?`<div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="btn ghost sm" data-act="tk-fix" data-id="${esc(r.k)}" data-k="${x.d}" data-write>Edit logs</button>${tkSchedBtns(r.k,x.d,c)}</div>`:''}</td></tr>`}).join('')}
   </tbody></table></div>`;
 }
 function tkUpload(){
@@ -1807,11 +1813,22 @@ async function tkDayXlsx(){
    or remove a wrong one. Saved in the upload as doc.fixes (the whole list for that day); the device logs stay in the upload,
    so "Use the device logs" undoes it. */
 const tkHrTxt=f=>Array.isArray(f.logs)?'Logs edited by HR':[f.in?'Time in':'',f.out?'time out':''].filter(Boolean).join(' and ').replace(/^t/,'T')+' entered by HR';
+// 6-2 / 6-3 buttons for one person's day: the active one is pressed; "auto" = from the number of breaks
+function tkSchedBtns(k,d,c){
+  if(!c||!c.len)return'';const b=(v,l)=>`<button type="button" class="btn ${c.len===v?'':'ghost '}sm" data-act="tk-sched" data-id="${esc(k)}" data-k="${d}|${v}" aria-pressed="${c.len===v}" title="${c.setLen&&c.len===v?'Picked by HR. Click again to go back to the schedule from the breaks.':`Set this day to ${l}`}" data-write>${l}</button>`;
+  return`<span style="display:inline-flex;gap:4px;align-items:center">${b(480,'6-2')}${b(540,'6-3')}<span class="sub">${c.setLen?'set by HR':'auto, from the breaks'}</span></span>`;
+}
+async function tkSched(k,dv){
+  const doc=tkCur();if(!doc)return;const i=dv.lastIndexOf('|'),d=dv.slice(0,i),v=+dv.slice(i+1),key=k+'|'+d,sched={...(doc.sched||{})};
+  if(sched[key]===v)delete sched[key];else sched[key]=v;
+  await save('timekeep',{...doc,sched});
+  const e=tkIndex(S.employees)[k];toast(`${e?fullName(e)+"'s ":''}${fmtS(d)}: ${sched[key]?(v===540?'6-3':'6-2')+' (set by HR)':'schedule from the breaks again'}.`);
+}
 function tkFix(k,d){
   const doc=tkCur();if(!doc)return;const e=tkIndex(S.employees)[k];if(!e)return;
   const key=k+'|'+d,cur=(doc.fixes||{})[key],rest={...(doc.fixes||{})};delete rest[key];
   const dev=tkShifts({...doc,fixes:rest}).find(x=>tkKey(x.emp)===k&&x.d===d),sh=tkShifts(doc).find(x=>tkKey(x.emp)===k&&x.d===d);
-  const devT=dev?dev.t:[],ty=(sh||dev)?(sh||dev).type:tkType(doc,k,d),rule=tkRule(e),c=sh&&rule?rule.day(e,sh.t,d,ty,!!sh.hr):null;
+  const devT=dev?dev.t:[],ty=(sh||dev)?(sh||dev).type:tkType(doc,k,d),rule=tkRule(e),c=sh&&rule?rule.day(e,sh.t,d,ty,!!sh.hr,sh.len):null;
   const from=(TK_TYPES[ty]||TK_TYPES.day).from;
   const row=t=>`<div class="fx-row" style="display:flex;gap:8px;align-items:center;margin-top:6px"><span class="fx-lb" style="width:84px;font-weight:600"></span><input type="time" aria-label="Log time" value="${t?`${pad(Math.floor(tkMins(t)%1440/60))}:${pad(tkMins(t)%60)}`:''}" style="max-width:150px"><span class="sub fx-nd"></span><button type="button" class="icon-btn" data-rm aria-label="Remove this log" title="Remove this log">${ic('x')}</button></div>`;
   openModal({title:`Edit logs · ${esc(fullName(e))}`,
@@ -1955,9 +1972,9 @@ function prNightTail(doc,g,d,r){
   const nx=addDays(d,1),src=tkSorted().find(x=>x.id!==doc.id&&x.from<=nx&&x.to>=nx);
   const tail=src?((src.rows||[]).find(x=>tkKey(x.emp)===g.k&&x.d===nx)||{t:[]}).t.filter(t=>tkMins(t)<720):[];
   const plus=tail.map(t=>{const m=tkMins(t)+1440;return`${pad(Math.floor(m/60))}:${pad(m%60)}`});
-  let c=plus.length?r.rule.day(g.e,r.log.t.concat(plus),d,'night'):null,est=false;
+  let c=plus.length?r.rule.day(g.e,r.log.t.concat(plus),d,'night',false,r.log.len):null,est=false;
   if(!c||c.odd){const end=Math.max(TK_TYPES.night.start+480,tkMins(r.log.t[r.log.t.length-1])+1);
-    c=r.rule.day(g.e,r.log.t.concat([`${pad(Math.floor(end/60))}:${pad(end%60)}`]),d,'night');est=true}
+    c=r.rule.day(g.e,r.log.t.concat([`${pad(Math.floor(end/60))}:${pad(end%60)}`]),d,'night',false,r.log.len);est=true}
   return c&&!c.odd?{c,est}:null;
 }
 // one employee's pay for the cut-off; g = {k, e, days:{date: Time Keep day row}}
@@ -4951,6 +4968,7 @@ const ACT={
   'tk-view':(el,id)=>tkView(id),
   'tk-del':(el,id)=>tkDel(id),
   'tk-fix':(el,id,k)=>tkFix(id,k),
+  'tk-sched':(el,id,k)=>tkSched(id,k),
   'tk-xlsx':()=>tkXlsx(),
   'pr-view':(el,id)=>prView(id),
   'pr-ded':(el,id)=>prDed(id),
