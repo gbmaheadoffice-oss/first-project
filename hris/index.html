@@ -1873,8 +1873,9 @@ async function tkXlsx(){
    Basic pay counts 8 hours for each day worked; late, undertime and overbreak (in regular hours) are deducted at that day's
    rate. Overbreak after the shift is already off the OT. Days with a missing log are not paid until fixed in Time Keep.
    Paid leave = approved leave days taken from SIL / leave credits. Holidays = PH_HOLIDAYS (proclamations) + holiday memos.
-   Pag-IBIG: flat ₱200 every cut-off. PhilHealth: 2.5% of the month's gross (employer pays another 2.5%): fixed ₱250 in the 1st cut-off, the rest in the cut-off paid on the 30th. SSS (employee share, 2025 table) on the 201 monthly salary (daily × 26 when blank), split
-   over the cut-offs of the month; withholding tax from the BIR table of the cut-off (semi-monthly / weekly / monthly) on
+   Pag-IBIG: flat ₱200 every cut-off. PhilHealth: 2.5% of the month's gross (employer pays another 2.5%): fixed ₱250 in the 1st cut-off, the rest in the cut-off paid on the 30th. SSS (employee share, current table: Circ. 2024-006, in force since Jan 2025, still for 2026) on the
+   month's actual gross: the 1st cut-off deducts half of the share on the 201 monthly salary (daily × 26 when blank), the
+   cut-off paid on the 30th deducts the share for the month's gross (1st + 2nd cut-off) less what the 1st deducted; withholding tax from the BIR table of the cut-off (semi-monthly / weekly / monthly) on
    gross less late/undertime/overbreak and contributions. The 201 allowance is not part of this payroll (user's choice).
    HR adds other deductions (cash advance, loans, …) and can skip a contribution for one cut-off: saved in the upload as
    doc.pay {"<AC-No.>": {ded:[{label,amount}], skip:['sss','ph','pi','tax','hmo'], byName, at}}. */
@@ -1901,8 +1902,10 @@ function prHolidays(){
 const prMult=(hol,rest)=>hol==='rh'?(rest?2.6:2):hol==='sh'?(rest?1.5:1.3):rest?1.3:1;
 // part of one leave day that is paid: the days taken from leave credits (SIL, VL, SL, …) over the days of the leave
 const prLeavePaid=l=>usesCredits(l)?Math.min(1,creditUsed(l)/Math.max(1,l.days||0)):0;
-// SSS 2025: employee 5% of the monthly salary credit (₱5,000 – ₱35,000, steps of ₱500)
-const prSSS=ms=>{const msc=ms<5250?5000:ms>=34750?35000:5000+Math.floor((ms-4750)/500)*500;return r2(msc*0.05)};
+// SSS contribution schedule (Circular 2024-006, from Jan 2025, still the latest in 2026): 15% of the monthly salary credit,
+// employee 5%. MSC ₱5,000 (below ₱5,250) to ₱35,000 (₱34,750 and up), steps of ₱500 → employee ₱250 – ₱1,750 a month.
+const prMSC=ms=>ms<5250?5000:ms>=34750?35000:5000+Math.floor((ms-4750)/500)*500;
+const prSSS=ms=>r2(prMSC(ms)*0.05);
 // PhilHealth 2025: employee 2.5% of the monthly salary (floor ₱10,000, ceiling ₱100,000)
 // PhilHealth (user's rule, 2026-11-21): 5% of the cut-off gross pay, 2.5% employee + 2.5% employer
 const prPH=gross=>r2(gross*0.025);
@@ -1962,8 +1965,17 @@ function prCalc(doc,g,hol,phm){
   const gross=r2(Object.values(E).reduce((t,x)=>t+x.a,0)),tard=r2(Object.values(T).reduce((t,x)=>t+x.a,0));
   const sp=prSpec(e.client),kind=sp.kind==='weekly'?'weekly':sp.starts.length>=2?'semi':'monthly',share=kind==='weekly'?12/52:kind==='semi'?1/sp.starts.length:1;
   const ms=prNum(e.monthlySalary)||r2(daily*26),paid=gross>0;
-  const G={sss:paid&&!skip.includes('sss')?r2(prSSS(ms)*share):0,ph:0,pi:paid&&!skip.includes('pi')?PR_PI:0};
-  phm=phm||{mode:'pct'};let phCalc,phNote,phWarn='';
+  const G={sss:0,ph:0,pi:paid&&!skip.includes('pi')?PR_PI:0};
+  phm=phm||{mode:'pct'};let phCalc,phNote,phWarn='',sssCalc,sssNote;
+  // SSS on the month's actual gross (user's rule, 2026-11-26), same cut-off pairing as PhilHealth
+  const sssM=x=>`₱${amt(prSSS(x).toFixed(2))} (MSC ₱${amt(prMSC(x).toFixed(0))})`;
+  if(phm.mode==='first'){sssCalc=r2(prSSS(ms)/2);sssNote=`SSS: half of ${sssM(ms)} on the 201 monthly salary ₱${amt(ms.toFixed(2))}${prNum(e.monthlySalary)?'':' (daily × 26)'}`}
+  else if(phm.mode==='rest'&&phm.prev){const q=phm.prev[g.k],g1=q?q.gross:0,s1=q?q.G.sss:0;
+    sssCalc=r2(Math.max(0,prSSS(g1+gross)-s1));sssNote=`SSS: month's gross ₱${amt(r2(g1+gross).toFixed(2))} → ${sssM(g1+gross)}, less ₱${amt(s1.toFixed(2))} deducted in the 1st cut-off`}
+  else if(kind==='monthly'){sssCalc=prSSS(gross);sssNote=`SSS: gross ₱${amt(gross.toFixed(2))} → ${sssM(gross)}`}
+  else if(kind==='semi'){sssCalc=r2(prSSS(gross*2)/2);sssNote=`SSS: half of ${sssM(gross*2)} on this cut-off's gross × 2`+(phm.mode==='rest'?' (the 1st cut-off upload was not found)':'')}
+  else{sssCalc=r2(prSSS(ms)*share);sssNote=`SSS: 12/52 of ${sssM(ms)} on the 201 monthly salary`}
+  G.sss=paid&&!skip.includes('sss')?sssCalc:0;
   if(phm.mode==='first'){phCalc=PR_PH1;phNote=`PhilHealth: fixed ₱${PR_PH1} in the 1st cut-off`}
   else if(phm.mode==='rest'&&phm.prev){const q=phm.prev[g.k],g1=q?q.gross:0,ph1=q?q.G.ph:0;
     phCalc=r2(Math.max(0,prPH(g1+gross)-ph1));phNote=`PhilHealth: 2.5% of the month's gross ₱${amt(r2(g1+gross).toFixed(2))} (1st cut-off ₱${amt(g1.toFixed(2))} + this ₱${amt(gross.toFixed(2))}) = ₱${amt(prPH(g1+gross).toFixed(2))}, less ₱${amt(ph1.toFixed(2))} deducted in the 1st cut-off`}
@@ -1973,7 +1985,7 @@ function prCalc(doc,g,hol,phm){
   const taxable=r2(Math.max(0,gross-tard-G.sss-G.ph-G.pi));G.tax=skip.includes('tax')?0:prTax(taxable,kind);G.hmo=paid&&!skip.includes('hmo')?r2(PR_HMO*share):0;
   const other=(set.ded||[]).map(x=>({label:x.label||'Other deduction',amount:r2(prNum(x.amount))})).filter(x=>x.amount>0),otherT=r2(other.reduce((t,x)=>t+x.amount,0));
   const ded=r2(tard+G.sss+G.ph+G.pi+G.tax+G.hmo+otherT),phER=G.ph; // employer's PhilHealth share = the employee's
-  return{k:g.k,e,daily,hr,E,T,G,phER,phCalc,phNote,phWarn,gross,tard,taxable,other,otherT,ded,net:r2(gross-ded),st,missDays,holDays,ms,kind,share,skip,set};
+  return{k:g.k,e,daily,hr,E,T,G,phER,phCalc,phNote,phWarn,sssCalc,sssNote,gross,tard,taxable,other,otherT,ded,net:r2(gross-ded),st,missDays,holDays,ms,kind,share,skip,set};
 }
 // one line per Rowell employee in the upload (limited to the sites the account may see)
 function prRows(doc){
@@ -2018,7 +2030,7 @@ VIEWS.payrun=function(){
       <li>Regular holiday not worked: 100% when present or on paid leave on the workday before. Special holiday not worked: no work, no pay.</li>
       <li>OT 125% of the hourly rate (130% of the day rate on a rest day or holiday), in the 30-minute blocks from Time Keep. ND +10% (10 PM – 6 AM). NDOT +10% of the OT rate.</li>
       <li>Paid leave = approved leave taken from SIL / leave credits. Days with a <b>missing log</b> are not paid until fixed in Time Keep.</li>
-      <li>Pag-IBIG: ₱200 every cut-off. HMO: ₱298 a month, ₱149 each cut-off. PhilHealth: 5% of the month's gross pay, 2.5% from the employee and 2.5% from the employer (shown in the Excel register). The employee pays a fixed ₱250 in the 1st cut-off and the rest in the cut-off paid on the 30th. SSS: employee share (2025 table) on the 201 monthly salary (daily × 26 when blank), split over the cut-offs of the month. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
+      <li>Pag-IBIG: ₱200 every cut-off. HMO: ₱298 a month, ₱149 each cut-off. PhilHealth: 5% of the month's gross pay, 2.5% from the employee and 2.5% from the employer (shown in the Excel register). The employee pays a fixed ₱250 in the 1st cut-off and the rest in the cut-off paid on the 30th. SSS: employee share from the latest SSS table (Circular 2024-006, in force since January 2025 and still for 2026: 5% of the MSC, ₱250 – ₱1,750 a month) on the month's actual gross pay. The 1st cut-off deducts half of the share on the 201 monthly salary; the cut-off paid on the 30th deducts the share for the month's gross (both cut-offs) less what the 1st deducted. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
       <li>Holidays: the national regular holidays and special non-working days proclaimed for the year, plus any holiday memo (Company Communications). The 201 allowance is not included.</li></ul></details></section>`;
   const all=prFiltered(doc),clients=[...new Set(prRows(doc).map(p=>p.e.client))].sort();
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
@@ -2057,7 +2069,7 @@ function prView(k){
   openModal({title:`Payslip · ${esc(fullName(p.e))}`,wide:1,
     body:`${p.daily?'':'<div class="formerr">There is no daily salary in this 201 file, so no pay can be computed. Add it with <b>Edit 201 file</b>.</div>'}${p.st.miss?`<div class="silline warn">${ic('alert')}<span>${p.st.miss} day${p.st.miss===1?' has':'s have'} a missing log (${p.missDays.map(fmtS).join(', ')}) and ${p.st.miss===1?'is':'are'} not paid. Fix the logs in <b>Time Keep</b> to include ${p.st.miss===1?'it':'them'}.</span></div>`:''}
     ${prSlip(p,doc)}
-    <p class="help" style="margin:10px 0 0">Monthly salary used for SSS: ₱${amt(p.ms.toFixed(2))}${prNum(p.e.monthlySalary)?'':' (daily × 26)'} · ${p.kind==='semi'?'half of the monthly share':p.kind==='weekly'?'12/52 of the monthly share':'the full monthly share'} this cut-off · ${esc(p.phNote)} (employer adds ₱${amt(p.phER.toFixed(2))}) · Pag-IBIG ₱200 per cut-off · tax on ₱${amt(p.taxable.toFixed(2))} (${PR_KIND[p.kind]} table)${p.set.byName?` · other deductions by ${esc(p.set.byName)}, ${esc(fmtTs(p.set.at))}`:''}.</p>`,
+    <p class="help" style="margin:10px 0 0">${esc(p.sssNote)} · ${esc(p.phNote)} (employer adds ₱${amt(p.phER.toFixed(2))}) · Pag-IBIG ₱200 per cut-off · tax on ₱${amt(p.taxable.toFixed(2))} (${PR_KIND[p.kind]} table)${p.set.byName?` · other deductions by ${esc(p.set.byName)}, ${esc(fmtTs(p.set.at))}`:''}.</p>`,
     foot:`<button type="button" class="btn ghost left" data-close>Close</button><button type="button" class="btn ghost" data-close data-act="open-emp" data-id="${p.e.id}">${ic('users')}Open 201 file</button><button type="button" class="btn ghost" data-act="pr-ded" data-id="${esc(p.k)}" data-write>${ic('edit')}Deductions</button><button type="button" class="btn" data-close data-act="pr-print" data-id="${esc(p.k)}">${ic('memo')}Print payslip</button>`});
 }
 // other deductions (cash advance, loans, …) and skipping a contribution for this cut-off
@@ -2068,7 +2080,7 @@ function prDed(k){
     body:`<p class="help" style="margin:0">${fmt(doc.from)} – ${fmt(doc.to)}. Late, undertime and overbreak, SSS, PhilHealth, Pag-IBIG, tax and HMO are computed. Add other deductions here (cash advance, loans, uniform, …).</p>
     <div id="pd-rows" style="margin-top:8px">${(p.set.ded||[]).map(row).join('')}</div>
     <button type="button" class="btn ghost sm" id="pd-add" style="margin-top:8px">${ic('plus')}Add deduction</button>
-    <fieldset style="margin-top:14px"><legend>Deduct this cut-off</legend>${PR_GOV.map(([g,l])=>`<label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" name="gov" value="${g}" ${p.skip.includes(g)?'':'checked'}> ${l}${g==='tax'?'':` (₱${amt((g==='hmo'?r2(PR_HMO*p.share):g==='pi'?PR_PI:g==='ph'?p.phCalc:r2(prSSS(p.ms)*p.share)).toFixed(2))})`}</label>`).join('')}
+    <fieldset style="margin-top:14px"><legend>Deduct this cut-off</legend>${PR_GOV.map(([g,l])=>`<label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" name="gov" value="${g}" ${p.skip.includes(g)?'':'checked'}> ${l}${g==='tax'?'':` (₱${amt((g==='hmo'?r2(PR_HMO*p.share):g==='pi'?PR_PI:g==='ph'?p.phCalc:p.sssCalc).toFixed(2))})`}</label>`).join('')}
     <p class="help" style="margin:6px 0 0">Untick one when it is already deducted in another cut-off.</p></fieldset>`,
     onOpen:f=>{const box=f.querySelector('#pd-rows');
       f.querySelector('#pd-add').addEventListener('click',()=>{box.insertAdjacentHTML('beforeend',row());box.lastElementChild.querySelector('input').focus()});
