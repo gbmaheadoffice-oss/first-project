@@ -1512,7 +1512,7 @@ const tkDec=m=>Math.round(m/60*100)/100;
 const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 // Rowell: 6-2 (6:00 AM – 2:00 PM) or 6-3 (6:00 AM – 3:00 PM), from the 201 shift, otherwise time out at 3 PM or later = 6-3.
 // Logs in order: time in, then break out / break in pairs, then time out. Before 3 PM the 1st and 3rd breaks are
-// 15 min and the 2nd is 30 min (6-2) or 1 hr (6-3); from 3 PM on, one more 15-min break if it is logged. Minutes over
+// 15 min and the 2nd is 1 hr on 6-3; on 6-2 only two breaks of 15 min each (30 min in all); from 3 PM on, one more 15-min break if it is logged. Minutes over
 // the allowance are overbreak. Regular hours = 8, less undertime (late and overbreak are shown on their own). OT = time after the schedule end, less the breaks taken in it.
 // minutes of a span (minutes from midnight) that fall in night-differential hours, 10 PM – 6 AM
 // OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
@@ -1556,10 +1556,11 @@ function tkRowell(e,ts,d,type,hr){
   const breaks=[];let pre=0,post=0;
   const spans=[];for(let k=1;k+1<n;k+=2)spans.push([m[k],m[k+1]]);
   if(lone!=null){spans.push([lone,null]);spans.sort((x,y)=>x[0]-y[0])}
-  // the meal break (1 hr on 6-3, 30 min on 6-2) is the longest break before the end of the shift, not always the 2nd one:
+  // 6-2 (8 hours): 30 min of breaks in all, two breaks of 15 min each, no meal break (user, 2026-11-26).
+  // 6-3: the 1-hr meal break is the longest break before the end of the shift, not always the 2nd one:
   // many only tap their lunch break, which would otherwise get the 15-min allowance of the 1st break
-  let mealAt=-1,mx=-1;spans.forEach(([a,b0],i)=>{if(a<start+540&&b0!=null&&b0-a>mx){mx=b0-a;mealAt=i}});
-  if(mealAt<0)mealAt=spans.findIndex(([a])=>a<start+540);
+  let mealAt=-1,mx=-1;if(len>=540){spans.forEach(([a,b0],i)=>{if(a<start+540&&b0!=null&&b0-a>mx){mx=b0-a;mealAt=i}});
+  if(mealAt<0)mealAt=spans.findIndex(([a])=>a<start+540)}
   for(const[i,[a,b0]]of spans.entries()){const allow=a<start+540?(i===mealAt?meal:pre++<2?15:0):post++?0:15;
     if(b0==null){breaks.push({a,b:a+allow,dur:allow,allow,ob:0,ot:a>=end,lone:1});continue}
     const dur=b0-a;breaks.push({a,b:b0,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
@@ -1727,7 +1728,7 @@ function tkView(k){
 function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
   return`<div class="tw" style="margin:0"><table class="tbl" style="min-width:1080px"><thead><tr><th>Date</th><th>Schedule</th><th>Time In</th><th>Breaks (out – in)</th><th>Time Out</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular</th><th class="r">OT</th><th>Note</th></tr></thead><tbody>
-  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.meal===60?'1 hr':'30 min'} 2nd break</div></td>
+  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.meal===60?'1 hr meal break':'2 breaks, 15 min each'}</div></td>
     <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
