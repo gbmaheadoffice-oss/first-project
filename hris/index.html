@@ -1475,13 +1475,15 @@ function tkType(doc,k,d){
   if(tkSun(d))return a.day[k+'|'+d]||'day';
   return(doc.roster||{})[w]||a.day[k+'|'+d]||a.week[w]||'day';
 }
+// HR's pick for the day: 2-10 makes it the 2-10 shift; 6-2 / 6-3 on a day guessed as 2-10 makes it the day shift
+const tkSchedType=(doc,k,d,t)=>{const v=(doc.sched||{})[k+'|'+d];return v==='mid'?'mid':(v===480||v===540)&&t==='mid'?'day':t};
 function tkShifts(doc){
   if(!doc)return[];const hit=TKSH.get(doc);if(hit)return hit;
   if(!doc.to){const r=tkGapShifts(doc);TKSH.set(doc,r);return r} // the attendance import has no roster
   const by={};(doc.rows||[]).forEach(r=>{const g=by[r.emp]||(by[r.emp]={emp:r.emp,name:r.name,L:[]});const b=tkDayNo(r.d)*1440;r.t.forEach(t=>g.L.push(b+tkMins(t)))});
   const d0=tkDayNo(doc.from),d1=tkDayNo(doc.to),out=[];
   Object.values(by).forEach(g=>{const k=tkKey(g.emp),L=g.L.sort((a,b)=>a-b);
-    const ty=[];for(let n=d0;n<=d1;n++)ty.push(tkType(doc,k,tkDayIso(n)));
+    const ty=[];for(let n=d0;n<=d1;n++)ty.push(tkSchedType(doc,k,tkDayIso(n),tkType(doc,k,tkDayIso(n))));
     // window start of each date; on the first date logs before 4:30 AM (or before 2 PM for a night) end an earlier shift
     const st=ty.map((t,i)=>(d0+i)*1440+(i===0&&t!=='night'?Math.max(TK_CARRY,TK_TYPES[t].from):TK_TYPES[t].from));
     if(L.some(x=>x>=d0*1440&&x<d0*1440+TK_CARRY))st[0]=Math.max(st[0],d0*1440+720); // the tail of a night before the cut-off
@@ -1501,9 +1503,9 @@ function tkShifts(doc){
     const L=r.t.map(tkMins),ref=f.in?tkMins(f.in):L.length?L[0]:TK_TYPES[r.type]?TK_TYPES[r.type].start:360;
     if(f.in)L.push(tkMins(f.in));if(f.out){let o=tkMins(f.out);if(o<=ref)o+=1440;L.push(o)}
     r.t=L.sort((a,b)=>a-b).map(m=>`${pad(Math.floor(m/60))}:${pad(m%60)}`);r.hr=f});
-  // 6-2 / 6-3 picked by HR for one person on one date (doc.sched {"<AC-No.>|<date>": 480|540}); without it the
+  // 6-2 / 6-3 / 2-10 picked by HR for one person on one date (doc.sched {"<AC-No.>|<date>": 480|540|"mid"}); without it the
   // schedule comes from the number of breaks (see tkRowell)
-  const sc=doc.sched||{};out.forEach(r=>{const v=sc[tkKey(r.emp)+'|'+r.d];if(v===480||v===540)r.len=v});
+  const sc=doc.sched||{};out.forEach(r=>{const k=tkKey(r.emp),v=sc[k+'|'+r.d];r.type=tkSchedType(doc,k,r.d,r.type);if(v===480||v===540||v==='mid')r.len=v});
   const res=out.sort((a,b)=>a.emp.localeCompare(b.emp,undefined,{numeric:true})||(a.d<b.d?-1:1));
   TKSH.set(doc,res);return res;
 }
@@ -1521,7 +1523,7 @@ const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
 const otBlock=m=>Math.floor(Math.max(0,m)/30)*30;
 const tkNight=(a,b)=>b<=a?0:Math.max(0,Math.min(b,360)-a)+Math.max(0,Math.min(b,1800)-Math.max(a,1320));
 function tkRowell(e,ts,d,type,hr,setLen){
-  // setLen: 480 (6-2) or 540 (6-3) picked by HR for this day in Time Keep; it wins over the guess from the breaks
+  // setLen: 480 (6-2), 540 (6-3) or 'mid' (2-10, with type 'mid') picked by HR for this day in Time Keep; it wins over the guess from the breaks
   // hr: the day's logs were entered by HR (Time Keep → edit logs): the first is the time in and the last the time out,
   // so the guesses for a missing time in / time out below are not applied
   let m=ts.map(tkMins),lone=null;
@@ -1585,7 +1587,7 @@ function tkRowell(e,ts,d,type,hr,setLen){
   // 4 hrs OT with 7 min late = 3.88 hrs OT (not 7.88 regular hours). Only the part over the OT is deducted as late/overbreak.
   const lateOff=out==null?0:Math.min(ot,late+ob),otNet=ot-lateOff;
   const ndot=out==null?0:Math.min(otNet,otBlock(tkNight(oA,oB)));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,len,setLen:!!setLen,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,start,len,setLen:!!setLen,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
@@ -1731,7 +1733,7 @@ function tkView(k){
 function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
   return`<div class="tw" style="margin:0"><table class="tbl" style="min-width:1080px"><thead><tr><th>Date</th><th>Schedule</th><th>Time In</th><th>Breaks (out – in)</th><th>Time Out</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular</th><th class="r">OT</th><th>Note</th></tr></thead><tbody>
-  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.len>=540?'6-3, breaks 15 / 30 / 15':'6-2, breaks 15 / 15'}${c.setLen?' · set by HR':''}</div></td>
+  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.start===840?'2-10, breaks 15 / 15':c.len>=540?'6-3, breaks 15 / 30 / 15':'6-2, breaks 15 / 15'}${c.setLen?' · set by HR':''}</div></td>
     <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
@@ -1814,19 +1816,19 @@ async function tkDayXlsx(){
    or remove a wrong one. Saved in the upload as doc.fixes (the whole list for that day); the device logs stay in the upload,
    so "Use the device logs" undoes it. */
 const tkHrTxt=f=>Array.isArray(f.logs)?'Logs edited by HR':[f.in?'Time in':'',f.out?'time out':''].filter(Boolean).join(' and ').replace(/^t/,'T')+' entered by HR';
-// 6-2 / 6-3 buttons for one person's day: the active one is pressed; "auto" = from the number of breaks
+// 6-2 / 6-3 / 2-10 buttons for one person's day: the active one is pressed; without a pick it comes from the logs
 function tkSchedBtns(k,d,c){
-  if(!c||!c.len)return'';const b=(v,l)=>`<button type="button" class="btn ${c.len===v?'':'ghost '}sm" data-act="tk-sched" data-id="${esc(k)}" data-k="${d}|${v}" aria-pressed="${c.len===v}" title="${c.setLen&&c.len===v?'Picked by HR. Click again to undo.':`Set this day to ${l}`}" data-write>${l}</button>`;
-  return`<span style="display:inline-flex;gap:4px;align-items:center">${b(480,'6-2')}${b(540,'6-3')}<span class="sub">${c.setLen?'set by HR':''}</span></span>`;
+  if(!c||!c.len)return'';const on=c.start===840?'mid':c.len;const b=(v,l)=>`<button type="button" class="btn ${on===v?'':'ghost '}sm" data-act="tk-sched" data-id="${esc(k)}" data-k="${d}|${v}" aria-pressed="${on===v}" title="${c.setLen&&on===v?'Picked by HR. Click again to undo.':`Set this day to ${l}`}" data-write>${l}</button>`;
+  return`<span style="display:inline-flex;gap:4px;align-items:center">${b(480,'6-2')}${b(540,'6-3')}${b('mid','2-10')}<span class="sub">${c.setLen?'set by HR':''}</span></span>`;
 }
 async function tkSched(k,dv){
-  const doc=tkCur();if(!doc)return;const i=dv.lastIndexOf('|'),d=dv.slice(0,i),v=+dv.slice(i+1),key=k+'|'+d,sched={...(doc.sched||{})};
+  const doc=tkCur();if(!doc)return;const i=dv.lastIndexOf('|'),d=dv.slice(0,i),v=dv.slice(i+1)==='mid'?'mid':+dv.slice(i+1),key=k+'|'+d,sched={...(doc.sched||{})};
   if(sched[key]===v)delete sched[key];else sched[key]=v;
   await save('timekeep',{...doc,sched});
   // show it at once (the saved copy comes back from the server a moment later), also in the employee's time logs window
   S.timekeep=S.timekeep.map(x=>x.id===doc.id?{...doc,sched}:x);renderView();
   if(MD.open&&MD.dataset.tkview===k){const b=MD.querySelector('.mbody'),y=b?b.scrollTop:0;tkView(k);const b2=MD.querySelector('.mbody');if(b2)b2.scrollTop=y}
-  const e=tkIndex(S.employees)[k];toast(`${e?fullName(e)+"'s ":''}${fmtS(d)}: ${sched[key]?(v===540?'6-3':'6-2')+' (set by HR)':'choice removed'}.`);
+  const e=tkIndex(S.employees)[k];toast(`${e?fullName(e)+"'s ":''}${fmtS(d)}: ${sched[key]?({480:'6-2',540:'6-3',mid:'2-10'}[v])+' (set by HR)':'choice removed'}.`);
 }
 function tkFix(k,d){
   const doc=tkCur();if(!doc)return;const e=tkIndex(S.employees)[k];if(!e)return;
