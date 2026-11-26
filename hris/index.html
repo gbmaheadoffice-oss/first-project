@@ -1815,14 +1815,14 @@ async function tkDayXlsx(){
 const tkHrTxt=f=>Array.isArray(f.logs)?'Logs edited by HR':[f.in?'Time in':'',f.out?'time out':''].filter(Boolean).join(' and ').replace(/^t/,'T')+' entered by HR';
 // 6-2 / 6-3 buttons for one person's day: the active one is pressed; "auto" = from the number of breaks
 function tkSchedBtns(k,d,c){
-  if(!c||!c.len)return'';const b=(v,l)=>`<button type="button" class="btn ${c.len===v?'':'ghost '}sm" data-act="tk-sched" data-id="${esc(k)}" data-k="${d}|${v}" aria-pressed="${c.len===v}" title="${c.setLen&&c.len===v?'Picked by HR. Click again to go back to the schedule from the breaks.':`Set this day to ${l}`}" data-write>${l}</button>`;
-  return`<span style="display:inline-flex;gap:4px;align-items:center">${b(480,'6-2')}${b(540,'6-3')}<span class="sub">${c.setLen?'set by HR':'auto, from the breaks'}</span></span>`;
+  if(!c||!c.len)return'';const b=(v,l)=>`<button type="button" class="btn ${c.len===v?'':'ghost '}sm" data-act="tk-sched" data-id="${esc(k)}" data-k="${d}|${v}" aria-pressed="${c.len===v}" title="${c.setLen&&c.len===v?'Picked by HR. Click again to undo.':`Set this day to ${l}`}" data-write>${l}</button>`;
+  return`<span style="display:inline-flex;gap:4px;align-items:center">${b(480,'6-2')}${b(540,'6-3')}<span class="sub">${c.setLen?'set by HR':''}</span></span>`;
 }
 async function tkSched(k,dv){
   const doc=tkCur();if(!doc)return;const i=dv.lastIndexOf('|'),d=dv.slice(0,i),v=+dv.slice(i+1),key=k+'|'+d,sched={...(doc.sched||{})};
   if(sched[key]===v)delete sched[key];else sched[key]=v;
   await save('timekeep',{...doc,sched});
-  const e=tkIndex(S.employees)[k];toast(`${e?fullName(e)+"'s ":''}${fmtS(d)}: ${sched[key]?(v===540?'6-3':'6-2')+' (set by HR)':'schedule from the breaks again'}.`);
+  const e=tkIndex(S.employees)[k];toast(`${e?fullName(e)+"'s ":''}${fmtS(d)}: ${sched[key]?(v===540?'6-3':'6-2')+' (set by HR)':'choice removed'}.`);
 }
 function tkFix(k,d){
   const doc=tkCur();if(!doc)return;const e=tkIndex(S.employees)[k];if(!e)return;
