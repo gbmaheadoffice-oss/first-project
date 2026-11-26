@@ -1874,7 +1874,7 @@ async function tkXlsx(){
    rate. Overbreak after the shift is already off the OT. Days with a missing log are not paid until fixed in Time Keep.
    Paid leave = approved leave days taken from SIL / leave credits. Holidays = PH_HOLIDAYS (proclamations) + holiday memos.
    Pag-IBIG: flat ₱200 every cut-off. PhilHealth: 2.5% of the month's gross (employer pays another 2.5%): fixed ₱250 in the 1st cut-off, the rest in the cut-off paid on the 30th. SSS (employee share, current table: Circ. 2024-006, in force since Jan 2025, still for 2026) on the
-   month's actual gross: the 1st cut-off deducts half of the share on the 201 monthly salary (daily × 26 when blank), the
+   gross pay: the 1st cut-off deducts the share for its own gross, the
    cut-off paid on the 30th deducts the share for the month's gross (1st + 2nd cut-off) less what the 1st deducted; withholding tax from the BIR table of the cut-off (semi-monthly / weekly / monthly) on
    gross less late/undertime/overbreak and contributions. The 201 allowance is not part of this payroll (user's choice).
    HR adds other deductions (cash advance, loans, …) and can skip a contribution for one cut-off: saved in the upload as
@@ -1969,11 +1969,11 @@ function prCalc(doc,g,hol,phm){
   phm=phm||{mode:'pct'};let phCalc,phNote,phWarn='',sssCalc,sssNote;
   // SSS on the month's actual gross (user's rule, 2026-11-26), same cut-off pairing as PhilHealth
   const sssM=x=>`₱${amt(prSSS(x).toFixed(2))} (MSC ₱${amt(prMSC(x).toFixed(0))})`;
-  if(phm.mode==='first'){sssCalc=r2(prSSS(ms)/2);sssNote=`SSS: half of ${sssM(ms)} on the 201 monthly salary ₱${amt(ms.toFixed(2))}${prNum(e.monthlySalary)?'':' (daily × 26)'}`}
+  if(phm.mode==='first'){sssCalc=prSSS(gross);sssNote=`SSS: 1st cut-off gross ₱${amt(gross.toFixed(2))} → ${sssM(gross)}`}
   else if(phm.mode==='rest'&&phm.prev){const q=phm.prev[g.k],g1=q?q.gross:0,s1=q?q.G.sss:0;
     sssCalc=r2(Math.max(0,prSSS(g1+gross)-s1));sssNote=`SSS: month's gross ₱${amt(r2(g1+gross).toFixed(2))} → ${sssM(g1+gross)}, less ₱${amt(s1.toFixed(2))} deducted in the 1st cut-off`}
   else if(kind==='monthly'){sssCalc=prSSS(gross);sssNote=`SSS: gross ₱${amt(gross.toFixed(2))} → ${sssM(gross)}`}
-  else if(kind==='semi'){sssCalc=r2(prSSS(gross*2)/2);sssNote=`SSS: half of ${sssM(gross*2)} on this cut-off's gross × 2`+(phm.mode==='rest'?' (the 1st cut-off upload was not found)':'')}
+  else if(kind==='semi'){sssCalc=prSSS(gross);sssNote=`SSS: gross ₱${amt(gross.toFixed(2))} → ${sssM(gross)}`+(phm.mode==='rest'?' (the 1st cut-off upload was not found)':'')}
   else{sssCalc=r2(prSSS(ms)*share);sssNote=`SSS: 12/52 of ${sssM(ms)} on the 201 monthly salary`}
   G.sss=paid&&!skip.includes('sss')?sssCalc:0;
   if(phm.mode==='first'){phCalc=PR_PH1;phNote=`PhilHealth: fixed ₱${PR_PH1} in the 1st cut-off`}
@@ -2030,7 +2030,7 @@ VIEWS.payrun=function(){
       <li>Regular holiday not worked: 100% when present or on paid leave on the workday before. Special holiday not worked: no work, no pay.</li>
       <li>OT 125% of the hourly rate (130% of the day rate on a rest day or holiday), in the 30-minute blocks from Time Keep. ND +10% (10 PM – 6 AM). NDOT +10% of the OT rate.</li>
       <li>Paid leave = approved leave taken from SIL / leave credits. Days with a <b>missing log</b> are not paid until fixed in Time Keep.</li>
-      <li>Pag-IBIG: ₱200 every cut-off. HMO: ₱298 a month, ₱149 each cut-off. PhilHealth: 5% of the month's gross pay, 2.5% from the employee and 2.5% from the employer (shown in the Excel register). The employee pays a fixed ₱250 in the 1st cut-off and the rest in the cut-off paid on the 30th. SSS: employee share from the latest SSS table (Circular 2024-006, in force since January 2025 and still for 2026: 5% of the MSC, ₱250 – ₱1,750 a month) on the month's actual gross pay. The 1st cut-off deducts half of the share on the 201 monthly salary; the cut-off paid on the 30th deducts the share for the month's gross (both cut-offs) less what the 1st deducted. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
+      <li>Pag-IBIG: ₱200 every cut-off. HMO: ₱298 a month, ₱149 each cut-off. PhilHealth: 5% of the month's gross pay, 2.5% from the employee and 2.5% from the employer (shown in the Excel register). The employee pays a fixed ₱250 in the 1st cut-off and the rest in the cut-off paid on the 30th. SSS: employee share from the latest SSS table (Circular 2024-006, in force since January 2025 and still for 2026: 5% of the MSC, ₱250 – ₱1,750 a month) on the month's actual gross pay. The 1st cut-off deducts the share for its own gross; the cut-off paid on the 30th deducts the share for the month's gross (both cut-offs) less what the 1st deducted. Withholding tax: BIR ${PR_KIND[sp.kind==='weekly'?'weekly':'semi']} table.</li>
       <li>Holidays: the national regular holidays and special non-working days proclaimed for the year, plus any holiday memo (Company Communications). The 201 allowance is not included.</li></ul></details></section>`;
   const all=prFiltered(doc),clients=[...new Set(prRows(doc).map(p=>p.e.client))].sort();
   h+=`<section class="card"><div class="toolbar" style="margin:0 0 6px;flex-wrap:wrap">
