@@ -1510,9 +1510,8 @@ const tkDec=m=>Math.round(m/60*100)/100;
 /* Time keep rules per site. A rule turns one day's logs into late, undertime, breaks, overbreak, regular hours and OT.
    Sites without a rule show the logs and hours from first to last log only. */
 const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
-// Rowell: 6-2 (6:00 AM – 2:00 PM) or 6-3 (6:00 AM – 3:00 PM), from the 201 shift, otherwise time out at 3 PM or later = 6-3.
-// Logs in order: time in, then break out / break in pairs, then time out. Before 3 PM the 1st and 3rd breaks are
-// 15 min and the 2nd is 1 hr on 6-3; on 6-2 only two breaks of 15 min each (30 min in all); from 3 PM on, one more 15-min break if it is logged. Minutes over
+// Rowell: 6-2 (6:00 AM – 2:00 PM) or 6-3 (6:00 AM – 3:00 PM), from the number of breaks: 3 or more = 6-3 (15 / 30 / 15),
+// 2 or fewer = 6-2 (15 / 15). Logs in order: time in, then break out / break in pairs, then time out. Minutes over
 // the allowance are overbreak. Regular hours = 8, less undertime (late and overbreak are shown on their own). OT = time after the schedule end, less the breaks taken in it.
 // minutes of a span (minutes from midnight) that fall in night-differential hours, 10 PM – 6 AM
 // OT counts only in whole 30-minute blocks: 46 min = 30 min, 2 h 45 min = 2.5 hrs
@@ -1525,8 +1524,6 @@ function tkRowell(e,ts,d,type,hr){
   // the time in or time out tapped twice within 2 minutes counts once
   if(m.length>=3&&m[1]-m[0]<=2)m=m.slice(1);if(m.length>=3&&m[m.length-1]-m[m.length-2]<=2)m=m.slice(0,-1);
   const inn=m[0],s201=e.shiftStart?tkMins(e.shiftStart):360;
-  // 201 shift length: 8 h (6-2) or 9 h (6-3). A shift end before the start ("2:00" without AM/PM from the masterlist) is read as PM.
-  let e201=e.shiftEnd?tkMins(e.shiftEnd):null;if(e201!=null){if(e201<=s201&&e201<720)e201+=720;if(e201<=s201)e201+=1440}
   // the shift worked that day: the start nearest the time in — the 201 start (day shift), 2:00 PM, or 6:00 PM (night shift)
   // Sundays: everyone who works has a fixed 8-hour shift, 6-2 (6 AM – 2 PM) or 2-10 (2 PM – 10 PM)
   const sun=!!d&&parse(d).getDay()===0;
@@ -1543,7 +1540,11 @@ function tkRowell(e,ts,d,type,hr){
     for(let k=1;k<m.length-1;k++){const r=m.filter((_,i)=>i!==k);let t=0;for(let j=1;j+1<r.length;j+=2)t+=r[j+1]-r[j];if(t<bt){bt=t;best=k}}
     lone=m[best];m=m.filter((_,i)=>i!==best)}
   const n=m.length;
-  let len=sun||start===840?480:e201!=null&&e201-s201>=480&&e201-s201<=600?e201-s201:n>1&&n%2===0&&m[n-1]>=start+540?540:480;
+  // 6-2 or 6-3 from the number of breaks taken that day (user, 2026-11-26), not from the 201 shift end:
+  // 3 breaks or more (after the schedule end too) = 6-3 (9 hours, breaks 15 / 30 / 15 = 1 hr, OT from the 9th hour);
+  // 2 or fewer = 6-2 (8 hours, breaks 15 / 15 = 30 min, OT from the 8th hour). Sundays and 2-10 are always 8 hours.
+  const nb=(n>=2?Math.floor((n-2)/2):0)+(lone!=null?1:0);
+  let len=sun||start===840?480:nb>=3?540:480;
   // 201 says 6-3 but the time out is before the 6-3 end: that day was worked as 6-2, so no undertime for the last hour
   // OT still starts only at the 6-3 end (3 PM) for them
   const otFrom=start+len;if(len>480&&n>1&&n%2===0&&m[n-1]<start+len)len=480;
@@ -1551,17 +1552,13 @@ function tkRowell(e,ts,d,type,hr){
   // last one is not at the end of the 8- or 9-hour schedule
   const near=x=>[start+480,start+540].some(t=>m[n-1]>=t-10&&m[n-1]<=t+15);
   const noOut=!hr&&!noIn&&n>=4&&n%2===0&&m[n-1]-m[n-2]<45&&!near();
-  const end=start+len,meal=len>=540?60:30,odd=n%2===1||noIn||noOut,out=odd?null:m[n-1];
+  const end=start+len,meal=nb>=3?30:15,odd=n%2===1||noIn||noOut,out=odd?null:m[n-1];
   const late=noIn?0:Math.max(0,inn-start),ut=out==null?0:Math.max(0,end-out);
-  const breaks=[];let pre=0,post=0;
+  const breaks=[];
   const spans=[];for(let k=1;k+1<n;k+=2)spans.push([m[k],m[k+1]]);
   if(lone!=null){spans.push([lone,null]);spans.sort((x,y)=>x[0]-y[0])}
-  // 6-2 (8 hours): 30 min of breaks in all, two breaks of 15 min each, no meal break (user, 2026-11-26).
-  // 6-3: the 1-hr meal break is the longest break before the end of the shift, not always the 2nd one:
-  // many only tap their lunch break, which would otherwise get the 15-min allowance of the 1st break
-  let mealAt=-1,mx=-1;if(len>=540){spans.forEach(([a,b0],i)=>{if(a<start+540&&b0!=null&&b0-a>mx){mx=b0-a;mealAt=i}});
-  if(mealAt<0)mealAt=spans.findIndex(([a])=>a<start+540)}
-  for(const[i,[a,b0]]of spans.entries()){const allow=a<start+540?(i===mealAt?meal:pre++<2?15:0):post++?0:15;
+  // allowances in order (user, 2026-11-26): 2 breaks = 15 / 15; 3 breaks = 15 / 30 / 15 (the 2nd is the lunch); a 4th = 0
+  for(const[i,[a,b0]]of spans.entries()){const allow=i===1?meal:i<3?15:0;
     if(b0==null){breaks.push({a,b:a+allow,dur:allow,allow,ob:0,ot:a>=end,lone:1});continue}
     const dur=b0-a;breaks.push({a,b:b0,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
   // with no time in or no time out the logs cannot be paired into breaks, so no overbreak is counted (HR fixes the day)
@@ -1573,17 +1570,16 @@ function tkRowell(e,ts,d,type,hr){
   // the allowed 15-min break after the schedule is paid: only the minutes over it (overbreak) come off the OT
   // Late and overbreak in ND / NDOT hours (10 PM – 6 AM) are deducted only as regular late / overbreak (user's rule,
   // 2026-11-26): they do not cut the ND or NDOT hours. ND runs from the scheduled start (not the late time in) and only
-  // the allowed part of each break comes off it. An overbreak after the schedule in ND hours stays in the OT and NDOT
-  // and is deducted as overbreak (obOtNd); an overbreak after the schedule outside ND hours still comes off the OT.
-  const obOt=x=>x.ob?[x.a+x.allow,x.b]:null,obOtNd=breaks.filter(x=>x.a>=otFrom&&x.ob).reduce((t,x)=>t+tkNight(...obOt(x)),0);
-  const otRaw=out==null?0:Math.max(0,out-Math.max(otFrom,inn)-breaks.filter(x=>x.a>=otFrom).reduce((t,x)=>t+x.ob,0)+obOtNd),ot=otBlock(otRaw);
+  // the allowed part of each break comes off it. OT is the time after the schedule in whole 30-min blocks; then all of
+  // the day's late and overbreak (breaks after the schedule too) come off it (HR's formula: 3 hrs OT, 7 min = 2.88 hrs).
+  const otRaw=out==null?0:Math.max(0,out-Math.max(otFrom,inn)),ot=otBlock(otRaw);
   const rA=start,rB=out==null?rA:Math.min(out,end),oA=Math.max(otFrom,inn),oB=out==null?oA:out;
   const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.a+Math.min(x.dur,x.allow),rB)),0));
   // Late and overbreak on a day with OT come off that day's OT, not the regular 8 hours (user's rule, 2026-11-26):
   // 4 hrs OT with 7 min late = 3.88 hrs OT (not 7.88 regular hours). Only the part over the OT is deducted as late/overbreak.
-  const lateOff=out==null?0:Math.min(ot,late+obReg+obOtNd),otNet=ot-lateOff;
+  const lateOff=out==null?0:Math.min(ot,late+ob),otNet=ot-lateOff;
   const ndot=out==null?0:Math.min(otNet,otBlock(tkNight(oA,oB)));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut,obOtNd:out==null?0:obOtNd};
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
@@ -1728,7 +1724,7 @@ function tkView(k){
 function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
   return`<div class="tw" style="margin:0"><table class="tbl" style="min-width:1080px"><thead><tr><th>Date</th><th>Schedule</th><th>Time In</th><th>Breaks (out – in)</th><th>Time Out</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular</th><th class="r">OT</th><th>Note</th></tr></thead><tbody>
-  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.meal===60?'1 hr meal break':'2 breaks, 15 min each'}</div></td>
+  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.meal===30?'breaks 15 / 30 / 15':'breaks 15 / 15'}</div></td>
     <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
@@ -1979,7 +1975,7 @@ function prCalc(doc,g,hol,phm){
       if(!c||c.odd||c.reg==null){st.miss++;missDays.push(d);return}
       const m=prMult(kind,rest),rate=hr*m,key=kind||(rest?'rest':'basic'),otr=rate*(m>1?1.3:1.25);
       E[key].n++;E[key].a+=8*rate;st.worked++;
-      const obReg=c.breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0)+(c.obOtNd||0); // + overbreak after the shift in ND hours (kept in the OT)
+      const obReg=c.ob||0; // all overbreak, breaks after the shift too (none of it comes off the OT before the 30-min blocks)
       // late and overbreak already taken off the OT (c.lateOff) are not deducted again: late first, then overbreak
       const off=c.lateOff||0,lateD=Math.max(0,(c.late||0)-off),obD=Math.max(0,obReg-Math.max(0,off-(c.late||0)));
       [['late',lateD],['ut',c.ut],['ob',obD]].forEach(([k,v])=>{T[k].m+=v||0;T[k].a+=(v||0)/60*rate});
