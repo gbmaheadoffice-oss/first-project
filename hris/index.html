@@ -1726,6 +1726,7 @@ function tkView(k){
       <td class="num" style="white-space:normal">${x.t.map(tkT).join(' · ')}</td><td class="r num">${tkH(tkHours(x.t))}</td><td>${x.t.length===1?'<span class="chip warn">Only one log</span>':x.t.length%2?'<span class="chip warn">Odd number of logs</span>':''}${x.hr?`<span class="chip info">${tkHrTxt(x.hr)}</span>`:''}${r.e?`<div style="margin-top:4px"><button type="button" class="btn ghost sm" data-act="tk-fix" data-id="${esc(r.k)}" data-k="${x.d}" data-write>Edit logs</button></div>`:''}</td></tr>`).join('')}
     </tbody></table></div>`}`,
     foot:`<button type="button" class="btn ghost left" data-close>Close</button>${r.e?`<button type="button" class="btn ghost" data-close data-act="open-emp" data-id="${r.e.id}">${ic('users')}Open 201 file</button>`:''}`});
+  MD.dataset.tkview=k;MD.addEventListener('close',()=>{delete MD.dataset.tkview},{once:true});
 }
 function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
@@ -1822,6 +1823,9 @@ async function tkSched(k,dv){
   const doc=tkCur();if(!doc)return;const i=dv.lastIndexOf('|'),d=dv.slice(0,i),v=+dv.slice(i+1),key=k+'|'+d,sched={...(doc.sched||{})};
   if(sched[key]===v)delete sched[key];else sched[key]=v;
   await save('timekeep',{...doc,sched});
+  // show it at once (the saved copy comes back from the server a moment later), also in the employee's time logs window
+  S.timekeep=S.timekeep.map(x=>x.id===doc.id?{...doc,sched}:x);renderView();
+  if(MD.open&&MD.dataset.tkview===k){const b=MD.querySelector('.mbody'),y=b?b.scrollTop:0;tkView(k);const b2=MD.querySelector('.mbody');if(b2)b2.scrollTop=y}
   const e=tkIndex(S.employees)[k];toast(`${e?fullName(e)+"'s ":''}${fmtS(d)}: ${sched[key]?(v===540?'6-3':'6-2')+' (set by HR)':'choice removed'}.`);
 }
 function tkFix(k,d){
@@ -2878,7 +2882,7 @@ function field(o){
   return`<div class="field ${o.full?'full':''}">${lab}${ctl}${o.help?`<p class="help">${o.help}</p>`:''}</div>`;
 }
 function openModal({title,body,foot,wide,onSubmit,onOpen,submitLabel='Save',submitClass=''}){
-  MD.className=wide?'wide':'';
+  delete MD.dataset.tkview;MD.className=wide?'wide':'';
   MD.innerHTML=`<form class="mform" novalidate><header class="mhead"><h2 id="mtitle">${title}</h2><div class="mtools">${wide?`<button type="button" class="icon-btn" data-maxi aria-label="Maximize" title="Maximize (see everything)">${ic('maxi')}</button>`:''}<button type="button" class="icon-btn" data-close aria-label="Close">${ic('x')}</button></div></header><div class="mbody">${body}</div><footer class="mfoot">${foot||`<button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn ${submitClass}">${submitLabel}</button>`}</footer></form>`;
   MD.setAttribute('aria-labelledby','mtitle');
   const f=MD.querySelector('form');
