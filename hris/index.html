@@ -1938,17 +1938,32 @@ const PR_HMO=298;
 const PR_EARN=[['basic','Basic pay (ordinary days)','d'],['rest','Rest day / Sunday work','d'],['sh','Special holiday work','d'],['rh','Regular holiday work','d'],['rhoff','Regular holiday pay (not worked)','d'],['leave','Paid leave','d'],['ot','Overtime (ordinary day)','h'],['otrest','Rest day / Sunday OT','h'],['otsh','Special holiday OT','h'],['otrh','Regular holiday OT','h'],['nd','Night differential','h'],['ndot','Night differential on OT','h']];
 const PR_OTK=['ot','otrest','otsh','otrh'],prOT=(p,f)=>r2(PR_OTK.reduce((t,k)=>t+p.E[k][f],0));
 const PR_TARD=[['late','Late'],['ut','Undertime'],['ob','Overbreak']];
+// A night shift that starts on the last day of the upload ends the next morning, outside the file, so its time out is
+// missing. (User, 2026-11-26: it still counts as a day worked.) The next morning's logs (before 12 noon) are taken from
+// another upload that has that date; with none yet, the shift is taken as ended on schedule (8 hours, no OT).
+// HR-edited logs for that day are used as they are.
+function prNightTail(doc,g,d,r){
+  if(d!==doc.to||!r.log||r.log.hr||r.log.type!=='night'||!r.rule||!r.c||!r.c.odd||r.c.noIn)return null;
+  const nx=addDays(d,1),src=tkSorted().find(x=>x.id!==doc.id&&x.from<=nx&&x.to>=nx);
+  const tail=src?((src.rows||[]).find(x=>tkKey(x.emp)===g.k&&x.d===nx)||{t:[]}).t.filter(t=>tkMins(t)<720):[];
+  const plus=tail.map(t=>{const m=tkMins(t)+1440;return`${pad(Math.floor(m/60))}:${pad(m%60)}`});
+  let c=plus.length?r.rule.day(g.e,r.log.t.concat(plus),d,'night'):null,est=false;
+  if(!c||c.odd){const end=Math.max(TK_TYPES.night.start+480,tkMins(r.log.t[r.log.t.length-1])+1);
+    c=r.rule.day(g.e,r.log.t.concat([`${pad(Math.floor(end/60))}:${pad(end%60)}`]),d,'night');est=true}
+  return c&&!c.odd?{c,est}:null;
+}
 // one employee's pay for the cut-off; g = {k, e, days:{date: Time Keep day row}}
 function prCalc(doc,g,hol,phm){
   const e=g.e,daily=prNum(e.dailySalary),hr=daily/8,set=(doc.pay||{})[g.k]||{},skip=set.skip||[];
   const E={};PR_EARN.forEach(([k])=>E[k]={n:0,a:0});const T={};PR_TARD.forEach(([k])=>T[k]={m:0,a:0});
-  const st={worked:0,absent:0,miss:0,rest:0,unpaidLeave:0},missDays=[],holDays=[];
+  const st={worked:0,absent:0,miss:0,rest:0,unpaidLeave:0},missDays=[],holDays=[],nightEnd=[];
   // the workday before a holiday (the employee's rest days skipped): present or on paid leave? Before this cut-off: yes.
   const before=d=>{let x=addDays(d,-1);for(let i=0;i<7&&isRest(e,x);i++)x=addDays(x,-1);if(x<doc.from)return true;const r=g.days[x];if(!r)return false;
     if(r.log)return!(r.c&&r.c.odd);if(hol[x])return true;return!!(r.leave&&prLeavePaid(r.leave)>0)};
   Object.keys(g.days).sort().forEach(d=>{const r=g.days[d],h=hol[d],kind=h?h.kind:'',rest=isRest(e,d);
     if(h)holDays.push(d);
-    if(r.log){const c=r.c;
+    if(r.log){let c=r.c;
+      const nt=c&&c.odd?prNightTail(doc,g,d,r):null;if(nt){c=nt.c;nightEnd.push({d,est:nt.est})}
       if(!c||c.odd||c.reg==null){st.miss++;missDays.push(d);return}
       const m=prMult(kind,rest),rate=hr*m,key=kind||(rest?'rest':'basic'),otr=rate*(m>1?1.3:1.25);
       E[key].n++;E[key].a+=8*rate;st.worked++;
@@ -1985,7 +2000,7 @@ function prCalc(doc,g,hol,phm){
   const taxable=r2(Math.max(0,gross-tard-G.sss-G.ph-G.pi));G.tax=skip.includes('tax')?0:prTax(taxable,kind);G.hmo=paid&&!skip.includes('hmo')?r2(PR_HMO*share):0;
   const other=(set.ded||[]).map(x=>({label:x.label||'Other deduction',amount:r2(prNum(x.amount))})).filter(x=>x.amount>0),otherT=r2(other.reduce((t,x)=>t+x.amount,0));
   const ded=r2(tard+G.sss+G.ph+G.pi+G.tax+G.hmo+otherT),phER=G.ph; // employer's PhilHealth share = the employee's
-  return{k:g.k,e,daily,hr,E,T,G,phER,phCalc,phNote,phWarn,sssCalc,sssNote,gross,tard,taxable,other,otherT,ded,net:r2(gross-ded),st,missDays,holDays,ms,kind,share,skip,set};
+  return{k:g.k,e,daily,hr,E,T,G,phER,phCalc,phNote,phWarn,sssCalc,sssNote,nightEnd,gross,tard,taxable,other,otherT,ded,net:r2(gross-ded),st,missDays,holDays,ms,kind,share,skip,set};
 }
 // one line per Rowell employee in the upload (limited to the sites the account may see)
 function prRows(doc){
@@ -2009,6 +2024,7 @@ function prWarn(p){
   if(p.st.absent)w.push(`<span class="chip">${p.st.absent} absent</span>`);
   if(p.st.unpaidLeave)w.push(`<span class="chip">${r2(p.st.unpaidLeave)} leave day${p.st.unpaidLeave===1?'':'s'} without pay</span>`);
   if(p.phWarn)w.push(`<span class="chip warn">${esc(p.phWarn)}</span>`);
+  p.nightEnd.forEach(x=>w.push(`<span class="chip${x.est?' warn':' info'}" title="The night shift of ${fmtS(x.d)} ends the next morning, after this upload. ${x.est?'Its time out is not uploaded yet, so it is paid as 8 hours (no OT) until the next upload has it.':'The time out was taken from the next upload.'}">${fmtS(x.d)} night: ${x.est?'paid 8 hrs, time out not uploaded yet':'time out from next upload'}</span>`));
   if(p.skip.length)w.push(`<span class="chip info">No ${p.skip.map(k=>PR_GOV.find(x=>x[0]===k)[1]).join(', ')} this cut-off</span>`);
   return w.join('');
 }
