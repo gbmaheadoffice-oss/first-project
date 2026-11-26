@@ -1570,11 +1570,16 @@ function tkRowell(e,ts,d,type,hr){
   // their own columns and are not taken off here, like the Rowell DTR (LATE 1, REG HRS 8).
   const reg=out==null?null:Math.max(0,480-ut);
   // the allowed 15-min break after the schedule is paid: only the minutes over it (overbreak) come off the OT
-  const otRaw=out==null?0:Math.max(0,out-Math.max(otFrom,inn)-breaks.filter(x=>x.a>=otFrom).reduce((t,x)=>t+x.ob,0)),ot=otBlock(otRaw);
-  const rA=Math.max(inn,start),rB=out==null?rA:Math.min(out,end),oA=Math.max(otFrom,inn),oB=out==null?oA:out;
-  const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.b,rB)),0));
-  const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)-breaks.filter(x=>x.a>=otFrom&&x.ob).reduce((t,x)=>t+Math.min(x.ob,tkNight(x.a,x.b)),0)));
-  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,otRaw,nd,ndot,odd,lone,noIn,noOut};
+  // Late and overbreak in ND / NDOT hours (10 PM – 6 AM) are deducted only as regular late / overbreak (user's rule,
+  // 2026-11-26): they do not cut the ND or NDOT hours. ND runs from the scheduled start (not the late time in) and only
+  // the allowed part of each break comes off it. An overbreak after the schedule in ND hours stays in the OT and NDOT
+  // and is deducted as overbreak (obOtNd); an overbreak after the schedule outside ND hours still comes off the OT.
+  const obOt=x=>x.ob?[x.a+x.allow,x.b]:null,obOtNd=breaks.filter(x=>x.a>=otFrom&&x.ob).reduce((t,x)=>t+tkNight(...obOt(x)),0);
+  const otRaw=out==null?0:Math.max(0,out-Math.max(otFrom,inn)-breaks.filter(x=>x.a>=otFrom).reduce((t,x)=>t+x.ob,0)+obOtNd),ot=otBlock(otRaw);
+  const rA=start,rB=out==null?rA:Math.min(out,end),oA=Math.max(otFrom,inn),oB=out==null?oA:out;
+  const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.a+Math.min(x.dur,x.allow),rB)),0));
+  const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)));
+  return{sched:`${tkFt(start)} – ${tkFt(end)}`,meal,late,ut,breaks,ob,reg,ot,otRaw,nd,ndot,odd,lone,noIn,noOut,obOtNd:out==null?0:obOtNd};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
 const tkRule=e=>e&&TK_RULES.find(r=>r.test(e.client))||null;
@@ -1873,7 +1878,8 @@ async function tkXlsx(){
    130% of the day rate on a rest day or holiday. ND = +10% of the day's hourly rate (10 PM – 6 AM); NDOT = +10% of the OT rate.
    A regular holiday not worked is paid 100% when the employee was present or on paid leave on the workday before it.
    Basic pay counts 8 hours for each day worked; late, undertime and overbreak (in regular hours) are deducted at that day's
-   rate. Overbreak after the shift is already off the OT. Days with a missing log are not paid until fixed in Time Keep.
+   rate. Overbreak after the shift is already off the OT, except in ND hours: there it stays in the OT/NDOT and is deducted as
+   overbreak. Late and overbreak never cut the ND / NDOT hours; they are deducted only at the regular rate of the day. Days with a missing log are not paid until fixed in Time Keep.
    Paid leave = approved leave days taken from SIL / leave credits. Holidays = PH_HOLIDAYS (proclamations) + holiday memos.
    Pag-IBIG: flat ₱200 every cut-off. PhilHealth: 2.5% of the month's gross (employer pays another 2.5%): fixed ₱250 in the 1st cut-off, the rest in the cut-off paid on the 30th. SSS (employee share, current table: Circ. 2024-006, in force since Jan 2025, still for 2026) on the
    gross pay: the 1st cut-off deducts the share for its own gross, the
@@ -1969,7 +1975,7 @@ function prCalc(doc,g,hol,phm){
       if(!c||c.odd||c.reg==null){st.miss++;missDays.push(d);return}
       const m=prMult(kind,rest),rate=hr*m,key=kind||(rest?'rest':'basic'),otr=rate*(m>1?1.3:1.25);
       E[key].n++;E[key].a+=8*rate;st.worked++;
-      const obReg=c.breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0);
+      const obReg=c.breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0)+(c.obOtNd||0); // + overbreak after the shift in ND hours (kept in the OT)
       [['late',c.late],['ut',c.ut],['ob',obReg]].forEach(([k,v])=>{T[k].m+=v||0;T[k].a+=(v||0)/60*rate});
       const ok=kind?'ot'+kind:rest?'otrest':'ot';E[ok].n+=c.ot/60;E[ok].a+=c.ot/60*otr;E.nd.n+=c.nd/60;E.nd.a+=c.nd/60*rate*0.1;E.ndot.n+=c.ndot/60;E.ndot.a+=c.ndot/60*otr*0.1;
       return}
