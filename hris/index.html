@@ -1515,7 +1515,7 @@ const tkDec=m=>Math.round(m/60*100)/100;
 /* Time keep rules per site. A rule turns one day's logs into late, undertime, breaks, overbreak, regular hours and OT.
    Sites without a rule show the logs and hours from first to last log only. */
 const tkFt=m=>fmtTime(`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`);
-// Rowell: 6-2 (6:00 AM – 2:00 PM) or 6-3 (6:00 AM – 3:00 PM), from the breaks: over 30 min of breaks before 2 PM = 6-3 (15, then 1 hr),
+// Rowell: 6-2 (6:00 AM – 2:00 PM) or 6-3 (6:00 AM – 3:00 PM), from the breaks: over 45 min of breaks before 2 PM = 6-3 (15, then 1 hr),
 // 2 or fewer = 6-2 (15 / 15). Logs in order: time in, then break out / break in pairs, then time out. Minutes over
 // the allowance are overbreak. Regular hours = 8, less undertime (late and overbreak are shown on their own). OT = time after the schedule end, less the breaks taken in it.
 // minutes of a span (minutes from midnight) that fall in night-differential hours, 10 PM – 6 AM
@@ -1548,10 +1548,10 @@ function tkRowell(e,ts,d,type,hr,setLen){
   const n=m.length;
   // 6-2 or 6-3 from the number of breaks taken that day (user, 2026-11-26), not from the 201 shift end:
   // breaks starting before the 8th hour adding up to over 30 min = 6-3 (9 hours, 1st break 15, 2nd break 1 hr, OT from the 9th hour);
-  // 2 or fewer = 6-2 (8 hours, breaks 15 / 15 = 30 min, OT from the 8th hour). Sundays and 2-10 are always 8 hours.
+  // 45 min or less = 6-2 (8 hours, breaks 15 / 30, OT from the 8th hour). Sundays and 2-10 are always 8 hours.
 
   let bsum=lone!=null&&lone<start+480?15:0;for(let k=1;k+1<n;k+=2)if(m[k]<start+480)bsum+=m[k+1]-m[k];
-  let len=setLen===480||setLen===540?setLen:sun||start===840?480:bsum>30?540:480;
+  let len=setLen===480||setLen===540?setLen:sun||start===840?480:bsum>45?540:480;
   // 201 says 6-3 but the time out is before the 6-3 end: that day was worked as 6-2, so no undertime for the last hour
   // OT still starts only at the 6-3 end (3 PM) for them
   const otFrom=start+len;if(!setLen&&len>480&&n>1&&n%2===0&&m[n-1]<start+len)len=480;
@@ -1564,10 +1564,11 @@ function tkRowell(e,ts,d,type,hr,setLen){
   const breaks=[];
   const spans=[];for(let k=1;k+1<n;k+=2)spans.push([m[k],m[k+1]]);
   if(lone!=null){spans.push([lone,null]);spans.sort((x,y)=>x[0]-y[0])}
-  // allowances in order (user, 2026-11-26): within 6-3 = 15 / 60 (user, 2026-11-26: 1st break 15 min, 2nd 1 hr), within 6-2 = 15 / 15 (30 min), any more = 0;
+  // allowances in order (user, 2026-11-26): within 6-3 = 15 / 60, within 6-2 (and 2-10) = 15 / 30, any more = 0;
+  // the 15-min 1st break is optional: a lone break within the schedule is the meal break (6-3: 1 hr, 6-2: 30 min)
   // the first break after the schedule end (OT) = 15, any more = 0
-  let pre=0,post=0;
-  for(const[i,[a,b0]]of spans.entries()){const allow=a<end?((len>=540?[15,60]:[15,15])[pre++]||0):post++?0:15;
+  let pre=0,post=0;const nPre=spans.filter(x=>x[0]<end).length,AL=len>=540?(nPre===1?[60]:[15,60]):(nPre===1?[30]:[15,30]);
+  for(const[i,[a,b0]]of spans.entries()){const allow=a<end?(AL[pre++]||0):post++?0:15;
     if(b0==null){breaks.push({a,b:a+allow,dur:allow,allow,ob:0,ot:a>=end,lone:1});continue}
     const dur=b0-a;breaks.push({a,b:b0,dur,allow,ob:Math.max(0,dur-allow),ot:a>=end})}
   // with no time in or no time out the logs cannot be paired into breaks, so no overbreak is counted (HR fixes the day)
@@ -1734,7 +1735,7 @@ function tkView(k){
 function tkRuleTable(r,wd){
   const brk=b=>b.lone?`<span title="Only one tap was logged for this break; it counts as the allowed ${b.allow} min">${tkFt(b.a)} <span class="att-muted">(one tap only, ${b.allow}m allowed)</span></span>`:`<span class="${b.ob?'att-bad':''}" title="Allowed ${b.allow} min">${tkFt(b.a)} – ${tkFt(b.b)} <b>${b.dur}m</b>${b.ob?` (+${b.ob} over)`:''}</span>`;
   return`<div class="tw" style="margin:0"><table class="tbl" style="min-width:1080px"><thead><tr><th>Date</th><th>Schedule</th><th>Time In</th><th>Breaks (out – in)</th><th>Time Out</th><th class="r">Late</th><th class="r">Undertime</th><th class="r">Overbreak</th><th class="r">Regular</th><th class="r">OT</th><th>Note</th></tr></thead><tbody>
-  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.start===840?'2-10, breaks 15 / 15':c.len>=540?'6-3, breaks 15 / 1 hr':'6-2, breaks 15 / 15'}${c.setLen?' · set by HR':''}</div></td>
+  ${r.days.map((x,i)=>{const c=r.calc[i];return`<tr><td class="num" style="white-space:nowrap"><b>${wd(x.d)}</b> ${fmtS(x.d)}</td><td class="num" style="white-space:nowrap">${c.sched}<div class="sub">${c.start===840?'2-10, breaks 15 / 30':c.len>=540?'6-3, breaks 15 / 1 hr':'6-2, breaks 15 / 30'}${c.setLen?' · set by HR':''}</div></td>
     <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
