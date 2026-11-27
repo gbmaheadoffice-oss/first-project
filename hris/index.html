@@ -1579,16 +1579,17 @@ function tkRowell(e,ts,d,type,hr,setLen){
   const reg=out==null?null:Math.max(0,480-ut);
   // the allowed 15-min break after the schedule is paid: only the minutes over it (overbreak) come off the OT
   // Late and overbreak in ND / NDOT hours (10 PM – 6 AM) are deducted only as regular late / overbreak (user's rule,
-  // 2026-11-26): they do not cut the ND or NDOT hours. ND runs from the scheduled start (not the late time in) and only
-  // the allowed part of each break comes off it. OT is the time after the schedule in whole 30-min blocks; then all of
-  // the day's late and overbreak (breaks after the schedule too) come off it (HR's formula: 3 hrs OT, 7 min = 2.88 hrs).
+  // 2026-11-26): they do not cut the ND or NDOT hours. ND runs from the scheduled start (not the late time in) to the
+  // schedule end; breaks and overbreak do not come off it (user, 2026-11-27: night 6-2 = 4 hrs ND, not 3.5). OT is the
+  // time after the schedule in whole 30-min blocks; then all of the day's late and overbreak (breaks after the schedule
+  // too) come off the regular OT only (HR's formula: 3 hrs OT, 7 min = 2.88 hrs), never off the NDOT.
   const otRaw=out==null?0:Math.max(0,out-Math.max(otFrom,inn)),ot=otBlock(otRaw);
   const rA=start,rB=out==null?rA:Math.min(out,end),oA=Math.max(otFrom,inn),oB=out==null?oA:out;
-  const nd=out==null?0:Math.max(0,tkNight(rA,rB)-breaks.filter(x=>!x.ot).reduce((t,x)=>t+tkNight(Math.max(x.a,rA),Math.min(x.a+Math.min(x.dur,x.allow),rB)),0));
+  const nd=out==null?0:tkNight(rA,rB);
   // Late and overbreak on a day with OT come off that day's OT, not the regular 8 hours (user's rule, 2026-11-26):
   // 4 hrs OT with 7 min late = 3.88 hrs OT (not 7.88 regular hours). Only the part over the OT is deducted as late/overbreak.
   const lateOff=out==null?0:Math.min(ot,late+ob),otNet=ot-lateOff;
-  const ndot=out==null?0:Math.min(otNet,otBlock(tkNight(oA,oB)));
+  const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)));
   return{sched:`${tkFt(start)} – ${tkFt(end)}`,start,len,setLen:!!setLen,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
 const TK_RULES=[{name:'Rowell',test:c=>/^rowell/i.test(c||''),day:tkRowell}];
@@ -1903,8 +1904,8 @@ async function tkXlsx(){
    130% of the day rate on a rest day or holiday. ND = +10% of the day's hourly rate (10 PM – 6 AM); NDOT = +10% of the OT rate.
    A regular holiday not worked is paid 100% when the employee was present or on paid leave on the workday before it.
    Basic pay counts 8 hours for each day worked; late, undertime and overbreak (in regular hours) are deducted at that day's
-   rate. Overbreak after the shift is already off the OT, except in ND hours: there it stays in the OT/NDOT and is deducted as
-   overbreak. Late and overbreak never cut the ND / NDOT hours; they are deducted only at the regular rate of the day. Days with a missing log are not paid until fixed in Time Keep.
+   rate. On a day with OT, late and overbreak come off the regular OT first. Breaks, late and overbreak never cut the
+   ND / NDOT hours. Days with a missing log are not paid until fixed in Time Keep.
    Paid leave = approved leave days taken from SIL / leave credits. Holidays = PH_HOLIDAYS (proclamations) + holiday memos.
    Pag-IBIG: flat ₱200 every cut-off. PhilHealth: 2.5% of the month's gross (employer pays another 2.5%): fixed ₱250 in the 1st cut-off, the rest in the cut-off paid on the 30th. SSS (employee share, current table: Circ. 2024-006, in force since Jan 2025, still for 2026) on the
    gross pay: the 1st cut-off deducts the share for its own gross, the
