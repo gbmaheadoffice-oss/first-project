@@ -1574,9 +1574,6 @@ function tkRowell(e,ts,d,type,hr,setLen){
   // with no time in or no time out the logs cannot be paired into breaks, so no overbreak is counted (HR fixes the day)
   if(noIn||noOut)breaks.length=0;
   const obReg=breaks.filter(x=>!x.ot).reduce((t,x)=>t+x.ob,0),ob=breaks.reduce((t,x)=>t+x.ob,0);
-  // regular hours: always 8, less undertime only (a half day leaves early, so it shows as undertime). Late and overbreak are
-  // their own columns and are not taken off here, like the Rowell DTR (LATE 1, REG HRS 8).
-  const reg=out==null?null:Math.max(0,480-ut);
   // the allowed 15-min break after the schedule is paid: only the minutes over it (overbreak) come off the OT
   // Late and overbreak in ND / NDOT hours (10 PM – 6 AM) are deducted only as regular late / overbreak (user's rule,
   // 2026-11-26): they do not cut the ND or NDOT hours. ND runs from the scheduled start (not the late time in) to the
@@ -1591,6 +1588,9 @@ function tkRowell(e,ts,d,type,hr,setLen){
   // 2026-11-27 (user): only the late comes off the OT (6-2: 4 − late ÷ 60, 6-3: 3 − late ÷ 60); overbreak does not, it
   // stays its own deduction at the regular rate
   const lateOff=out==null?0:Math.min(ot,late),otNet=ot-lateOff;
+  // regular hours: 8, less undertime (a half day leaves early) and less the late that the OT did not cover
+  // (user, 2026-11-27: an 8-hr day with no OT = 8 − late ÷ 60). Overbreak is its own column and is not taken off here.
+  const reg=out==null?null:Math.max(0,480-ut-(late-lateOff));
   const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)));
   return{sched:`${tkFt(start)} – ${tkFt(end)}`,start,len,setLen:!!setLen,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
