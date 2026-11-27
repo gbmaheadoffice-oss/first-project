@@ -1979,15 +1979,17 @@ const PR_OTK=['ot','otrest','otsh','otrh'],prOT=(p,f)=>r2(PR_OTK.reduce((t,k)=>t
 const PR_TARD=[['late','Late'],['ut','Undertime'],['ob','Overbreak']];
 // A night shift that starts on the last day of the upload ends the next morning, outside the file, so its time out is
 // missing. (User, 2026-11-26: it still counts as a day worked.) The next morning's logs (before 12 noon) are taken from
-// another upload that has that date; with none yet, the shift is taken as ended on schedule (8 hours, no OT).
+// another upload that has that date; with none yet, the shift is taken as ended at the usual 6:00 AM (OT to 6 AM, like
+// GBMA's paper payroll: user, 2026-11-27, Campos Oct 26 – Nov 10 = OT 35.57, ND 8, NDOT 8). A last night whose logs stop
+// before the schedule end (e.g. the last log at 11:31 PM, a break) is cut by the upload too and is treated the same way.
 // HR-edited logs for that day are used as they are.
 function prNightTail(doc,g,d,r){
-  if(d!==doc.to||!r.log||r.log.hr||r.log.type!=='night'||!r.rule||!r.c||!r.c.odd||r.c.noIn)return null;
+  if(d!==doc.to||!r.log||r.log.hr||r.log.type!=='night'||!r.rule||!r.c||!(r.c.odd||r.c.ut>0)||r.c.noIn)return null;
   const nx=addDays(d,1),src=tkSorted().find(x=>x.id!==doc.id&&x.from<=nx&&x.to>=nx);
   const tail=src?((src.rows||[]).find(x=>tkKey(x.emp)===g.k&&x.d===nx)||{t:[]}).t.filter(t=>tkMins(t)<720):[];
   const plus=tail.map(t=>{const m=tkMins(t)+1440;return`${pad(Math.floor(m/60))}:${pad(m%60)}`});
   let c=plus.length?r.rule.day(g.e,r.log.t.concat(plus),d,'night',false,r.log.len):null,est=false;
-  if(!c||c.odd){const end=Math.max(TK_TYPES.night.start+480,tkMins(r.log.t[r.log.t.length-1])+1);
+  if(!c||c.odd||!plus.length){const end=Math.max(TK_TYPES.night.start+720,tkMins(r.log.t[r.log.t.length-1])+1);
     c=r.rule.day(g.e,r.log.t.concat([`${pad(Math.floor(end/60))}:${pad(end%60)}`]),d,'night',false,r.log.len);est=true}
   return c&&!c.odd?{c,est}:null;
 }
@@ -2004,7 +2006,7 @@ function prCalc(doc,g,hol,phm){
   Object.keys(g.days).sort().forEach(d=>{const r=g.days[d],h=hol[d],kind=h?h.kind:'',rest=isRest(e,d);
     if(h)holDays.push(d);
     if(r.log){let c=r.c;
-      const nt=c&&c.odd?prNightTail(doc,g,d,r):null;if(nt){c=nt.c;nightEnd.push({d,est:nt.est})}
+      const nt=c&&(c.odd||c.ut>0)?prNightTail(doc,g,d,r):null;if(nt){c=nt.c;nightEnd.push({d,est:nt.est})}
       if(!c||c.odd||c.reg==null){st.miss++;missDays.push(d);return}
       const m=prMult(kind,rest),rate=hr*m,key=kind||(rest?'rest':'basic'),otr=rate*(m>1?1.3:1.25);
       E[key].n++;E[key].a+=8*rate;st.worked++;
@@ -2070,7 +2072,7 @@ function prWarn(p){
   if(p.st.absent)w.push(`<span class="chip">${p.st.absent} absent</span>`);
   if(p.st.unpaidLeave)w.push(`<span class="chip">${r2(p.st.unpaidLeave)} leave day${p.st.unpaidLeave===1?'':'s'} without pay</span>`);
   if(p.phWarn)w.push(`<span class="chip warn">${esc(p.phWarn)}</span>`);
-  p.nightEnd.forEach(x=>w.push(`<span class="chip${x.est?' warn':' info'}" title="The night shift of ${fmtS(x.d)} ends the next morning, after this upload. ${x.est?'Its time out is not uploaded yet, so it is paid as 8 hours (no OT) until the next upload has it.':'The time out was taken from the next upload.'}">${fmtS(x.d)} night: ${x.est?'paid 8 hrs, time out not uploaded yet':'time out from next upload'}</span>`));
+  p.nightEnd.forEach(x=>w.push(`<span class="chip${x.est?' warn':' info'}" title="The night shift of ${fmtS(x.d)} ends the next morning, after this upload. ${x.est?'Its time out is not uploaded yet, so it is paid to 6:00 AM (with OT) until the next upload has it.':'The time out was taken from the next upload.'}">${fmtS(x.d)} night: ${x.est?'paid to 6 AM, time out not uploaded yet':'time out from next upload'}</span>`));
   if(p.skip.length)w.push(`<span class="chip info">No ${p.skip.map(k=>PR_GOV.find(x=>x[0]===k)[1]).join(', ')} this cut-off</span>`);
   return w.join('');
 }
