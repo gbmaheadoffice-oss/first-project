@@ -1585,12 +1585,12 @@ function tkRowell(e,ts,d,type,hr,setLen){
   const nd=out==null?0:tkNight(rA,rB);
   // Late on a day with OT comes off that day's OT, not the regular 8 hours: 4 hrs OT with 7 min late = 3.88 hrs OT.
   // Only the part over the OT is deducted as late.
-  // 2026-11-27 (user): only the late comes off the OT (6-2: 4 − late ÷ 60, 6-3: 3 − late ÷ 60); overbreak does not, it
-  // stays its own deduction at the regular rate
-  const lateOff=out==null?0:Math.min(ot,late),otNet=ot-lateOff;
-  // regular hours: 8, less undertime (a half day leaves early) and less the late that the OT did not cover
-  // (user, 2026-11-27: an 8-hr day with no OT = 8 − late ÷ 60). Overbreak is its own column and is not taken off here.
-  const reg=out==null?null:Math.max(0,480-ut-(late-lateOff));
+  // 2026-11-27 (user): overbreak is treated as late. Late + overbreak come off the regular OT only, never the NDOT
+  // (6-2: 4 − (late + OB) ÷ 60, 6-3: 3 − (late + OB) ÷ 60)
+  const lateOff=out==null?0:Math.min(ot,late+ob),otNet=ot-lateOff;
+  // regular hours: 8, less undertime (a half day leaves early) and less the late + overbreak that the OT did not cover
+  // (user, 2026-11-27: an 8-hr day with no OT = 8 − (late + OB) ÷ 60)
+  const reg=out==null?null:Math.max(0,480-ut-(late+ob-lateOff));
   const ndot=out==null?0:Math.min(ot,otBlock(tkNight(oA,oB)));
   return{sched:`${tkFt(start)} – ${tkFt(end)}`,start,len,setLen:!!setLen,meal,late,ut,breaks,ob,reg,ot:otNet,otBlk:ot,lateOff,otRaw,nd,ndot,odd,lone,noIn,noOut};
 }
@@ -1742,7 +1742,7 @@ function tkRuleTable(r,wd){
     <td class="num">${c.noIn?'<span class="att-muted">—</span>':tkT(x.t[0])}</td><td class="num" style="white-space:normal;min-width:200px">${c.breaks.length?c.breaks.map(brk).join('<br>'):'<span class="att-muted">No break logs</span>'}</td>
     <td class="num">${c.odd?'<span class="att-muted">—</span>':tkT(x.t[x.t.length-1])}</td>
     <td class="r num ${c.late?'att-warn':''}">${tkH(c.late)}</td><td class="r num ${c.ut?'att-warn':''}">${tkH(c.ut)}</td><td class="r num ${c.ob?'att-bad':''}">${tkH(c.ob)}</td>
-    <td class="r num"><b>${c.reg==null?'—':tkH(c.reg)}</b></td><td class="r num">${tkH(c.ot)}${c.lateOff?`<div class="sub" title="The late is taken off the OT">${tkH(c.otBlk)} less ${tkH(c.lateOff)} late</div>`:''}</td><td class="r num">${tkH(c.nd)}</td><td class="r num">${tkH(c.ndot)}</td>
+    <td class="r num"><b>${c.reg==null?'—':tkH(c.reg)}</b></td><td class="r num">${tkH(c.ot)}${c.lateOff?`<div class="sub" title="Late and overbreak are taken off the OT">${tkH(c.otBlk)} less ${tkH(c.lateOff)} late/OB</div>`:''}</td><td class="r num">${tkH(c.nd)}</td><td class="r num">${tkH(c.ndot)}</td>
     <td>${c.odd?`<span class="chip warn">Missing log${c.noIn?' (no time in)':c.noOut?' (no time out)':''}</span><div class="sub">Logs: ${x.t.map(tkT).join(' · ')}</div>`:''}${x.hr?`<span class="chip info">${tkHrTxt(x.hr)}</span>`:''}${r.e?`<div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="btn ghost sm" data-act="tk-fix" data-id="${esc(r.k)}" data-k="${x.d}" data-write>Edit logs</button>${tkSchedBtns(r.k,x.d,c)}</div>`:''}</td></tr>`}).join('')}
   </tbody>${r.s?`<tfoot><tr class="tk-total"><td colspan="5"><b>TOTAL</b></td><td class="r num"><b>${tkH(r.s.late)}</b></td><td class="r num"><b>${tkH(r.s.ut)}</b></td><td class="r num"><b>${tkH(r.s.ob)}</b></td><td class="r num"><b>${tkH(r.s.reg)}</b></td><td class="r num"><b>${tkH(r.s.ot)}</b></td><td class="r num"><b>${tkH(r.s.nd)}</b></td><td class="r num"><b>${tkH(r.s.ndot)}</b></td><td></td></tr></tfoot>`:''}</table></div>`;
 }
@@ -1906,7 +1906,7 @@ async function tkXlsx(){
    130% of the day rate on a rest day or holiday. ND = +10% of the day's hourly rate (10 PM – 6 AM); NDOT = +10% of the OT rate.
    A regular holiday not worked is paid 100% when the employee was present or on paid leave on the workday before it.
    Basic pay counts 8 hours for each day worked; late, undertime and overbreak (in regular hours) are deducted at that day's
-   rate. On a day with OT, the late comes off the regular OT first (overbreak does not). Breaks, late and overbreak never cut the
+   rate. Overbreak counts as late: on a day with OT, late and overbreak come off the regular OT first, the rest off the regular hours. Breaks, late and overbreak never cut the
    ND / NDOT hours. Days with a missing log are not paid until fixed in Time Keep.
    Paid leave = approved leave days taken from SIL / leave credits. Holidays = PH_HOLIDAYS (proclamations) + holiday memos.
    Pag-IBIG: flat ₱200 every cut-off. PhilHealth: 2.5% of the month's gross (employer pays another 2.5%): fixed ₱250 in the 1st cut-off, the rest in the cut-off paid on the 30th. SSS (employee share, current table: Circ. 2024-006, in force since Jan 2025, still for 2026) on the
@@ -2004,7 +2004,7 @@ function prCalc(doc,g,hol,phm){
       const m=prMult(kind,rest),rate=hr*m,key=kind||(rest?'rest':'basic'),otr=rate*(m>1?1.3:1.25);
       E[key].n++;E[key].a+=8*rate;st.worked++;
       const obReg=c.ob||0; // all overbreak, breaks after the shift too (none of it comes off the OT before the 30-min blocks)
-      // late already taken off the OT (c.lateOff) is not deducted again
+      // late and overbreak already taken off the OT (c.lateOff) are not deducted again: late first, then overbreak
       const off=c.lateOff||0,lateD=Math.max(0,(c.late||0)-off),obD=Math.max(0,obReg-Math.max(0,off-(c.late||0)));
       [['late',lateD],['ut',c.ut],['ob',obD]].forEach(([k,v])=>{T[k].m+=v||0;T[k].a+=(v||0)/60*rate});
       const ok=kind?'ot'+kind:rest?'otrest':'ot';E[ok].n+=c.ot/60;E[ok].a+=c.ot/60*otr;E.nd.n+=c.nd/60;E.nd.a+=c.nd/60*rate*0.1;E.ndot.n+=c.ndot/60;E.ndot.a+=c.ndot/60*otr*0.1;
